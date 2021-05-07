@@ -1234,7 +1234,7 @@ def set_model_input(m):
     # The model is built for a fixed flow of steam through the charger.
     # This flow of steam to the charger is unfixed and determine during
     # design optimization
-    m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.01)
+    m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.05)
 
     ###########################################################################
     #  Recycle mixer                                                          #
@@ -1969,9 +1969,6 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
     #  'm.fs.cooler.constraint_cooler_enth2' in the flowsheet
     m.fs.cooler.outlet.enth_mol[0].unfix()
 
-    # # Fix the power output of the plant
-    # m.fs.plant_power_out[0].fix(521)  # MW
-
     add_bounds(m)
     #--------
 
@@ -1996,8 +1993,10 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
              )
             == m.fs.plant_power_out[t]*1e6*(pyunits.W/pyunits.MW)
         )
-
+    
+    #-------- added by esrawli
     m.obj = pyo.Objective(expr=1)
+    #--------
 
     return m, solver
 
@@ -2010,7 +2009,10 @@ def model_analysis(m, solver):
     pres_frac_list = [1.0]
     for i in flow_frac_list:
         for j in pres_frac_list:
+            #-------- modified by esrawli
+            # m.fs.plant_power_out[0].fix(472)  # MW
             m.fs.boiler.inlet.flow_mol.fix(i*m.main_flow)  # mol/s
+            #--------
             m.fs.boiler.outlet.pressure.fix(j*m.main_steam_pressure)
             solver.solve(m,
                          tee=True,
