@@ -343,122 +343,6 @@ def declare_unit_model():
         doc='Shell inner diameter [m]'
     )
 
-    #########   Charge heat exchanger section   #########
-    
-    # Salt side: Reynolds number, Prandtl number, and Nusselt number
-    m.fs.hxc.tube_cs_area = pyo.Expression(
-        expr=(pi / 4) * (m.fs.hxc.tube_inner_dia ** 2),
-        doc="Tube cross sectional area"
-    )
-    m.fs.hxc.tube_out_area = pyo.Expression(
-        expr=(pi / 4) * (m.fs.hxc.tube_outer_dia ** 2),
-        doc="Tube cross sectional area including thickness [m2]"
-    )
-    m.fs.hxc.shell_eff_area = pyo.Expression(
-        expr=(
-            (pi / 4) * (m.fs.hxc.shell_inner_dia ** 2)
-            - m.fs.hxc.n_tubes
-            * m.fs.hxc.tube_out_area),
-        doc="Effective shell cross sectional area [m2]"
-    )
-
-    # Salt (shell) side: Reynolds number, Prandtl number, and Nusselt number
-    m.fs.hxc.salt_reynolds_number = pyo.Expression(
-        expr=(
-            (m.fs.hxc.inlet_2.flow_mass[0] * m.fs.hxc.tube_outer_dia) / \
-            (m.fs.hxc.shell_eff_area * \
-             m.fs.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"])
-        ),
-        doc="Salt Reynolds Number"
-    )
-    m.fs.hxc.salt_prandtl_number = pyo.Expression(
-        expr=(
-            m.fs.hxc.side_2.properties_in[0].cp_specific_heat["Liq"] * \
-            m.fs.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"] / \
-            m.fs.hxc.side_2.properties_in[0].thermal_conductivity["Liq"]
-        ),
-        doc="Salt Prandtl Number"
-    )
-    m.fs.hxc.salt_prandtl_wall = pyo.Expression(
-        expr=(
-            (m.fs.hxc.side_2.properties_out[0].cp_specific_heat["Liq"] * \
-             m.fs.hxc.side_2.properties_out[0].dynamic_viscosity["Liq"]) / \
-            m.fs.hxc.side_2.properties_out[0].thermal_conductivity["Liq"]
-        ),
-        doc="Salt Prandtl Number at wall"
-    )
-    m.fs.hxc.salt_nusselt_number = pyo.Expression(
-        expr=(
-            0.35 * (m.fs.hxc.salt_reynolds_number**0.6) * \
-            (m.fs.hxc.salt_prandtl_number**0.4) * \
-            ((m.fs.hxc.salt_prandtl_number / \
-              m.fs.hxc.salt_prandtl_wall)**0.25) * (2**0.2)
-        ),
-        doc="Salt Nusslet Number Sieder-Tate correlation"
-    )
-
-    # Steam side: Reynolds number, Prandtl number, and Nusselt number
-    m.fs.hxc.steam_reynolds_number = pyo.Expression(
-        expr=(
-           m.fs.hxc.inlet_1.flow_mol[0] * \
-            m.fs.hxc.side_1.properties_in[0].mw * \
-            m.fs.hxc.tube_inner_dia / \
-            (m.fs.hxc.tube_cs_area * m.fs.hxc.n_tubes * \
-             m.fs.hxc.side_1.properties_in[0].visc_d_phase["Vap"])
-        ),
-        doc="Steam Reynolds Number"
-    )
-    m.fs.hxc.steam_prandtl_number = pyo.Expression(
-        expr=(
-            (m.fs.hxc.side_1.properties_in[0].cp_mol / \
-             m.fs.hxc.side_1.properties_in[0].mw) * \
-            m.fs.hxc.side_1.properties_in[0].visc_d_phase["Vap"] / \
-            m.fs.hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
-        ),
-        doc="Steam Prandtl Number"
-    )
-    m.fs.hxc.steam_nusselt_number = pyo.Expression(
-        expr=(
-            0.023 * (m.fs.hxc.steam_reynolds_number**0.8) * \
-            (m.fs.hxc.steam_prandtl_number**(0.33)) * \
-            ((m.fs.hxc.side_1.properties_in[0].visc_d_phase["Vap"] / \
-              m.fs.hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
-        ),
-        doc="Steam Nusslet Number Sieder-Tate correlation"
-    )
-
-    # Salt and steam side heat transfer coefficients
-    m.fs.hxc.h_salt = pyo.Expression(
-        expr=(
-            m.fs.hxc.side_2.properties_in[0].thermal_conductivity["Liq"] * \
-            m.fs.hxc.salt_nusselt_number / m.fs.hxc.tube_outer_dia
-        ),
-        doc="Salt side convective heat transfer coefficient [W/mK]"
-    )
-    m.fs.hxc.h_steam = pyo.Expression(
-        expr=(
-            m.fs.hxc.side_1.properties_in[0].therm_cond_phase["Vap"] * \
-            m.fs.hxc.steam_nusselt_number / m.fs.hxc.tube_inner_dia
-        ),
-        doc="Steam side convective heat transfer coefficient [W/mK]"
-    )
-
-    # Computing overall heat transfer coefficient
-    @m.fs.hxc.Constraint(m.fs.time)
-    def constraint_hxc_ohtc(b, t):
-        return (
-            m.fs.hxc.overall_heat_transfer_coefficient[t]
-            == 1 / ((1 / m.fs.hxc.h_salt)
-                    + ((m.fs.hxc.tube_outer_dia * \
-                        log(m.fs.hxc.tube_outer_dia / \
-                            m.fs.hxc.tube_inner_dia)) / \
-                       (2 * m.fs.hxc.k_steel))
-                    + ((m.fs.hxc.tube_outer_dia / \
-                        m.fs.hxc.tube_inner_dia) /
-                       m.fs.hxc.h_steam))
-        )
-
-
     ###########################################################################
     #  Add cooler and hx pump                                                 #
     ###########################################################################
@@ -482,24 +366,6 @@ def declare_unit_model():
             "thermodynamic_assumption": ThermodynamicAssumption.pump,
         }
     )
-
-    # Cooler
-    # The temperature at the outlet of the cooler is required to be subcooled
-    # by at least 5 degrees
-    @m.fs.cooler.Constraint(m.fs.time)
-    def constraint_cooler_enth2(b, t):
-        return (
-            m.fs.cooler.control_volume.properties_out[t].temperature <=
-            (m.fs.cooler.control_volume.properties_out[t].temperature_sat - 5)
-        )
-
-    # hx pump
-    # The outlet pressure of hx_pump is then fixed to be the same as
-    # boiler feed pump's outlet pressure
-    # @m.fs.Constraint(m.fs.time)
-    # def constraint_hxpump_presout(b, t):
-    #     return m.fs.hx_pump.outlet.pressure[t] >= \
-    #         (m.main_steam_pressure * 1.1231)
 
     ###########################################################################
     #  Add recycle mixer                                                      #
@@ -725,6 +591,138 @@ def _make_constraints(m):
 
     #-------- added by esrawli
 
+    #########   Charge heat exchanger section   #########
+    
+    # Salt side: Reynolds number, Prandtl number, and Nusselt number
+    m.fs.hxc.tube_cs_area = pyo.Expression(
+        expr=(pi / 4) * (m.fs.hxc.tube_inner_dia ** 2),
+        doc="Tube cross sectional area"
+    )
+    m.fs.hxc.tube_out_area = pyo.Expression(
+        expr=(pi / 4) * (m.fs.hxc.tube_outer_dia ** 2),
+        doc="Tube cross sectional area including thickness [m2]"
+    )
+    m.fs.hxc.shell_eff_area = pyo.Expression(
+        expr=(
+            (pi / 4) * (m.fs.hxc.shell_inner_dia ** 2)
+            - m.fs.hxc.n_tubes
+            * m.fs.hxc.tube_out_area),
+        doc="Effective shell cross sectional area [m2]"
+    )
+
+    # Salt (shell) side: Reynolds number, Prandtl number, and Nusselt number
+    m.fs.hxc.salt_reynolds_number = pyo.Expression(
+        expr=(
+            (m.fs.hxc.inlet_2.flow_mass[0] * m.fs.hxc.tube_outer_dia) / \
+            (m.fs.hxc.shell_eff_area * \
+             m.fs.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"])
+        ),
+        doc="Salt Reynolds Number"
+    )
+    m.fs.hxc.salt_prandtl_number = pyo.Expression(
+        expr=(
+            m.fs.hxc.side_2.properties_in[0].cp_specific_heat["Liq"] * \
+            m.fs.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"] / \
+            m.fs.hxc.side_2.properties_in[0].thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number"
+    )
+    m.fs.hxc.salt_prandtl_wall = pyo.Expression(
+        expr=(
+            (m.fs.hxc.side_2.properties_out[0].cp_specific_heat["Liq"] * \
+             m.fs.hxc.side_2.properties_out[0].dynamic_viscosity["Liq"]) / \
+            m.fs.hxc.side_2.properties_out[0].thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number at wall"
+    )
+    m.fs.hxc.salt_nusselt_number = pyo.Expression(
+        expr=(
+            0.35 * (m.fs.hxc.salt_reynolds_number**0.6) * \
+            (m.fs.hxc.salt_prandtl_number**0.4) * \
+            ((m.fs.hxc.salt_prandtl_number / \
+              m.fs.hxc.salt_prandtl_wall)**0.25) * (2**0.2)
+        ),
+        doc="Salt Nusslet Number Sieder-Tate correlation"
+    )
+
+    # Steam side: Reynolds number, Prandtl number, and Nusselt number
+    m.fs.hxc.steam_reynolds_number = pyo.Expression(
+        expr=(
+           m.fs.hxc.inlet_1.flow_mol[0] * \
+            m.fs.hxc.side_1.properties_in[0].mw * \
+            m.fs.hxc.tube_inner_dia / \
+            (m.fs.hxc.tube_cs_area * m.fs.hxc.n_tubes * \
+             m.fs.hxc.side_1.properties_in[0].visc_d_phase["Vap"])
+        ),
+        doc="Steam Reynolds Number"
+    )
+    m.fs.hxc.steam_prandtl_number = pyo.Expression(
+        expr=(
+            (m.fs.hxc.side_1.properties_in[0].cp_mol / \
+             m.fs.hxc.side_1.properties_in[0].mw) * \
+            m.fs.hxc.side_1.properties_in[0].visc_d_phase["Vap"] / \
+            m.fs.hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
+        ),
+        doc="Steam Prandtl Number"
+    )
+    m.fs.hxc.steam_nusselt_number = pyo.Expression(
+        expr=(
+            0.023 * (m.fs.hxc.steam_reynolds_number**0.8) * \
+            (m.fs.hxc.steam_prandtl_number**(0.33)) * \
+            ((m.fs.hxc.side_1.properties_in[0].visc_d_phase["Vap"] / \
+              m.fs.hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
+        ),
+        doc="Steam Nusslet Number Sieder-Tate correlation"
+    )
+
+    # Salt and steam side heat transfer coefficients
+    m.fs.hxc.h_salt = pyo.Expression(
+        expr=(
+            m.fs.hxc.side_2.properties_in[0].thermal_conductivity["Liq"] * \
+            m.fs.hxc.salt_nusselt_number / m.fs.hxc.tube_outer_dia
+        ),
+        doc="Salt side convective heat transfer coefficient [W/mK]"
+    )
+    m.fs.hxc.h_steam = pyo.Expression(
+        expr=(
+            m.fs.hxc.side_1.properties_in[0].therm_cond_phase["Vap"] * \
+            m.fs.hxc.steam_nusselt_number / m.fs.hxc.tube_inner_dia
+        ),
+        doc="Steam side convective heat transfer coefficient [W/mK]"
+    )
+
+    # Computing overall heat transfer coefficient
+    @m.fs.hxc.Constraint(m.fs.time)
+    def constraint_hxc_ohtc(b, t):
+        return (
+            m.fs.hxc.overall_heat_transfer_coefficient[t]
+            == 1 / ((1 / m.fs.hxc.h_salt)
+                    + ((m.fs.hxc.tube_outer_dia * \
+                        log(m.fs.hxc.tube_outer_dia / \
+                            m.fs.hxc.tube_inner_dia)) / \
+                       (2 * m.fs.hxc.k_steel))
+                    + ((m.fs.hxc.tube_outer_dia / \
+                        m.fs.hxc.tube_inner_dia) /
+                       m.fs.hxc.h_steam))
+        )
+
+    # Cooler
+    # The temperature at the outlet of the cooler is required to be subcooled
+    # by at least 5 degrees
+    @m.fs.cooler.Constraint(m.fs.time)
+    def constraint_cooler_enth2(b, t):
+        return (
+            m.fs.cooler.control_volume.properties_out[t].temperature <=
+            (m.fs.cooler.control_volume.properties_out[t].temperature_sat - 5)
+        )
+
+    # hx pump
+    # The outlet pressure of hx_pump is then fixed to be the same as
+    # boiler feed pump's outlet pressure
+    # @m.fs.Constraint(m.fs.time)
+    # def constraint_hxpump_presout(b, t):
+    #     return m.fs.hx_pump.outlet.pressure[t] >= \
+    #         (m.main_steam_pressure * 1.1231)
 
     # Recycle mixer
     # The outlet pressure of the recycle mixer is same as
