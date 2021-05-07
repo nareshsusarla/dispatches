@@ -1600,6 +1600,7 @@ def view_result(outfile, m):
     tags = {}
 
     ## Boiler
+    tags['obj'] = ("%4.2f" % pyo.value(m.obj))
     tags['power_out'] = ("%4.2f" % pyo.value(m.fs.plant_power_out[0]))
     
     tags['boiler_Fin'] = ("%4.3f" % (pyo.value(
@@ -1952,7 +1953,7 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
 
     #-------- added by esrawli
     # Unfix the hp steam split fraction to charge heat exchanger
-    m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0)
+    # m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0)
 
     # Unfix salt flow to charge heat exchanger, temperature, and area
     # of charge heat exchanger
@@ -2015,11 +2016,13 @@ def model_analysis(m, solver):
                          tee=True,
                          symbolic_solver_labels=True,
                          options={
-                             "max_iter": 500,
+                             "max_iter": 300,
                              "halt_on_ampl_error": "yes"}
             )
             print("***************** Printing Results ******************")
             print('')
+            print("Obj =",
+                  pyo.value(m.obj))            
             print("Heat exchanger area (m2) =",
                   pyo.value(m.fs.hxc.area))
             print('')
