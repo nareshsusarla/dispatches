@@ -1997,15 +1997,14 @@ def model_analysis(m, solver):
             solver.solve(m,
                          tee=True,
                          symbolic_solver_labels=True,
-                         # options={
-                         #     "max_iter": 100}
+                         options={
+                             "max_iter": 200,
+                             "halt_on_ampl_error": "yes"}
             )
             print("***************** Printing Results ******************")
             print('')
             print("Heat exchanger area (m2) =",
                   pyo.value(m.fs.hxc.area))
-            print("Heat exchanger cost ($/y) =",
-                  pyo.value(m.fs.hxc.costing.purchase_cost / 15))
             print('')
             print("Salt flow (kg/s) =",
                   pyo.value(m.fs.hxc.inlet_2.flow_mass[0]))
