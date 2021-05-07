@@ -1276,7 +1276,7 @@ def set_scaling_factors(m):
 
     # return m
 
-def initialize(m, fileinput=None, outlvl=6,
+def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
                solver=None, optarg={}):
 
     optarg = {
@@ -1995,6 +1995,8 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
              )
             == m.fs.plant_power_out[t]*1e6*(pyunits.W/pyunits.MW)
         )
+
+    m.obj = pyo.Objective(expr=1)
 
     return m, solver
 
