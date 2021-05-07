@@ -692,19 +692,34 @@ def _make_constraints(m):
     )
 
     # Computing overall heat transfer coefficient
+    # OHTC constraint is rewritten to avoid having a denominator in the equation
+    # OHTC = _________________________________1___________________________________
+    #        __1__  + _Tout_dia_*_log(Tout_dia/Tin_dia)_  + __(Tout_dia/Tin_dia)__
+    #        Hsalt              2 k_steel                           Hsteam
+    #
+    m.fs.hxc.tube_dia_relation = (
+        m.fs.hxc.tube_outer_dia / m.fs.hxc.tube_inner_dia
+    )
+    m.fs.hxc.log_tube_dia_relation = log(m.fs.hxc.tube_dia_relation)    
     @m.fs.hxc.Constraint(m.fs.time)
     def constraint_hxc_ohtc(b, t):
         return (
             m.fs.hxc.overall_heat_transfer_coefficient[t]
             == 1 / ((1 / m.fs.hxc.h_salt)
                     + ((m.fs.hxc.tube_outer_dia * \
-                        log(m.fs.hxc.tube_outer_dia / \
-                            m.fs.hxc.tube_inner_dia)) / \
+                        m.fs.hxc.log_tube_dia_relation) / \
                        (2 * m.fs.hxc.k_steel))
-                    + ((m.fs.hxc.tube_outer_dia / \
-                        m.fs.hxc.tube_inner_dia) /
-                       m.fs.hxc.h_steam))
+                    + (m.fs.hxc.tube_dia_relation / m.fs.hxc.h_steam))
         )
+        #-------- modified by esrawli: equation rewritten to avoid having denominators
+        # return (
+        #     m.fs.hxc.overall_heat_transfer_coefficient[t] * \
+        #     (2 * m.fs.hxc.k_steel * m.fs.hxc.h_steam
+        #      + m.fs.hxc.tube_outer_dia * m.fs.hxc.log_tube_dia_relation *\
+        #      m.fs.hxc.h_salt * m.fs.hxc.h_steam
+        #      + m.fs.hxc.tube_dia_relation * m.fs.hxc.h_salt * \
+        #      2 * m.fs.hxc.k_steel)        
+        # ) == 2 * m.fs.hxc.k_steel * m.fs.hxc.h_salt * m.fs.hxc.h_steam
 
     # Cooler
     # The temperature at the outlet of the cooler is required to be subcooled
@@ -1998,7 +2013,7 @@ def model_analysis(m, solver):
                          tee=True,
                          symbolic_solver_labels=True,
                          options={
-                             "max_iter": 200,
+                             "max_iter": 500,
                              "halt_on_ampl_error": "yes"}
             )
             print("***************** Printing Results ******************")
