@@ -1072,7 +1072,6 @@ def _create_arcs(m):
     )
     #--------
 
-
     # fwh10
     m.fs.fwh9_to_fwh10 = Arc(
         source=m.fs.fwh[8].outlet_2, destination=m.fs.fwh[9].inlet_2
@@ -1958,16 +1957,16 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
     # Unfix salt flow to charge heat exchanger, temperature, and area
     # of charge heat exchanger
     m.fs.hxc.inlet_2.flow_mass.unfix()   # kg/s
-    m.fs.hxc.inlet_2.temperature.unfix()  # K
+    m.fs.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
     m.fs.hxc.outlet_2.temperature.unfix()  # K
-    m.fs.hxc.area.unfix()
+    m.fs.hxc.area.unfix() # 1 DOF
     m.fs.hxc.heat_duty.fix(150*1e6)  # in W (obtained from supercritical plant)
 
     # The cooler outlet enthaply was fixed during model build to ensure liquid
     # at the inlet of hx_pump and keep the model square. This is now unfixed
     # and temperature of the outlet is constrained through
     #  'm.fs.cooler.constraint_cooler_enth2' in the flowsheet
-    m.fs.cooler.outlet.enth_mol[0].unfix()
+    m.fs.cooler.outlet.enth_mol[0].unfix() # 1 DOF
 
     add_bounds(m)
     #--------
@@ -2014,6 +2013,10 @@ def model_analysis(m, solver):
             m.fs.boiler.inlet.flow_mol.fix(i*m.main_flow)  # mol/s
             #--------
             m.fs.boiler.outlet.pressure.fix(j*m.main_steam_pressure)
+            #-------- added by esrawli
+            dof = degrees_of_freedom(m)
+            print('DOF before solution = ', dof)
+            #--------
             solver.solve(m,
                          tee=True,
                          symbolic_solver_labels=True,
