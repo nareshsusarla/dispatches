@@ -703,23 +703,23 @@ def _make_constraints(m):
     m.fs.hxc.log_tube_dia_relation = log(m.fs.hxc.tube_dia_relation)    
     @m.fs.hxc.Constraint(m.fs.time)
     def constraint_hxc_ohtc(b, t):
-        return (
-            m.fs.hxc.overall_heat_transfer_coefficient[t]
-            == 1 / ((1 / m.fs.hxc.h_salt)
-                    + ((m.fs.hxc.tube_outer_dia * \
-                        m.fs.hxc.log_tube_dia_relation) / \
-                       (2 * m.fs.hxc.k_steel))
-                    + (m.fs.hxc.tube_dia_relation / m.fs.hxc.h_steam))
-        )
-        #-------- modified by esrawli: equation rewritten to avoid having denominators
         # return (
-        #     m.fs.hxc.overall_heat_transfer_coefficient[t] * \
-        #     (2 * m.fs.hxc.k_steel * m.fs.hxc.h_steam
-        #      + m.fs.hxc.tube_outer_dia * m.fs.hxc.log_tube_dia_relation *\
-        #      m.fs.hxc.h_salt * m.fs.hxc.h_steam
-        #      + m.fs.hxc.tube_dia_relation * m.fs.hxc.h_salt * \
-        #      2 * m.fs.hxc.k_steel)        
-        # ) == 2 * m.fs.hxc.k_steel * m.fs.hxc.h_salt * m.fs.hxc.h_steam
+        #     m.fs.hxc.overall_heat_transfer_coefficient[t]
+        #     == 1 / ((1 / m.fs.hxc.h_salt)
+        #             + ((m.fs.hxc.tube_outer_dia * \
+        #                 m.fs.hxc.log_tube_dia_relation) / \
+        #                (2 * m.fs.hxc.k_steel))
+        #             + (m.fs.hxc.tube_dia_relation / m.fs.hxc.h_steam))
+        # )
+        #-------- modified by esrawli: equation rewritten to avoid having denominators
+        return (
+            m.fs.hxc.overall_heat_transfer_coefficient[t] * \
+            (2 * m.fs.hxc.k_steel * m.fs.hxc.h_steam
+              + m.fs.hxc.tube_outer_dia * m.fs.hxc.log_tube_dia_relation *\
+              m.fs.hxc.h_salt * m.fs.hxc.h_steam
+              + m.fs.hxc.tube_dia_relation * m.fs.hxc.h_salt * \
+              2 * m.fs.hxc.k_steel)        
+        ) == 2 * m.fs.hxc.k_steel * m.fs.hxc.h_salt * m.fs.hxc.h_steam
 
     # Cooler
     # The temperature at the outlet of the cooler is required to be subcooled
@@ -1147,7 +1147,7 @@ def set_model_input(m):
     m.fs.cond_pump.deltaP.fix(2313881)
 
     # Make up stream to condenser
-    m.fs.condenser_mix.makeup.flow_mol.value = -9.0E-12  # mol/s
+    m.fs.condenser_mix.makeup.flow_mol.value = 9.0E-12  # mol/s
     m.fs.condenser_mix.makeup.pressure.fix(103421.4)  # Pa
     m.fs.condenser_mix.makeup.enth_mol.fix(1131.69204)  # J/mol
 
@@ -1273,6 +1273,11 @@ def set_scaling_factors(m):
     iscale.set_scaling_factor(
         m.fs.hxc.overall_heat_transfer_coefficient, 1e-3)
 
+    # scaling factors for storage
+    iscale.set_scaling_factor(m.fs.hx_pump.control_volume.work, 1e-6)
+    iscale.set_scaling_factor(m.fs.hxc.shell.heat, 1e-6)
+    iscale.set_scaling_factor(m.fs.hxc.tube.heat, 1e-6)
+    iscale.set_scaling_factor(m.fs.cooler.control_volume.heat, 1e-6)
     # return m
 
 def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
@@ -1540,7 +1545,8 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     #  Recycle mixer initialization
     _set_port(m.fs.recycle_mixer.from_bfw_out, m.fs.bfp.outlet)
     _set_port(m.fs.recycle_mixer.from_hx_pump, m.fs.hx_pump.outlet)
-    # m.fs.recycle_mixer.from_hx_pump.flow_mol.fix(0.01) # fixing to a small value in mol/s
+    # fixing to a small value in mol/s
+    # m.fs.recycle_mixer.from_hx_pump.flow_mol.fix(0.01)
     # m.fs.recycle_mixer.from_hx_pump.enth_mol.fix()
     # m.fs.recycle_mixer.from_hx_pump.pressure.fix()
     m.fs.recycle_mixer.initialize(outlvl=outlvl, optarg=solver.options)
@@ -1870,8 +1876,10 @@ def add_bounds(m):
     m.fs.hxc.inlet_1.flow_mol.setub(0.2 * m.flow_max)  # mol/s
     m.fs.hxc.inlet_2.flow_mass.setlb(0)  # kg/s
     m.fs.hxc.inlet_2.flow_mass.setub(m.salt_flow_max)  # kg/s
-    m.fs.hxc.delta_temperature_out.setlb(80)  # K
-    m.fs.hxc.delta_temperature_in.setlb(80)  # K
+    m.fs.hxc.delta_temperature_out.setlb(10)  # K
+    m.fs.hxc.delta_temperature_in.setlb(10)  # K
+    # m.fs.hxc.delta_temperature_out.setub(80)  # K
+    # m.fs.hxc.delta_temperature_in.setub(80)  # K
 
     m.fs.cooler.heat_duty.setub(0)
 
@@ -1952,7 +1960,7 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
 
     #-------- added by esrawli
     # Unfix the hp steam split fraction to charge heat exchanger
-    # m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0)
+    # m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
 
     # Unfix salt flow to charge heat exchanger, temperature, and area
     # of charge heat exchanger
@@ -1960,7 +1968,7 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
     m.fs.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
     m.fs.hxc.outlet_2.temperature.unfix()  # K
     m.fs.hxc.area.unfix() # 1 DOF
-    m.fs.hxc.heat_duty.fix(150*1e6)  # in W (obtained from supercritical plant)
+    # m.fs.hxc.heat_duty.fix(150*1e6)  # in W (obtained from supercritical plant)
 
     # The cooler outlet enthaply was fixed during model build to ensure liquid
     # at the inlet of hx_pump and keep the model square. This is now unfixed
@@ -2009,7 +2017,7 @@ def model_analysis(m, solver):
     for i in flow_frac_list:
         for j in pres_frac_list:
             #-------- modified by esrawli
-            # m.fs.plant_power_out[0].fix(472)  # MW
+            # m.fs.plant_power_out[0].fix(400)  # MW
             m.fs.boiler.inlet.flow_mol.fix(i*m.main_flow)  # mol/s
             #--------
             m.fs.boiler.outlet.pressure.fix(j*m.main_steam_pressure)
@@ -2055,14 +2063,14 @@ def model_analysis(m, solver):
                              + m.fs.reheater_1.heat_duty[0]
                              + m.fs.reheater_2.heat_duty[0])
                             * 1e-6))
-            for unit_k in [m.fs.boiler, m.fs.ess_hp_split]:
-                unit_k.report()
-            for k in pyo.RangeSet(m.number_turbines):
-                m.fs.turbine[k].report()
-            for j in pyo.RangeSet(m.number_fwhs):
-                m.fs.fwh[j].report()
-                m.fs.condenser_mix.makeup.display()
-                m.fs.condenser_mix.outlet.display()
+            # for unit_k in [m.fs.boiler, m.fs.ess_hp_split]:
+            #     unit_k.report()
+            # for k in pyo.RangeSet(m.number_turbines):
+            #     m.fs.turbine[k].report()
+            # for j in pyo.RangeSet(m.number_fwhs):
+            #     m.fs.fwh[j].report()
+            #     m.fs.condenser_mix.makeup.display()
+            #     m.fs.condenser_mix.outlet.display()
 
     return m
 
