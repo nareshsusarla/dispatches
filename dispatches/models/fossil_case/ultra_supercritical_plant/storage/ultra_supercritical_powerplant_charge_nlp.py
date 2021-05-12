@@ -92,7 +92,8 @@ from idaes.core.util.misc import svg_tag
 from idaes.generic_models.properties import iapws95
 
 #-------- added by esrawli
-from pyomo.util.infeasible import log_infeasible_constraints
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                   log_close_to_bounds)
 import solarsalt_properties_new
 #--------
 
@@ -1897,7 +1898,7 @@ def build_costing(m, solver=None, optarg={}):
     # pump toal cost constraint
     m.fs.spump_purchase_cost = pyo.Var(
         initialize=100000,
-        bounds=(0, None),
+        bounds=(0, 1e7),
         doc="Salt pump and motor purchase cost in $"
     )
 
@@ -2147,8 +2148,8 @@ def build_costing(m, solver=None, optarg={}):
             m.fs.operating_hours * m.fs.coal_price * \
             (m.fs.boiler.heat_duty[0]
              + m.fs.reheater_1.heat_duty[0]
-             + m.fs.reheater_2.heat_duty[0]
-             - m.fs.q_baseline)
+             + m.fs.reheater_2.heat_duty[0])
+             # - m.fs.q_baseline)
             - (m.fs.cooling_price * m.fs.operating_hours * \
                m.fs.cooler.heat_duty[0])
         )
@@ -2165,7 +2166,7 @@ def build_costing(m, solver=None, optarg={}):
     print("******************** Costing Initialized *************************")
     print('')
     print('')
-
+    # raise Exception("check solve")
     # return solver
 #--------
 
@@ -2593,22 +2594,6 @@ def build_plant_model(initialize_from_file=None, store_initialization=None):
     #-------- added by esrawli
     build_costing(m)
 
-    # Unfix the hp steam split fraction to charge heat exchanger
-    # m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
-
-    # Unfix salt flow to charge heat exchanger, temperature, and area
-    # of charge heat exchanger
-    m.fs.hxc.inlet_2.flow_mass.unfix()   # kg/s
-    m.fs.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
-    m.fs.hxc.outlet_2.temperature.unfix()  # K
-    m.fs.hxc.area.unfix() # 1 DOF
-    # m.fs.hxc.heat_duty.fix(150*1e6)  # in W (obtained from supercritical plant)
-
-    # The cooler outlet enthaply was fixed during model build to ensure liquid
-    # at the inlet of hx_pump and keep the model square. This is now unfixed
-    # and temperature of the outlet is constrained through
-    #  'm.fs.cooler.constraint_cooler_enth2' in the flowsheet
-    m.fs.cooler.outlet.enth_mol[0].unfix() # 1 DOF
 
     add_bounds(m)
     #--------
@@ -2654,86 +2639,103 @@ def model_analysis(m, solver):
 
 #   Solving the flowsheet and check result
 #   At this time one can make chnages to the model for further analysis
-    flow_frac_list = [1.0]
-    pres_frac_list = [1.0]
-    for i in flow_frac_list:
-        for j in pres_frac_list:
-            #-------- modified by esrawli
-            # m.fs.plant_power_out[0].fix(400)  # MW
-            m.fs.boiler.inlet.flow_mol.fix(i*m.main_flow)  # mol/s
-            #--------
-            m.fs.boiler.outlet.pressure.fix(j*m.main_steam_pressure)
-            #-------- added by esrawli
-            dof = degrees_of_freedom(m)
-            print('DOF before solution = ', dof)
-            #--------
-            solver.solve(m,
-                         tee=True,
-                         symbolic_solver_labels=True,
-                         options={
-                             "max_iter": 300,
-                             "halt_on_ampl_error": "yes"}
-            )
-            print("***************** Printing Results ******************")
-            print('')
-            print('Plant Power (MW) =',
-                  pyo.value(m.fs.plant_power_out[0]))
-            print('')
-            print("Objective (cap + op costs in $/y) =",
-                  pyo.value(m.obj))            
-            print("Total capital cost ($/y) =",
-                  pyo.value(m.fs.capital_cost))
-            print("Operating costs ($/y) =",
-                  pyo.value(m.fs.operating_cost))
-            print('')
-            print("Heat exchanger area (m2) =",
-                  pyo.value(m.fs.hxc.area))
-            print("Salt flow (kg/s) =",
-                  pyo.value(m.fs.hxc.inlet_2.flow_mass[0]))
-            print("Salt temperature in (K) =",
-                  pyo.value(m.fs.hxc.inlet_2.temperature[0]))
-            print("Salt temperature out (K) =",
-                  pyo.value(m.fs.hxc.outlet_2.temperature[0]))
-            print('')
-            print("Steam flow to storage (mol/s) =",
-                  pyo.value(m.fs.hxc.inlet_1.flow_mol[0]))
-            print("Water temperature in (K) =",
-                  pyo.value(m.fs.hxc.side_1.properties_in[0].temperature))
-            print("Steam temperature out (K) =",
-                  pyo.value(m.fs.hxc.side_1.properties_out[0].temperature))
-            print('')
-            print("Boiler feed water flow (mol/s):",
-                  pyo.value(m.fs.boiler.inlet.flow_mol[0]))
-            print("Boiler duty (MW_th):",
-                  pyo.value((m.fs.boiler.heat_duty[0]
-                             + m.fs.reheater_1.heat_duty[0]
-                             + m.fs.reheater_2.heat_duty[0])
-                            * 1e-6))
-            print('')
-            print("Salt cost ($/y) =",
-                  pyo.value(m.fs.salt_purchase_cost))
-            print("Tank cost ($/y) =",
-                  pyo.value(m.fs.salt_tank.costing.total_tank_cost / 15))
-            print("Salt pump cost ($/y) =",
-                  pyo.value(m.fs.spump_purchase_cost))
-            print("HX pump cost ($/y) =",
-                  pyo.value(m.fs.hx_pump.costing.purchase_cost / 15))
-            print("Heat exchanger cost ($/y) =",
-                  pyo.value(m.fs.hxc.costing.purchase_cost / 15))
-            print("Cooling duty (MW_th) =",
-                  pyo.value(m.fs.cooler.heat_duty[0] * -1e-6))
+    # flow_frac_list = [1.0]
+    # pres_frac_list = [1.0]
+    # Unfix the hp steam split fraction to charge heat exchanger
+    # m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
 
-            # for unit_k in [m.fs.boiler, m.fs.ess_hp_split,
-            #                m.fs.reheater_1, m.fs.reheater_2,
-            #                m.fs.hxc, m.fs.cooler, m.fs.hx_pump,
-            #                m.fs.recycle_mixer]:
-            #     unit_k.report()
-            # for k in pyo.RangeSet(m.number_turbines):
-            #     m.fs.turbine[k].report()
-            # for j in pyo.RangeSet(m.number_fwhs):
-            #     m.fs.fwh[j].report()
-            #     m.fs.condenser_mix.makeup.display()
-            #     m.fs.condenser_mix.outlet.display()
+    # Unfix salt flow to charge heat exchanger, temperature, and area
+    # of charge heat exchanger
+    m.fs.hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
+    # m.fs.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
+    # m.fs.hxc.outlet_2.temperature.unfix()  # K
+    m.fs.hxc.area.unfix() # 1 DOF
+    m.fs.hxc.heat_duty.fix(100*1e6)  # in W (obtained from supercritical plant)
+
+    # The cooler outlet enthaply was fixed during model build to ensure liquid
+    # at the inlet of hx_pump and keep the model square. This is now unfixed
+    # and temperature of the outlet is constrained through
+    #  'm.fs.cooler.constraint_cooler_enth2' in the flowsheet
+    m.fs.cooler.outlet.enth_mol[0].unfix() # 1 DOF
+    m.fs.plant_power_out[0].fix(400)  # MW
+    # for i in flow_frac_list:
+    #     for j in pres_frac_list:
+    #-------- modified by esrawli
+    m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
+    # m.fs.boiler.inlet.flow_mol.fix(m.main_flow)  # mol/s
+    #--------
+    m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
+    #-------- added by esrawli
+    dof = degrees_of_freedom(m)
+    print('DOF before solution = ', dof)
+    #--------
+    solver.solve(m,
+                 tee=True,
+                 symbolic_solver_labels=True,
+                 options={
+                     "max_iter": 300,
+                     "halt_on_ampl_error": "yes"}
+    )
+    print("***************** Printing Results ******************")
+    print('')
+    print('Plant Power (MW) =',
+          pyo.value(m.fs.plant_power_out[0]))
+    print('')
+    print("Objective (cap + op costs in $/y) =",
+          pyo.value(m.obj))            
+    print("Total capital cost ($/y) =",
+          pyo.value(m.fs.capital_cost))
+    print("Operating costs ($/y) =",
+          pyo.value(m.fs.operating_cost))
+    print('')
+    print("Heat exchanger area (m2) =",
+          pyo.value(m.fs.hxc.area))
+    print("Salt flow (kg/s) =",
+          pyo.value(m.fs.hxc.inlet_2.flow_mass[0]))
+    print("Salt temperature in (K) =",
+          pyo.value(m.fs.hxc.inlet_2.temperature[0]))
+    print("Salt temperature out (K) =",
+          pyo.value(m.fs.hxc.outlet_2.temperature[0]))
+    print('')
+    print("Steam flow to storage (mol/s) =",
+          pyo.value(m.fs.hxc.inlet_1.flow_mol[0]))
+    print("Water temperature in (K) =",
+          pyo.value(m.fs.hxc.side_1.properties_in[0].temperature))
+    print("Steam temperature out (K) =",
+          pyo.value(m.fs.hxc.side_1.properties_out[0].temperature))
+    print('')
+    print("Boiler feed water flow (mol/s):",
+          pyo.value(m.fs.boiler.inlet.flow_mol[0]))
+    print("Boiler duty (MW_th):",
+          pyo.value((m.fs.boiler.heat_duty[0]
+                     + m.fs.reheater_1.heat_duty[0]
+                     + m.fs.reheater_2.heat_duty[0])
+                    * 1e-6))
+    print('')
+    print("Salt cost ($/y) =",
+          pyo.value(m.fs.salt_purchase_cost))
+    print("Tank cost ($/y) =",
+          pyo.value(m.fs.salt_tank.costing.total_tank_cost / 15))
+    print("Salt pump cost ($/y) =",
+          pyo.value(m.fs.spump_purchase_cost))
+    print("HX pump cost ($/y) =",
+          pyo.value(m.fs.hx_pump.costing.purchase_cost / 15))
+    print("Heat exchanger cost ($/y) =",
+          pyo.value(m.fs.hxc.costing.purchase_cost / 15))
+    print("Cooling duty (MW_th) =",
+          pyo.value(m.fs.cooler.heat_duty[0] * -1e-6))
+
+    # for unit_k in [m.fs.boiler, m.fs.ess_hp_split,
+    #                m.fs.reheater_1, m.fs.reheater_2,
+    #                m.fs.hxc, m.fs.cooler, m.fs.hx_pump,
+    #                m.fs.recycle_mixer]:
+    #     unit_k.report()
+    # for k in pyo.RangeSet(m.number_turbines):
+    #     m.fs.turbine[k].report()
+    # for j in pyo.RangeSet(m.number_fwhs):
+    #     m.fs.fwh[j].report()
+    #     m.fs.condenser_mix.makeup.display()
+    #     m.fs.condenser_mix.outlet.display()
 
     return m
 
@@ -2744,5 +2746,6 @@ if __name__ == "__main__":
     # A sample analysis function is called below
     m_result = model_analysis(m, solver)
     # View results in a process flow diagram
-    view_result("pfd_usc_powerplant_nlp_results.svg", m_result)
+    # view_result("pfd_usc_powerplant_nlp_results.svg", m_result)
     log_infeasible_constraints(m)
+    log_close_to_bounds(m)
