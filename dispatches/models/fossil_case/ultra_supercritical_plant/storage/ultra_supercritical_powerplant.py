@@ -1180,7 +1180,24 @@ def add_bounds(m):
         m.fs.fwh[k].outlet_1.flow_mol[:].setub(m.flow_max)
         m.fs.fwh[k].outlet_2.flow_mol[:].setlb(0)
         m.fs.fwh[k].outlet_2.flow_mol[:].setub(m.flow_max)
-        
+
+    #-------- added by esrawli
+    m.fs.condenser_mix.main.flow_mol[:].setlb(0)
+    m.fs.condenser_mix.main.flow_mol[:].setub(m.flow_max) 
+    m.fs.condenser_mix.bfpt.flow_mol[:].setlb(0)
+    m.fs.condenser_mix.bfpt.flow_mol[:].setub(m.flow_max)
+    m.fs.condenser_mix.drain.flow_mol[:].setlb(0)
+    m.fs.condenser_mix.drain.flow_mol[:].setub(m.flow_max)
+    # m.fs.condenser_mix.makeup.flow_mol[:].setlb(0)
+    m.fs.condenser_mix.makeup.flow_mol[:].setub(m.flow_max)
+    m.fs.deaerator.steam.flow_mol[:].setlb(0)
+    m.fs.deaerator.steam.flow_mol[:].setub(m.flow_max)
+    m.fs.deaerator.drain.flow_mol[:].setlb(0)
+    m.fs.deaerator.drain.flow_mol[:].setub(m.flow_max)
+    m.fs.deaerator.feedwater.flow_mol[:].setlb(0)
+    m.fs.deaerator.feedwater.flow_mol[:].setub(m.flow_max)
+    #--------
+
     return m
 
 def view_result(outfile, m):
