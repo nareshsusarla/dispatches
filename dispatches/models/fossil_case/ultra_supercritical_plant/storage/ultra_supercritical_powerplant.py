@@ -1105,7 +1105,7 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     m.fs.fwh_mixer[8].drain.unfix()
 
     _set_port(m.fs.fwh[8].inlet_1, m.fs.fwh_mixer[8].outlet)
-    _set_port(m.fs.fwh[8].inlet_2, m.fs.fwh[7].outlet_2)
+    _set_port(m.fs.fwh[8].inlet_2, m.fs.bfp.outlet)
     m.fs.fwh[8].initialize(outlvl=outlvl, optarg=solver.options)
 
     # fwh9
@@ -1133,7 +1133,7 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     for j in m.set_fwh:
         m.fs.fwh[j].fwh_vfrac_constraint.activate()
 
-    res = solver.solve(m)
+    res = solver.solve(m, symbolic_solver_labels=True)
     print("Model Initialization = ",
           res.solver.termination_condition)
     print("*******************  USC Model Initialized   ********************")

@@ -337,23 +337,23 @@ def _make_constraints(m):
     m.fs.charge.hxc.log_tube_dia_relation = log(m.fs.charge.hxc.tube_dia_relation)    
     @m.fs.charge.hxc.Constraint(m.fs.time)
     def constraint_hxc_ohtc(b, t):
-        return (
-            m.fs.charge.hxc.overall_heat_transfer_coefficient[t]
-            == 1 / ((1 / m.fs.charge.hxc.h_salt)
-                    + ((m.fs.charge.hxc.tube_outer_dia * \
-                        m.fs.charge.hxc.log_tube_dia_relation) / \
-                        (2 * m.fs.charge.hxc.k_steel))
-                    + (m.fs.charge.hxc.tube_dia_relation / m.fs.charge.hxc.h_steam))
-        )
-        #-------- modified by esrawli: equation rewritten to avoid having denominators
         # return (
-        #     m.fs.charge.hxc.overall_heat_transfer_coefficient[t] * \
-        #     (2 * m.fs.charge.hxc.k_steel * m.fs.charge.hxc.h_steam
-        #       + m.fs.charge.hxc.tube_outer_dia * m.fs.charge.hxc.log_tube_dia_relation *\
-        #       m.fs.charge.hxc.h_salt * m.fs.charge.hxc.h_steam
-        #       + m.fs.charge.hxc.tube_dia_relation * m.fs.charge.hxc.h_salt * \
-        #       2 * m.fs.charge.hxc.k_steel)        
-        # ) == 2 * m.fs.charge.hxc.k_steel * m.fs.charge.hxc.h_salt * m.fs.charge.hxc.h_steam
+        #     m.fs.charge.hxc.overall_heat_transfer_coefficient[t]
+        #     == 1 / ((1 / m.fs.charge.hxc.h_salt)
+        #             + ((m.fs.charge.hxc.tube_outer_dia * \
+        #                 m.fs.charge.hxc.log_tube_dia_relation) / \
+        #                 (2 * m.fs.charge.hxc.k_steel))
+        #             + (m.fs.charge.hxc.tube_dia_relation / m.fs.charge.hxc.h_steam))
+        # )
+        #-------- modified by esrawli: equation rewritten to avoid having denominators
+        return (
+            m.fs.charge.hxc.overall_heat_transfer_coefficient[t] * \
+            (2 * m.fs.charge.hxc.k_steel * m.fs.charge.hxc.h_steam
+              + m.fs.charge.hxc.tube_outer_dia * m.fs.charge.hxc.log_tube_dia_relation *\
+              m.fs.charge.hxc.h_salt * m.fs.charge.hxc.h_steam
+              + m.fs.charge.hxc.tube_dia_relation * m.fs.charge.hxc.h_salt * \
+              2 * m.fs.charge.hxc.k_steel)        
+        ) == 2 * m.fs.charge.hxc.k_steel * m.fs.charge.hxc.h_salt * m.fs.charge.hxc.h_steam
 
     # Cooler
     # The temperature at the outlet of the cooler is required to be subcooled
@@ -887,6 +887,7 @@ def build_costing(m, solver=None, optarg={}):
     # Costing for each vessel designed above
     m.fs.charge.salt_tank = pyo.Block()
     m.fs.charge.salt_tank.costing = pyo.Block()
+    # m.fs.charge.salt_tank.costing = pyo.Block()
 
     m.fs.charge.salt_tank.costing.material_cost = pyo.Param(
         initialize=m.data_cost['storage_tank_material'],
@@ -972,7 +973,7 @@ def build_costing(m, solver=None, optarg={}):
             + m.fs.charge.spump_purchase_cost
             + (
                 m.fs.charge.hxc.costing.purchase_cost
-                # + m.fs.charge.hx_pump.costing.purchase_cost
+                + m.fs.charge.hx_pump.costing.purchase_cost
                 + m.fs.charge.no_of_tanks
                 * m.fs.charge.salt_tank.costing.total_tank_cost
                )
@@ -997,14 +998,14 @@ def build_costing(m, solver=None, optarg={}):
     # Operating cost var
     m.fs.charge.operating_cost = pyo.Var(
         initialize=1000000,
-        bounds=(0, None),
+        bounds=(1e-5, None),
         doc="Annualized capital cost")
 
     def op_cost_rule(b):
         return m.fs.charge.operating_cost == (
             m.fs.charge.operating_hours * m.fs.charge.coal_price * \
-            (m.fs.plant_heat_duty[0]
-             - m.fs.q_baseline)
+            (m.fs.plant_heat_duty[0]*1e6
+                - m.fs.q_baseline)
             - (m.fs.charge.cooling_price * m.fs.charge.operating_hours * \
                m.fs.charge.cooler.heat_duty[0])
         )
@@ -1015,7 +1016,7 @@ def build_costing(m, solver=None, optarg={}):
         m.fs.charge.operating_cost,
         m.fs.charge.op_cost_eq)
 
-    res = solver.solve(m, tee=True)
+    res = solver.solve(m, tee=True, symbolic_solver_labels=True)
     print("Cost Initialization = ",
           res.solver.termination_condition)
     print("******************** Costing Initialized *************************")
@@ -1127,7 +1128,7 @@ def add_bounds(m):
     m.fs.charge.cooler.heat_duty.setub(0)
 
     for split in [m.fs.charge.ess_hp_split]:
-        split.to_hxc.flow_mol[:].setlb(0)
+        split.to_hxc.flow_mol[:].setlb(0.1)
         split.to_hxc.flow_mol[:].setub(0.2 * m.flow_max)
         split.to_hp.flow_mol[:].setlb(0)
         split.to_hp.flow_mol[:].setub(m.flow_max)
@@ -1144,17 +1145,17 @@ def add_bounds(m):
         mix.outlet.flow_mol.setlb(0) # mol/s
         mix.outlet.flow_mol.setub(m.flow_max) # mol/s        
 
-    # Cost-related terms
-    m.fs.charge.salt_purchase_cost.setlb(0)  # no units
-    m.fs.charge.salt_purchase_cost.setub(1e7)  # no units
+    # # Cost-related terms
+    # m.fs.charge.salt_purchase_cost.setlb(0)  # no units
+    # m.fs.charge.salt_purchase_cost.setub(1e7)  # no units
 
-    m.fs.charge.spump_purchase_cost.setlb(0)  # no units
-    m.fs.charge.spump_purchase_cost.setub(1e7)  # no units
+    # m.fs.charge.spump_purchase_cost.setlb(0)  # no units
+    # m.fs.charge.spump_purchase_cost.setub(1e7)  # no units
 
-    m.fs.charge.hx_pump.costing.purchase_cost.setlb(0)  # no units
-    m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)  # no units
+    # m.fs.charge.hx_pump.costing.purchase_cost.setlb(0)  # no units
+    # m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)  # no units
 
-    m.fs.charge.capital_cost.setlb(0)  # no units
+    # m.fs.charge.capital_cost.setlb(0)  # no units
     
     # esrawli - "Restoration Failed!" error when uncommented
     # m.fs.charge.capital_cost.setub(1e7)  
@@ -1179,6 +1180,7 @@ def main(m_usc):
     initialize(m, solver=solver)
     assert degrees_of_freedom(m) == 0
 
+    # raise Exception("costing")
     build_costing(m, solver=solver)
 
     add_bounds(m)
@@ -1201,28 +1203,39 @@ def model_analysis(m, solver):
     m.fs.charge.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
     # m.fs.charge.hxc.outlet_2.temperature.unfix()  # K
     m.fs.charge.hxc.area.unfix() # 1 DOF
-    # m.fs.charge.hxc.heat_duty.fix(150*1e6)  # in W
+    # m.fs.charge.hxc.heat_duty.fix(50*1e6)  # in W
     m.fs.charge.cooler.outlet.enth_mol[0].unfix() # 1 DOF
 
     # adding a dummy objective for the simulation model
     m.obj = Objective(expr=m.fs.charge.capital_cost
                       + m.fs.charge.operating_cost)
 
+    # m.fs.plant_power_out.fix(400)
+
+    # m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
     m.fs.boiler.inlet.flow_mol.fix(m.main_flow)  # mol/s
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
     print('DOF before solution = ', degrees_of_freedom(m))
     solver.solve(m,
-                 tee=True,
-                 symbolic_solver_labels=True,
-                 options={
-                     "max_iter": 300,
-                     "halt_on_ampl_error": "yes"}
+                  tee=True,
+                  symbolic_solver_labels=True,
+                  options={
+                      "max_iter": 300,
+                      "halt_on_ampl_error": "yes"}
     )
     print("***************** Printing Results ******************")
     print('')
     print("Obj =",
           value(m.obj))            
+    print('')
+    print("Objective (cap + op costs in $/y) =",
+          pyo.value(m.obj))            
+    print("Total capital cost ($/y) =",
+          pyo.value(m.fs.charge.capital_cost))
+    print("Operating costs ($/y) =",
+          pyo.value(m.fs.charge.operating_cost))
+    print('')
     print("Heat exchanger area (m2) =",
           value(m.fs.charge.hxc.area))
     print('')
@@ -1247,9 +1260,23 @@ def model_analysis(m, solver):
           value(m.fs.boiler.inlet.flow_mol[0]))
     print("Boiler duty (MW_th):",
           value((m.fs.boiler.heat_duty[0]
-                     + m.fs.reheater[1].heat_duty[0]
-                     + m.fs.reheater[2].heat_duty[0])
+                      + m.fs.reheater[1].heat_duty[0]
+                      + m.fs.reheater[2].heat_duty[0])
                     * 1e-6))
+    print('')
+    print("Salt cost ($/y) =",
+          pyo.value(m.fs.charge.salt_purchase_cost))
+    print("Tank cost ($/y) =",
+          pyo.value(m.fs.charge.salt_tank.costing.total_tank_cost / 5))
+    print("Salt pump cost ($/y) =",
+          pyo.value(m.fs.charge.spump_purchase_cost))
+    print("HX pump cost ($/y) =",
+          pyo.value(m.fs.charge.hx_pump.costing.purchase_cost / 5))
+    print("Heat exchanger cost ($/y) =",
+          pyo.value(m.fs.charge.hxc.costing.purchase_cost / 5))
+    print("Cooling duty (MW_th) =",
+          pyo.value(m.fs.charge.cooler.heat_duty[0] * -1e-6))
+
     # for unit_k in [m.fs.boiler, m.fs.ess_hp_split]:
     #     unit_k.report()
     # for k in pyo.RangeSet(m.number_turbines):
@@ -1266,11 +1293,11 @@ if __name__ == "__main__":
     m_usc = usc.build_plant_model()
     solver = usc.initialize(m_usc)
 
-    m, solver = main(m_usc)
+    m_chg, solver = main(m_usc)
 
-    # User can import the model from build_plant_model for analysis
-    # A sample analysis function is called below
-    m_result = model_analysis(m, solver)
+    m = model_analysis(m_chg, solver)
     # View results in a process flow diagram
     # view_result("pfd_usc_powerplant_nlp_results.svg", m_result)
+
     log_infeasible_constraints(m)
+    log_close_to_bounds(m)
