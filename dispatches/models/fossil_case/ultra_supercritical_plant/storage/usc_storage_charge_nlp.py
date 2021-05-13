@@ -567,10 +567,12 @@ def build_costing(m, solver=None, optarg={}):
     #--------------------------------------------
     m.CE_index = 607.5  # Chemical engineering cost index for 2019
 
+    # q_baseline_charge corresponds to heat duty of a plant with no storage
+    # and producing 400 MW power
     m.data_cost = {
         'coal_price': 2.11e-9,
         'cooling_price': 3.3e-9,
-        'q_baseline_charge': 917930546.8932868,
+        'q_baseline_charge': 838565942.4732262,
         'solar_salt_price': 0.49,
         'storage_tank_material': 3.5,
         'storage_tank_insulation': 235,
@@ -1195,25 +1197,25 @@ def model_analysis(m, solver):
     # (This section is deactived for the simulation of square model)
     ###########################################################################
     # Unfix the hp steam split fraction to charge heat exchanger
-    # m.fs.charge.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+    m.fs.charge.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
 
     # Unfix salt flow to charge heat exchanger, temperature, and area
     # of charge heat exchanger
     m.fs.charge.hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
-    m.fs.charge.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
-    # m.fs.charge.hxc.outlet_2.temperature.unfix()  # K
+    # m.fs.charge.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
+
     m.fs.charge.hxc.area.unfix() # 1 DOF
-    # m.fs.charge.hxc.heat_duty.fix(50*1e6)  # in W
+    m.fs.charge.hxc.heat_duty.fix(70*1e6)  # in W
     m.fs.charge.cooler.outlet.enth_mol[0].unfix() # 1 DOF
 
     # adding a dummy objective for the simulation model
     m.obj = Objective(expr=m.fs.charge.capital_cost
                       + m.fs.charge.operating_cost)
 
-    # m.fs.plant_power_out.fix(400)
+    m.fs.plant_power_out.fix(400)
 
-    # m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
-    m.fs.boiler.inlet.flow_mol.fix(m.main_flow)  # mol/s
+    m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
+    # m.fs.boiler.inlet.flow_mol.fix(m.main_flow)  # mol/s
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
     print('DOF before solution = ', degrees_of_freedom(m))
