@@ -1158,7 +1158,7 @@ def view_result(outfile, m):
 
 
     original_svg_file = os.path.join(
-        this_file_dir(), "pfd_ultra_supercritical_pc_nlp.svg")
+        this_file_dir(), "pfd_ultra_supercritical_pc_gdp.svg")
     with open(original_svg_file, "r") as f:
         svg_tag(tags, f, outfile=outfile)
 
@@ -1402,7 +1402,7 @@ if __name__ == "__main__":
 
     m = model_analysis(m_chg, solver)
     # View results in a process flow diagram
-    # view_result("pfd_usc_powerplant_nlp_results.svg", m_result)
+    # view_result("pfd_usc_powerplant_gdp_results.svg", m_result)
 
     log_infeasible_constraints(m)
     log_close_to_bounds(m)
