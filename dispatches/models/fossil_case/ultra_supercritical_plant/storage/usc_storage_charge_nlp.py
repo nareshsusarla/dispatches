@@ -1113,19 +1113,56 @@ def view_result(outfile, m):
         svg_tag(tags, f, outfile=outfile)
 
 def add_bounds(m):
+    """
+    Adding bounds to all units in the charge heat exchanger section
+    of the flowsheet
+
+    The units for temperature, pressure, etc. are given below:
+    Temperature in K
+    Pressure in Pa
+    Flow in mol/s
+    Massic flow in kg/s
+    Heat duty and heat in W
+    """
     
-    m.flow_max = m.main_flow * 1.2 # number from Naresh
+    m.flow_max = m.main_flow * 1.2 # in mol/s
     m.salt_flow_max = 1000 # in kg/s
 
     # Charge heat exchanger section
-    m.fs.charge.hxc.inlet_1.flow_mol.setlb(0)  # mol/s
-    m.fs.charge.hxc.inlet_1.flow_mol.setub(0.2 * m.flow_max)  # mol/s
-    m.fs.charge.hxc.inlet_2.flow_mass.setlb(0)  # kg/s
-    m.fs.charge.hxc.inlet_2.flow_mass.setub(m.salt_flow_max)  # kg/s
+    m.fs.charge.hxc.inlet_1.flow_mol.setlb(0)  
+    m.fs.charge.hxc.inlet_1.flow_mol.setub(0.2 * m.flow_max)  
+    m.fs.charge.hxc.inlet_2.flow_mass.setlb(0)  
+    m.fs.charge.hxc.inlet_2.flow_mass.setub(m.salt_flow_max)  
+    #-------- added by esrawli
+    m.fs.charge.hxc.outlet_1.flow_mol.setlb(0)  
+    m.fs.charge.hxc.outlet_1.flow_mol.setub(0.2 * m.flow_max)  
+    m.fs.charge.hxc.outlet_2.flow_mass.setlb(0)  
+    m.fs.charge.hxc.outlet_2.flow_mass.setub(m.salt_flow_max)  
+    m.fs.charge.hxc.inlet_2.pressure.setlb(101320)  
+    m.fs.charge.hxc.inlet_2.pressure.setub(101330)  
+    m.fs.charge.hxc.outlet_2.pressure.setlb(101320) 
+    m.fs.charge.hxc.outlet_2.pressure.setub(101330) 
+    m.fs.charge.hxc.heat_duty.setlb(0)  
+    m.fs.charge.hxc.heat_duty.setub(200e6)  
+    m.fs.charge.hxc.shell.heat.setlb(-200e6)
+    m.fs.charge.hxc.shell.heat.setub(0)  
+    m.fs.charge.hxc.tube.heat.setlb(0)  
+    m.fs.charge.hxc.tube.heat.setub(200e6) 
+    m.fs.charge.hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
+    m.fs.charge.hxc.tube.properties_in[0].\
+        enthalpy_mass.setub(1.5e6)
+    m.fs.charge.hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
+    m.fs.charge.hxc.tube.properties_out[0].\
+        enthalpy_mass.setub(1.5e6)
+    m.fs.charge.hxc.overall_heat_transfer_coefficient.setlb(0)
+    m.fs.charge.hxc.overall_heat_transfer_coefficient.setub(10000)
+    m.fs.charge.hxc.area.setlb(0)
+    m.fs.charge.hxc.area.setub(5000)  # TODO: Check this value
+    #--------
     m.fs.charge.hxc.delta_temperature_out.setlb(10)  # K
     m.fs.charge.hxc.delta_temperature_in.setlb(10)  # K
-    # m.fs.charge.hxc.delta_temperature_out.setub(80)  # K
-    # m.fs.charge.hxc.delta_temperature_in.setub(80)  # K
+    # m.fs.charge.hxc.delta_temperature_out.setub(80)  
+    # m.fs.charge.hxc.delta_temperature_in.setub(80) 
 
     m.fs.charge.cooler.heat_duty.setub(0)
 
@@ -1140,27 +1177,24 @@ def add_bounds(m):
         split.split_fraction[0.0, "to_hp"].setub(1)
 
     for mix in [m.fs.charge.recycle_mixer]:
-        mix.from_bfw_out.flow_mol.setlb(0) # mol/s
-        mix.from_bfw_out.flow_mol.setub(m.flow_max) # mol/s
-        mix.from_hx_pump.flow_mol.setlb(0) # mol/s
-        mix.from_hx_pump.flow_mol.setub(0.2* m.flow_max) # mol/s
-        mix.outlet.flow_mol.setlb(0) # mol/s
-        mix.outlet.flow_mol.setub(m.flow_max) # mol/s        
+        mix.from_bfw_out.flow_mol.setlb(0) 
+        mix.from_bfw_out.flow_mol.setub(m.flow_max) 
+        mix.from_hx_pump.flow_mol.setlb(0) 
+        mix.from_hx_pump.flow_mol.setub(0.2* m.flow_max) 
+        mix.outlet.flow_mol.setlb(0) 
+        mix.outlet.flow_mol.setub(m.flow_max) 
 
-    # # Cost-related terms
-    # m.fs.charge.salt_purchase_cost.setlb(0)  # no units
-    # m.fs.charge.salt_purchase_cost.setub(1e7)  # no units
+    # Cost-related terms
+    m.fs.charge.capital_cost.setlb(0)  # no units
+    m.fs.charge.capital_cost.setub(1e7)
 
-    # m.fs.charge.spump_purchase_cost.setlb(0)  # no units
-    # m.fs.charge.spump_purchase_cost.setub(1e7)  # no units
+    m.fs.charge.salt_purchase_cost.setlb(0)  
+    m.fs.charge.salt_purchase_cost.setub(1e7)
+    m.fs.charge.spump_purchase_cost.setlb(0)  
+    m.fs.charge.spump_purchase_cost.setub(1e7)
+    m.fs.charge.hx_pump.costing.purchase_cost.setlb(0) 
+    m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)
 
-    # m.fs.charge.hx_pump.costing.purchase_cost.setlb(0)  # no units
-    # m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)  # no units
-
-    # m.fs.charge.capital_cost.setlb(0)  # no units
-    
-    # esrawli - "Restoration Failed!" error when uncommented
-    # m.fs.charge.capital_cost.setub(1e7)  
 
     return m
 
@@ -1279,7 +1313,8 @@ def model_analysis(m, solver):
     print("Cooling duty (MW_th) =",
           pyo.value(m.fs.charge.cooler.heat_duty[0] * -1e-6))
 
-    # for unit_k in [m.fs.boiler, m.fs.ess_hp_split]:
+    # for unit_k in [m.fs.boiler, m.fs.charge.ess_hp_split,
+    #                m.fs.charge.hxc]:
     #     unit_k.report()
     # for k in pyo.RangeSet(m.number_turbines):
     #     m.fs.turbine[k].report()
