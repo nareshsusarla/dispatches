@@ -48,6 +48,7 @@ from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.common.fileutils import this_file_dir
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
+from pyomo.gdp import Disjunct, Disjunction
 
 # Import IDAES libraries
 from idaes.core import FlowsheetBlock, MaterialBalanceType
@@ -109,7 +110,7 @@ def create_charge_model(m):
     # Create a block to add charge storage model
     m.fs.charge = Block()
     # Add molten salt properties (Solar salt)
-    m.fs.salt_properties = solarsalt_properties_new.SolarsaltParameterBlock()
+    m.fs.solar_salt_properties = solarsalt_properties_new.SolarsaltParameterBlock()
     m.fs.hitec_salt_properties = hitecsalt_properties.HitecsaltParameterBlock()
 
     ###########################################################################
@@ -179,6 +180,7 @@ def create_charge_model(m):
         }
     )
 
+    #-------- added by esrawli
     ###########################################################################
     #  Declaring the disjuncts 
     ###########################################################################
@@ -199,7 +201,7 @@ def create_charge_model(m):
         source=m.fs.charge.hitec_salt_disjunct.hxc.outlet_1,
         destination=m.fs.charge.cooler.inlet
     )
-
+    #--------
 
     ###########################################################################
     #  Create the stream Arcs and return the model                            #
@@ -887,23 +889,41 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     #-------- added by esrawli
     #  Connector initialization
     _set_port(m.fs.charge.connector.inlet, m.fs.charge.ess_hp_split.to_hxc)
-    # m.fs.charge.connector.inlet.flow_mol.fix()
-    # m.fs.charge.connector.inlet.enth_mol.fix()
-    # m.fs.charge.connector.inlet.pressure.fix()
+    m.fs.charge.connector.inlet.flow_mol.fix()
+    m.fs.charge.connector.inlet.enth_mol.fix()
+    m.fs.charge.connector.inlet.pressure.fix()
     m.fs.charge.connector.initialize(outlvl=outlvl, optarg=solver.options)
     #--------
     
-    # Charge heat exchanger
     #-------- modified by esrawli
-    # _set_port(m.fs.charge.hxc.inlet_1, m.fs.charge.ess_hp_split.to_hxc)
-    # The charge heat exchanger is connected to the connector instead of
-    # the hp splitter
-    _set_port(m.fs.charge.hxc.inlet_1, m.fs.charge.connector.outlet)
-    m.fs.charge.hxc.initialize(outlvl=outlvl, optarg=solver.options)
+    # Solar salt charge heat exchanger
+    # We fix the charge steam inlet during initialization as note that
+    # arcs were removed and replaced with disjuncts with equality constraints
+    # Note that these should be unfixed during optimization
+    _set_port(m.fs.charge.solar_salt_disjunct.hxc.inlet_1,
+              m.fs.charge.connector.outlet)
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol.fix()
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_1.enth_mol.fix()
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_1.pressure.fix()
+    m.fs.charge.solar_salt_disjunct.hxc.initialize(outlvl=outlvl,
+                                                   optarg=solver.options)
+
+    #  Hitec salt charge heat exchanger initialization
+    # We fix the charge steam inlet during initialization as note that
+    # arcs were removed and replaced with disjuncts with equality constraints
+    # Note that this should be unfixed during optimization
+    _set_port(m.fs.charge.hitec_salt_disjunct.hxc.inlet_1,
+              m.fs.charge.connector.outlet)
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol.fix()
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.enth_mol.fix()
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.pressure.fix()
+    m.fs.charge.hitec_salt_disjunct.hxc.initialize(
+        outlvl=outlvl, optarg=solver.options)
     #--------
     
     #  Cooler
-    _set_port(m.fs.charge.cooler.inlet,  m.fs.charge.hxc.outlet_1)
+    _set_port(m.fs.charge.cooler.inlet,
+              m.fs.charge.solar_salt_disjunct.hxc.outlet_1)
     m.fs.charge.cooler.initialize(outlvl=outlvl, optarg=solver.options)
     
     # HX pump
