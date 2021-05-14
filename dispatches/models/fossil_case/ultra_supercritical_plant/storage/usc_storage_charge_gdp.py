@@ -239,6 +239,492 @@ def _make_constraints(m):
     def recyclemixer_pressure_constraint(b, t):
         return b.from_bfw_out_state[t].pressure == b.mixed_state[t].pressure
 
+#-------- added by esrawli
+def add_disjunction(m):
+    """
+    This function adds the disjunction to the model
+    """
+
+    m.fs.salt_disjunction = Disjunction(
+        expr=[m.fs.charge.solar_salt_disjunct,
+              m.fs.charge.hitec_salt_disjunct])
+
+    # expand arcs within the disjuncts
+    expand_arcs.obj_iter_kwds['descend_into'] = (Block, Disjunct)
+    TransformationFactory("network.expand_arcs").apply_to(m.fs.charge)
+
+    return m
+
+def solar_salt_disjunct_equations(disj):
+    """
+    Block of equations for disjunct 1 for the selection of 
+    solar salt as the storage medium in disjunction 1
+    """
+
+    m = disj.model()
+
+    m.fs.charge.solar_salt_disjunct.hxc = HeatExchanger(
+        default={
+            "delta_temperature_callback": delta_temperature_underwood_callback,
+            "shell": {
+                "property_package": m.fs.prop_water
+            },
+            "tube": {
+                "property_package": m.fs.solar_salt_properties
+            }
+        }
+    )
+
+    # HTC calculations for solar salt heat exchanger
+    # setting the scaling factor for area = 1
+    iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.area, 1e-2)
+    # setting the scaling factor for overall_heat_transfer_coefficient = 1
+    iscale.set_scaling_factor(
+        m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
+    iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.tube.heat, 1e-6)
+
+
+
+    m.fs.charge.data_hxc_solar = {
+        'tube_thickness': 0.004,
+        'tube_inner_dia': 0.032,
+        'tube_outer_dia':0.036,
+        'k_steel': 21.5,
+        'number_tubes': 20,
+        'shell_inner_dia': 1
+    }
+
+    # Data needed to compute overall heat transfer coefficient for the
+    # charge heat exchanger using the Sieder-Tate Correlation
+    # Parameters for tube diameter and thickness assumed from the data
+    # in (2017) He et al., Energy Procedia 105, 980-985
+    m.fs.charge.solar_salt_disjunct.tube_thickness = Param(
+        initialize=m.fs.charge.data_hxc_solar['tube_thickness'],
+        doc='Tube thickness [m]'
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia = Param(
+        initialize=m.fs.charge.data_hxc_solar['tube_inner_dia'],
+        doc='Tube inner diameter [m]'
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia = Param(
+        initialize=m.fs.charge.data_hxc_solar['tube_outer_dia'],
+        doc='Tube outer diameter [m]'
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.k_steel = Param(
+        initialize=m.fs.charge.data_hxc_solar['k_steel'],
+        doc='Thermal conductivity of steel [W/mK]'
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.n_tubes = Param(
+        initialize=m.fs.charge.data_hxc_solar['number_tubes'],
+        doc='Number of tubes'
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.shell_inner_dia = Param(
+        initialize=m.fs.charge.data_hxc_solar['shell_inner_dia'],
+        doc='Shell inner diameter [m]'
+    )
+
+    # Salt side: Reynolds number, Prandtl number, and Nusselt number
+    m.fs.charge.solar_salt_disjunct.hxc.tube_cs_area = Expression(
+        expr=(pi / 4) * \
+        (m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia ** 2),
+        doc="Tube cross sectional area"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.tube_out_area = Expression(
+        expr=(pi / 4) * \
+        (m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia ** 2),
+        doc="Tube cross sectional area including thickness [m2]"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.shell_eff_area = Expression(
+        expr=(
+            (pi / 4) * \
+            (m.fs.charge.solar_salt_disjunct.hxc.shell_inner_dia ** 2)
+            - m.fs.charge.solar_salt_disjunct.hxc.n_tubes
+            * m.fs.charge.solar_salt_disjunct.hxc.tube_out_area),
+        doc="Effective shell cross sectional area [m2]"
+    )
+
+    # Salt (shell) side: Reynolds number, Prandtl number, and Nusselt number
+    m.fs.charge.solar_salt_disjunct.hxc.salt_reynolds_number = Expression(
+        expr=(
+            (m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0] * \
+             m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia) / \
+            (m.fs.charge.solar_salt_disjunct.hxc.shell_eff_area * \
+             m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"])
+        ),
+        doc="Salt Reynolds Number"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_number = Expression(
+        expr=(
+            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].cp_specific_heat["Liq"] * \
+            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"] / \
+            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_wall = Expression(
+        expr=(
+            (m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_out[0].cp_specific_heat["Liq"] * \
+             m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_out[0].dynamic_viscosity["Liq"]) / \
+            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_out[0].thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number at wall"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.salt_nusselt_number = Expression(
+        expr=(
+            0.35 * (m.fs.charge.solar_salt_disjunct.hxc.salt_reynolds_number**0.6) * \
+            (m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_number**0.4) * \
+            ((m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_number / \
+              m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_wall)**0.25) * (2**0.2)
+        ),
+        doc="Salt Nusslet Number from 2019, App Ener (233-234), 126"
+    )
+
+    # Steam side: Reynolds number, Prandtl number, and Nusselt number
+    m.fs.charge.solar_salt_disjunct.hxc.steam_reynolds_number = Expression(
+        expr=(
+           m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol[0] * \
+            m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].mw * \
+            m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia / \
+            (m.fs.charge.solar_salt_disjunct.hxc.tube_cs_area * \
+             m.fs.charge.solar_salt_disjunct.hxc.n_tubes * \
+             m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].visc_d_phase["Vap"])
+        ),
+        doc="Steam Reynolds Number"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.steam_prandtl_number = Expression(
+        expr=(
+            (m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].cp_mol / \
+             m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].mw) * \
+            m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].visc_d_phase["Vap"] / \
+            m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
+        ),
+        doc="Steam Prandtl Number"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.steam_nusselt_number = Expression(
+        expr=(
+            0.023 * (m.fs.charge.solar_salt_disjunct.hxc.steam_reynolds_number**0.8) * \
+            (m.fs.charge.solar_salt_disjunct.hxc.steam_prandtl_number**(0.33)) * \
+            ((m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].visc_d_phase["Vap"] / \
+              m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
+        ),
+        doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
+    )
+
+    # Salt and steam side heat transfer coefficients
+    m.fs.charge.solar_salt_disjunct.hxc.h_salt = Expression(
+        expr=(
+            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].thermal_conductivity["Liq"] * \
+            m.fs.charge.solar_salt_disjunct.hxc.salt_nusselt_number / m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia
+        ),
+        doc="Salt side convective heat transfer coefficient [W/mK]"
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.h_steam = Expression(
+        expr=(
+            m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].therm_cond_phase["Vap"] * \
+            m.fs.charge.solar_salt_disjunct.hxc.steam_nusselt_number / \
+            m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia
+        ),
+        doc="Steam side convective heat transfer coefficient [W/mK]"
+    )
+
+    # Computing overall heat transfer coefficient
+    # OHTC constraint is rewritten to avoid having a denominator in the equation
+    # OHTC = _________________________________1___________________________________
+    #        __1__  + _Tout_dia_*_log(Tout_dia/Tin_dia)_  + __(Tout_dia/Tin_dia)__
+    #        Hsalt              2 k_steel                           Hsteam
+    #
+    m.fs.charge.solar_salt_disjunct.hxc.tube_dia_ratio = (
+        m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia / \
+        m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia
+    )
+    m.fs.charge.solar_salt_disjunct.hxc.log_tube_dia_ratio = log(
+        m.fs.charge.solar_salt_disjunct.hxc.tube_dia_ratio)    
+    @m.fs.charge.solar_salt_disjunct.hxc.Constraint(m.fs.time)
+    def constraint_hxc_ohtc(b, t):
+        # return (
+        #     m.fs.charge.hxc.overall_heat_transfer_coefficient[t]
+        #     == 1 / ((1 / m.fs.charge.hxc.h_salt)
+        #             + ((m.fs.charge.hxc.tube_outer_dia * \
+        #                 m.fs.charge.hxc.log_tube_dia_ratio) / \
+        #                 (2 * m.fs.charge.hxc.k_steel))
+        #             + (m.fs.charge.hxc.tube_dia_ratio / m.fs.charge.hxc.h_steam))
+        # )
+        #-------- modified by esrawli: equation rewritten to avoid having denominators
+        return (
+            m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient[t] * \
+            (2 * m.fs.charge.solar_salt_disjunct.hxc.k_steel * \
+             m.fs.charge.solar_salt_disjunct.hxc.h_steam
+              + m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia * \
+             m.fs.charge.solar_salt_disjunct.hxc.log_tube_dia_ratio *\
+              m.fs.charge.solar_salt_disjunct.hxc.h_salt * \
+             m.fs.charge.solar_salt_disjunct.hxc.h_steam
+              + m.fs.charge.solar_salt_disjunct.hxc.tube_dia_ratio * \
+             m.fs.charge.solar_salt_disjunct.hxc.h_salt * \
+              2 * m.fs.charge.solar_salt_disjunct.hxc.k_steel)        
+        ) == (2 * m.fs.charge.solar_salt_disjunct.hxc.k_steel * \
+              m.fs.charge.solar_salt_disjunct.hxc.h_salt * \
+              m.fs.charge.solar_salt_disjunct.hxc.h_steam
+        )
+
+    # Arc to connect heat exchanger inlet to the connector outlet
+    m.fs.charge.solar_salt_disjunct.connector_to_hxc = Arc(
+        source=m.fs.charge.connector.outlet,
+        destination=m.fs.charge.solar_salt_disjunct.hxc.inlet_1
+    )
+
+
+def hitec_salt_disjunct_equations(disj):
+    """
+    Block of equations for disjunct 2 for the selection of 
+    hitec salt as the storage medium in disjunction 1
+    """
+
+    m = disj.model()
+
+
+    # Charge heat exchanger for storage using hitec salt
+    m.fs.charge.hitec_salt_disjunct.hxc = HeatExchanger(
+        default={
+            "delta_temperature_callback": delta_temperature_underwood_callback,
+            "shell": {
+                "property_package": m.fs.prop_water
+            },
+            "tube": {
+                "property_package": m.fs.hitec_salt_properties
+            }
+        }
+    )
+
+    # HTC calculations for solar salt heat exchanger
+    # setting the scaling factor for area = 1
+    iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
+    # setting the scaling factor for overall_heat_transfer_coefficient = 1
+    iscale.set_scaling_factor(
+        m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
+    iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.tube.heat, 1e-6)
+
+
+    m.fs.charge.data_hxc_hitec = {
+        'tube_thickness': 0.004,
+        'tube_inner_dia': 0.032,
+        'tube_outer_dia':0.036,
+        'k_steel': 21.5,
+        'number_tubes': 20,
+        'shell_inner_dia': 1
+    }
+
+    # Computing overall heat transfer coefficient for the heat exchanger
+    # using the Sieder-Tate Correlation
+    # Parameters for tube diameter and thickness assumed from the data
+    # in (2017) He et al., Energy Procedia 105, 980-985
+    m.fs.charge.hitec_salt_disjunct.hxc.tube_thickness = Param(
+        initialize=m.fs.charge.data_hxc_hitec['tube_thickness'],
+        doc='Tube thickness [m]'
+    )
+    m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia = Param(
+        initialize=m.fs.charge.data_hxc_hitec['tube_inner_dia'],
+        doc='Tube inner diameter [m]'
+    )
+    m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia = Param(
+        initialize=m.fs.charge.data_hxc_hitec['tube_outer_dia'],
+        doc='Tube outer diameter [m]'
+    )
+    # https://www.theworldmaterial.com/thermal-conductivity-of-stainless-steel/
+    m.fs.charge.hitec_salt_disjunct.hxc.k_steel = Param(
+        initialize=m.fs.charge.data_hxc_hitec['k_steel'],
+        doc='Thermal conductivity of steel [W/mK]'
+    )
+    m.fs.charge.hitec_salt_disjunct.hxc.n_tubes = Param(
+        initialize=m.fs.charge.data_hxc_hitec['number_tubes'],
+        doc='Number of tubes '
+    )
+    m.fs.charge.hitec_salt_disjunct.hxc.shell_inner_dia = Param(
+        initialize=m.fs.charge.data_hxc_hitec['shell_inner_dia'],
+        doc='Shell inner diameter [m]'
+    )
+    
+    m.fs.charge.hitec_salt_disjunct.hxc.tube_cs_area = Expression(
+        expr=(pi / 4) * \
+        (m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia ** 2),
+        doc="Tube inside cross sectional area [m2]"
+    )
+    m.fs.charge.hitec_salt_disjunct.hxc.tube_out_area = Expression(
+        expr=(pi / 4) * \
+        (m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia ** 2),
+        doc="Tube cross sectional area including thickness [m2]"
+    )
+    m.fs.charge.hitec_salt_disjunct.hxc.shell_eff_area = Expression(
+        expr=(
+            (pi / 4) * \
+            (m.fs.charge.hitec_salt_disjunct.hxc.shell_inner_dia ** 2)
+            - m.fs.charge.hitec_salt_disjunct.hxc.n_tubes * \
+            m.fs.charge.hitec_salt_disjunct.hxc.tube_out_area),
+        doc="Effective shell cross sectional area [m2]"
+    )
+    
+    # Salt side: Reynolds number, Prandtl number, and Nusselt number
+    # Reynolds number
+    m.fs.charge.hitec_salt_disjunct.hxc.salt_reynolds_number = Expression(
+        expr=(
+            m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0] * \
+            m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia / \
+            (m.fs.charge.hitec_salt_disjunct.hxc.shell_eff_area * \
+             m.fs.charge.hitec_salt_disjunct.hxc.side_2.
+             properties_in[0].dynamic_viscosity["Liq"])
+        ),
+        doc="Salt Reynolds Number"
+    )
+    
+    # Prandtl number
+    m.fs.charge.hitec_salt_disjunct.hxc.salt_prandtl_number = Expression(
+        expr=(
+            m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
+            cp_specific_heat["Liq"]
+            * m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
+            dynamic_viscosity["Liq"]
+            / m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
+            thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number"
+    )
+    
+    # Prandtl number wall
+    m.fs.charge.hitec_salt_disjunct.hxc.salt_prandtl_wall = Expression(
+        expr=(
+            m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_out[0].
+            cp_specific_heat["Liq"]
+            * m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_out[0].
+            dynamic_viscosity["Liq"]
+            / m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_out[0].
+            thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number"
+    )
+    
+    # Nusselt number
+    m.fs.charge.hitec_salt_disjunct.hxc.salt_nusselt_number = Expression(
+        expr=(
+            1.61 * ((m.fs.charge.hitec_salt_disjunct.hxc.salt_reynolds_number
+                    * m.fs.charge.hitec_salt_disjunct.hxc.salt_prandtl_number
+                    * 0.009)**0.63)
+            * ((m.fs.charge.hitec_salt_disjunct.hxc.side_2.
+                properties_in[0].dynamic_viscosity["Liq"]
+                /m.fs.charge.hitec_salt_disjunct.hxc.side_2.
+                properties_out[0].dynamic_viscosity["Liq"])
+                **0.25)
+        ),
+        doc="Salt Nusslet Number from 2014, He et al, Exp Therm Fl Sci, 59, 9"
+    )
+    
+    # Steam side: Reynolds number, Prandtl number, and Nusselt number
+    # Reynolds number
+    m.fs.charge.hitec_salt_disjunct.hxc.steam_reynolds_number = Expression(
+        expr=(
+           m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol[0]
+            * m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_in[0].mw
+            * m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia
+            / (m.fs.charge.hitec_salt_disjunct.hxc.tube_cs_area
+               * m.fs.charge.hitec_salt_disjunct.hxc.n_tubes
+               * m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_in[0].
+               visc_d_phase["Vap"])
+        ),
+        doc="Steam Reynolds Number"
+    )
+    
+    # Prandtl number
+    m.fs.charge.hitec_salt_disjunct.hxc.steam_prandtl_number = Expression(
+        expr=(
+            (m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_in[0].cp_mol
+             / m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_in[0].mw)
+            * m.fs.charge.hitec_salt_disjunct.hxc.
+            side_1.properties_in[0].visc_d_phase["Vap"]
+            / m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_in[0].
+            therm_cond_phase["Vap"]
+        ),
+        doc="Steam Prandtl Number"
+    )
+    
+    # Nusselt number
+    m.fs.charge.hitec_salt_disjunct.hxc.steam_nusselt_number = Expression(
+        expr=(
+            0.023 * (m.fs.charge.hitec_salt_disjunct.hxc.steam_reynolds_number ** 0.8)
+            * (m.fs.charge.hitec_salt_disjunct.hxc.steam_prandtl_number ** (0.33))
+            * ((m.fs.charge.hitec_salt_disjunct.hxc.
+                side_1.properties_in[0].visc_d_phase["Vap"]
+                / m.fs.charge.hitec_salt_disjunct.hxc.
+                side_1.properties_out[0].visc_d_phase["Liq"]
+                ) ** 0.14)
+        ),
+        doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
+    )
+    
+    # Salt side heat transfer coefficient
+    m.fs.charge.hitec_salt_disjunct.hxc.h_salt = Expression(
+        expr=(
+            m.fs.charge.hitec_salt_disjunct.hxc.
+            side_2.properties_in[0].thermal_conductivity["Liq"]
+            * m.fs.charge.hitec_salt_disjunct.hxc.
+            salt_nusselt_number / m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia
+        ),
+        doc="Salt side convective heat transfer coefficient [W/mK]"
+    )
+    # Steam side heat transfer coefficient
+    m.fs.charge.hitec_salt_disjunct.hxc.h_steam = Expression(
+        expr=(
+            m.fs.charge.hitec_salt_disjunct.hxc.
+            side_1.properties_in[0].therm_cond_phase["Vap"]
+            * m.fs.charge.hitec_salt_disjunct.hxc.
+            steam_nusselt_number / m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia
+        ),
+        doc="Steam side convective heat transfer coefficient [W/mK]"
+    )
+
+    m.fs.charge.hitec_salt_disjunct.hxc.tube_dia_ratio = (
+        m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia / \
+        m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia
+    )
+    m.fs.charge.hitec_salt_disjunct.hxc.log_tube_dia_ratio = log(
+        m.fs.charge.hitec_salt_disjunct.hxc.tube_dia_ratio)    
+    @m.fs.charge.hitec_salt_disjunct.hxc.Constraint(m.fs.time,
+                                                    doc="Hitec salt charge heat exchanger\
+                                                    overall heat transfer coefficient")
+    def constraint_hxc_ohtc_hitec(b, t):
+        # return (
+        #     m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient[t]
+        #     == 1 / ((1 / m.fs.charge.hitec_salt_disjunct.hxc.h_salt)
+        #             + ((m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia *
+        #                 log(m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia /
+        #                  m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia)) /
+        #                (2 * m.fs.charge.hitec_salt_disjunct.hxc.k_steel))
+        #             + ((m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia /
+        #                  m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia) /
+        #                m.fs.charge.hitec_salt_disjunct.hxc.h_steam))
+        # )
+        return (
+            m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient[t] * \
+            (2 * m.fs.charge.hitec_salt_disjunct.hxc.k_steel * \
+             m.fs.charge.hitec_salt_disjunct.hxc.h_steam
+              + m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia * \
+             m.fs.charge.hitec_salt_disjunct.hxc.log_tube_dia_ratio *\
+              m.fs.charge.hitec_salt_disjunct.hxc.h_salt * \
+             m.fs.charge.hitec_salt_disjunct.hxc.h_steam
+              + m.fs.charge.hitec_salt_disjunct.hxc.tube_dia_ratio * \
+             m.fs.charge.hitec_salt_disjunct.hxc.h_salt * \
+              2 * m.fs.charge.hitec_salt_disjunct.hxc.k_steel)        
+        ) == (2 * m.fs.charge.hitec_salt_disjunct.hxc.k_steel * \
+              m.fs.charge.hitec_salt_disjunct.hxc.h_salt * \
+              m.fs.charge.hitec_salt_disjunct.hxc.h_steam
+        )
+
+    # Arc to connect heat exchanger inlet to the connector outlet
+    m.fs.charge.hitec_salt_disjunct.connector_to_hxc = Arc(
+        source=m.fs.charge.connector.outlet,
+        destination=m.fs.charge.hitec_salt_disjunct.hxc.inlet_1
+    )
+#--------
+
 def _create_arcs(m):
 
     # boiler to turb
@@ -271,15 +757,15 @@ def _create_arcs(m):
     )
     # Connecting the connector to the charge heat exchanger.
     # This would be commented and included in disjunction 1
-    m.fs.charge.connector_to_hxc = Arc(
-        source=m.fs.charge.connector.outlet,
-        destination=m.fs.charge.hxc.inlet_1
-    )
+    # m.fs.charge.connector_to_hxc = Arc(
+    #     source=m.fs.charge.connector.outlet,
+    #     destination=m.fs.charge.hxc.inlet_1
+    # )
+    # m.fs.charge.hxc_to_cooler = Arc(
+    #     source=m.fs.charge.hxc.outlet_1,
+    #     destination=m.fs.charge.cooler.inlet
+    # )
     #--------
-    m.fs.charge.hxc_to_cooler = Arc(
-        source=m.fs.charge.hxc.outlet_1,
-        destination=m.fs.charge.cooler.inlet
-    )
     m.fs.charge.cooler_to_hxpump = Arc(
         source=m.fs.charge.cooler.outlet,
         destination=m.fs.charge.hx_pump.inlet
