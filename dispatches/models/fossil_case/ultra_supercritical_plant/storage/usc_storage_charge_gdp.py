@@ -1988,14 +1988,20 @@ def main(m_usc):
     # Give all the required inputs to the model
     # Ensure that the degrees of freedom = 0 (model is complete)
     set_model_input(m)
-    # Assert that the model has no degree of freedom at this point
-    assert degrees_of_freedom(m) == 0
 
+    #-------- modified by esrawli
+    # Assert that the model has no degree of freedom at this point
+    # assert degrees_of_freedom(m) == 0
+    print('DOF before init = ', degrees_of_freedom(m))
+    #--------
     set_scaling_factors(m)
     # Initialize the model (sequencial initialization and custom routines)
     # Ensure after the model is initialized, the degrees of freedom = 0
     initialize(m, solver=solver)
-    assert degrees_of_freedom(m) == 0
+    #-------- modified by esrawli
+    # assert degrees_of_freedom(m) == 0
+    print('DOF after init = ', degrees_of_freedom(m))
+    #--------
 
     # raise Exception("costing")
     build_costing(m, solver=solver)
