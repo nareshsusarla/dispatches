@@ -883,16 +883,20 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
 
     iscale.calculate_scaling_factors(m)
     #  High pressure splitter initialization
-    _set_port(m.fs.charge.ess_hp_split.inlet,  m.fs.boiler.outlet)
-    m.fs.charge.ess_hp_split.initialize(outlvl=outlvl, optarg=solver.options)
+    _set_port(m.fs.charge.ess_hp_split.inlet,
+              m.fs.boiler.outlet)
+    m.fs.charge.ess_hp_split.initialize(outlvl=outlvl,
+                                        optarg=solver.options)
 
     #-------- added by esrawli
     #  Connector initialization
-    _set_port(m.fs.charge.connector.inlet, m.fs.charge.ess_hp_split.to_hxc)
+    _set_port(m.fs.charge.connector.inlet,
+              m.fs.charge.ess_hp_split.to_hxc)
     m.fs.charge.connector.inlet.flow_mol.fix()
     m.fs.charge.connector.inlet.enth_mol.fix()
     m.fs.charge.connector.inlet.pressure.fix()
-    m.fs.charge.connector.initialize(outlvl=outlvl, optarg=solver.options)
+    m.fs.charge.connector.initialize(outlvl=outlvl,
+                                     optarg=solver.options)
     #--------
     
     #-------- modified by esrawli
@@ -924,15 +928,20 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     #  Cooler
     _set_port(m.fs.charge.cooler.inlet,
               m.fs.charge.solar_salt_disjunct.hxc.outlet_1)
-    m.fs.charge.cooler.initialize(outlvl=outlvl, optarg=solver.options)
+    m.fs.charge.cooler.initialize(outlvl=outlvl,
+                                  optarg=solver.options)
     
     # HX pump
-    _set_port(m.fs.charge.hx_pump.inlet,  m.fs.charge.cooler.outlet)
-    m.fs.charge.hx_pump.initialize(outlvl=outlvl, optarg=solver.options)
+    _set_port(m.fs.charge.hx_pump.inlet,
+              m.fs.charge.cooler.outlet)
+    m.fs.charge.hx_pump.initialize(outlvl=outlvl,
+                                   optarg=solver.options)
 
     #  Recycle mixer initialization
-    _set_port(m.fs.charge.recycle_mixer.from_bfw_out, m.fs.bfp.outlet)
-    _set_port(m.fs.charge.recycle_mixer.from_hx_pump, m.fs.charge.hx_pump.outlet)
+    _set_port(m.fs.charge.recycle_mixer.from_bfw_out,
+              m.fs.bfp.outlet)
+    _set_port(m.fs.charge.recycle_mixer.from_hx_pump,
+              m.fs.charge.hx_pump.outlet)
 
     # fixing to a small value in mol/s
     # m.fs.charge.recycle_mixer.from_hx_pump.flow_mol.fix(0.01)
