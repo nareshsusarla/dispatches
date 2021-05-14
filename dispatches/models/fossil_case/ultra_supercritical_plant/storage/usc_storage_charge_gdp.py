@@ -937,14 +937,8 @@ def build_costing(m, solver=None, optarg={}):
     # solver = get_solver(solver, optarg)
 
     ###########################################################################
-    #  Data                                                              #
+    #  Data                                                                   #
     ###########################################################################
-    m.number_hours_per_day = 6          
-    m.number_of_years = 5
-
-    #--------------------------------------------
-    #  General costing data
-    #--------------------------------------------
     m.CE_index = 607.5  # Chemical engineering cost index for 2019
 
     # q_baseline_charge corresponds to heat duty of a plant with no storage
@@ -954,6 +948,7 @@ def build_costing(m, solver=None, optarg={}):
         'cooling_price': 3.3e-9,
         'q_baseline_charge': 838565942.4732262,
         'solar_salt_price': 0.49,
+        'hitec_salt_price': 0.93,
         'storage_tank_material': 3.5,
         'storage_tank_insulation': 235,
         'storage_tank_foundation': 1210
@@ -985,14 +980,20 @@ def build_costing(m, solver=None, optarg={}):
         initialize=m.data_cost['q_baseline_charge'],
         doc='Boiler duty in Wth @ 699MW for baseline plant with no storage')
 
-    # Data for solar molten salt 
     m.fs.charge.solar_salt_price = Param(
         initialize=m.data_cost['solar_salt_price'],
         doc='Solar salt price in $/kg')
+    m.fs.charge.hitec_salt_price = Param(
+        initialize=m.design_data['hx']['hitec']['salt_price'],
+        doc='Hitec salt price in $/kg')
 
-    #--------------------------------------------
-    #  Operating hours
-    #--------------------------------------------
+
+    ###########################################################################
+    #  Operating hours                                                        #
+    ###########################################################################
+    m.number_hours_per_day = 6          
+    m.number_of_years = 5
+
     m.fs.charge.hours_per_day = Var(
         initialize=m.number_hours_per_day,
         bounds=(0, 12),
@@ -1007,6 +1008,7 @@ def build_costing(m, solver=None, optarg={}):
         initialize=m.number_of_years,
         doc='Number of years for capital cost annualization')
 
+
     ###########################################################################
     #  Capital cost                                                           #
     ###########################################################################
@@ -1015,14 +1017,14 @@ def build_costing(m, solver=None, optarg={}):
     #  Solar salt inventory
     #--------------------------------------------
     # Total inventory of salt required
-    m.fs.charge.salt_amount = Expression(
+    m.fs.charge.solar_salt_disjunct.salt_amount = Expression(
         expr=(m.fs.charge.hxc.inlet_2.flow_mass[0] * \
               m.fs.charge.hours_per_day * 3600),
         doc="Salt flow in gal per min"
     )
 
     # Purchase cost of salt
-    m.fs.charge.salt_purchase_cost = Var(
+    m.fs.charge.solar_salt_disjunct.salt_purchase_cost = Var(
         initialize=100000,
         bounds=(0, None),
         doc="Salt purchase cost in $"
@@ -1030,17 +1032,51 @@ def build_costing(m, solver=None, optarg={}):
 
     def solar_salt_purchase_cost_rule(b):
         return (
-            m.fs.charge.salt_purchase_cost * m.fs.charge.num_of_years == (
-                m.fs.charge.salt_amount * m.fs.charge.solar_salt_price
+            m.fs.charge.solar_salt_disjunct.salt_purchase_cost * \
+            m.fs.charge.num_of_years == (
+                m.fs.charge.solar_salt_disjunct.salt_amount * \
+                m.fs.charge.solar_salt_price
             )
         )
-    m.fs.charge.salt_purchase_cost_eq = Constraint(
+    m.fs.charge.solar_salt_disjunct.salt_purchase_cost_eq = Constraint(
         rule=solar_salt_purchase_cost_rule)
 
     # Initialize cost correlation
     calculate_variable_from_constraint(
-        m.fs.charge.salt_purchase_cost,
-        m.fs.charge.salt_purchase_cost_eq)
+        m.fs.charge.solar_salt_disjunct.salt_purchase_cost,
+        m.fs.charge.solar_salt_disjunct.salt_purchase_cost_eq)
+
+    #--------------------------------------------
+    #  Hitec salt inventory
+    #--------------------------------------------
+    # Total inventory of salt required
+    m.fs.charge.hitec_salt_disjunct.salt_amount = Expression(
+        expr=(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0] *
+              m.fs.charge.hours_per_day * 3600),
+        doc="Salt flow in gal per min"
+    )
+    
+    # Purchase cost of salt
+    m.fs.charge.hitec_salt_disjunct.salt_purchase_cost = Var(
+        initialize=100000,
+        bounds=(0, None),
+        doc="Salt purchase cost in $"
+    )
+
+    def hitec_salt_purchase_cost_rule(b):
+        return (
+            m.fs.charge.hitec_salt_disjunct.salt_purchase_cost * \
+            m.fs.charge.num_of_years
+            == (m.fs.charge.hitec_salt_disjunct.salt_amount * \
+                m.fs.charge.hitec_salt_price)
+        )
+    m.fs.charge.hitec_salt_disjunct.salt_purchase_cost_eq = \
+        Constraint(rule=hitec_salt_purchase_cost_rule)
+
+    # Initialize cost correlation
+    calculate_variable_from_constraint(
+        m.fs.charge.hitec_salt_disjunct.salt_purchase_cost,
+        m.fs.charge.hitec_salt_disjunct.salt_purchase_cost_eq)
 
     #--------------------------------------------
     #  Solar salt charge heat exchangers costing
@@ -1050,10 +1086,15 @@ def build_costing(m, solver=None, optarg={}):
     # steel material, and a tube length of 12ft. Refer to costing documentation
     # to change any of the default options
     # Purchase cost of heat exchanger has to be annualized when used
-    m.fs.charge.hxc.get_costing()
-    m.fs.charge.hxc.costing.CE_index = m.CE_index
+    m.fs.charge.solar_salt_disjunct.hxc.get_costing()
+    m.fs.charge.solar_salt_disjunct.hxc.costing.CE_index = m.CE_index
     # Initializing the costing correlations
-    icost.initialize(m.fs.charge.hxc.costing)
+    icost.initialize(m.fs.charge.solar_salt_disjunct.hxc.costing)
+
+    # Hitec salt heat exchanger
+    m.fs.charge.hitec_salt_disjunct.hxc.get_costing()
+    m.fs.charge.hitec_salt_disjunct.hxc.costing.CE_index = m.CE_index
+    icost.initialize(m.fs.charge.hitec_salt_disjunct.hxc.costing)
 
     #--------------------------------------------
     #  Water pump
@@ -1077,7 +1118,7 @@ def build_costing(m, solver=None, optarg={}):
     icost.initialize(m.fs.charge.hx_pump.costing)
 
     #--------------------------------------------
-    #  Solar salt pump costing
+    #  Salt-pump costing
     #--------------------------------------------
     # The salt pump is not explicitly modeled. Thus, the IDAES cost method
     # is not used for this equipment at this time.
@@ -1100,62 +1141,70 @@ def build_costing(m, solver=None, optarg={}):
         initialize=m.data_salt_pump['nm'],
         doc='Motor Shaft Type Factor')
 
+    #--------------------------------------------
+    #  Solar salt-pump costing
     # converting salt flow mas to flow vol in gal per min, Q_gpm
-    m.fs.charge.spump_Qgpm = pyo.Expression(
-        expr=(m.fs.charge.hxc.side_2.properties_in[0].flow_mass * 264.17 * 60
-              / (m.fs.charge.hxc.side_2.properties_in[0].density["Liq"])),
+    m.fs.charge.solar_salt_disjunct.spump_Qgpm = pyo.Expression(
+        expr=(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].flow_mass * \
+              264.17 * 60 / \
+              (m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"])),
         doc="Salt flow in gal per min"
     )
     # Density in lb per ft3
-    m.fs.charge.dens_lbft3 = pyo.Expression(
-        expr=m.fs.charge.hxc.side_2.properties_in[0].density["Liq"]*0.062428,
+    m.fs.charge.solar_salt_disjunct.dens_lbft3 = pyo.Expression(
+        expr=m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].
+        density["Liq"] * 0.062428,
         doc="pump size factor"
     )
     # Pump size factor
-    m.fs.charge.spump_sf = pyo.Expression(
-        expr=m.fs.charge.spump_Qgpm * (m.fs.charge.spump_head ** 0.5),
+    m.fs.charge.solar_salt_disjunct.spump_sf = pyo.Expression(
+        expr=m.fs.charge.solar_salt_disjunct.spump_Qgpm * (m.fs.charge.spump_head ** 0.5),
         doc="pump size factor"
     )
     # Pump purchase cost
-    m.fs.charge.pump_CP = pyo.Expression(
+    m.fs.charge.solar_salt_disjunct.pump_CP = pyo.Expression(
         expr=(m.fs.charge.spump_FT * m.fs.charge.spump_FM * \
               exp(9.2951
-                  - 0.6019 * log(m.fs.charge.spump_sf)
-                  + 0.0519 * ((log(m.fs.charge.spump_sf))**2)
+                  - 0.6019 * log(m.fs.charge.solar_salt_disjunct.spump_sf)
+                  + 0.0519 * ((log(m.fs.charge.solar_salt_disjunct.spump_sf))**2)
               )
         ),
         doc="Salt Pump Base Cost in $"
     )
     
     # Costing motor
-    m.fs.charge.spump_np = pyo.Expression(
+    m.fs.charge.solar_salt_disjunct.spump_np = pyo.Expression(
         expr=(-0.316
-              + 0.24015 * log(m.fs.charge.spump_Qgpm)
-              - 0.01199 * ((log(m.fs.charge.spump_Qgpm))**2)
+              + 0.24015 * log(m.fs.charge.solar_salt_disjunct.spump_Qgpm)
+              - 0.01199 * ((log(m.fs.charge.solar_salt_disjunct.spump_Qgpm))**2)
         ),
         doc="fractional efficiency of the pump horse power"
     )
     # Motor power consumption
-    m.fs.charge.motor_pc = pyo.Expression(
-        expr=((m.fs.charge.spump_Qgpm * m.fs.charge.spump_head * \
-               m.fs.charge.dens_lbft3) / \
-              (33000 * m.fs.charge.spump_np * m.fs.charge.spump_nm)),
+    m.fs.charge.solar_salt_disjunct.motor_pc = pyo.Expression(
+        expr=((m.fs.charge.solar_salt_disjunct.spump_Qgpm * \
+               m.fs.charge.spump_head * \
+               m.fs.charge.solar_salt_disjunct.dens_lbft3) / \
+              (33000 * m.fs.charge.solar_salt_disjunct.spump_np * \
+               m.fs.charge.spump_nm)
+        ),
         doc="Horsepower consumption"
     )
     # Motor purchase cost
-    m.fs.charge.motor_CP = pyo.Expression(
+    m.fs.charge.solar_salt_disjunct.motor_CP = pyo.Expression(
         expr=(m.fs.charge.spump_motorFT
-              * exp(5.4866 + 0.13141 * log(m.fs.charge.motor_pc)
-                    + 0.053255 * ((log(m.fs.charge.motor_pc))**2)
-                    + 0.028628 * ((log(m.fs.charge.motor_pc))**3)
-                    - 0.0035549 * ((log(m.fs.charge.motor_pc))**4))
+              * exp(5.4866
+                    + 0.13141 * log(m.fs.charge.solar_salt_disjunct.motor_pc)
+                    + 0.053255 * ((log(m.fs.charge.solar_salt_disjunct.motor_pc))**2)
+                    + 0.028628 * ((log(m.fs.charge.solar_salt_disjunct.motor_pc))**3)
+                    - 0.0035549 * ((log(m.fs.charge.solar_salt_disjunct.motor_pc))**4))
               ),
         doc="Salt Pump's Motor Base Cost in $"
     )
 
     # Pump and motor purchase cost
     # pump toal cost constraint
-    m.fs.charge.spump_purchase_cost = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.spump_purchase_cost = pyo.Var(
         initialize=100000,
         bounds=(0, None),
         doc="Salt pump and motor purchase cost in $"
@@ -1163,17 +1212,106 @@ def build_costing(m, solver=None, optarg={}):
 
     def solar_spump_purchase_cost_rule(b):
         return (
-            m.fs.charge.spump_purchase_cost * m.fs.charge.num_of_years
-            == (m.fs.charge.pump_CP + m.fs.charge.motor_CP) * \
+            m.fs.charge.solar_salt_disjunct.spump_purchase_cost * \
+            m.fs.charge.num_of_years
+            == (m.fs.charge.solar_salt_disjunct.pump_CP
+                + m.fs.charge.solar_salt_disjunct.motor_CP) * \
             (m.CE_index / 394)
         )
-    m.fs.charge.spump_purchase_cost_eq = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.spump_purchase_cost_eq = pyo.Constraint(
         rule=solar_spump_purchase_cost_rule)
 
     # Initialize cost correlation
     calculate_variable_from_constraint(
-        m.fs.charge.spump_purchase_cost,
-        m.fs.charge.spump_purchase_cost_eq)
+        m.fs.charge.solar_salt_disjunct.spump_purchase_cost,
+        m.fs.charge.solar_salt_disjunct.spump_purchase_cost_eq)
+
+    #--------------------------------------------
+    #  Hitec salt pump costing
+    # The primary purpose of the salt pump is to move molten salt and not to
+    # change the pressure. Thus the pressure head is computed assuming that
+    # the salt is moved on an average of 5m linear distance.
+
+    # converting salt flow mas to flow vol in gal per min, Q_gpm
+    m.fs.charge.hitec_salt_disjunct.spump_Qgpm = Expression(
+        expr=(m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].flow_mass * \
+              264.17 * 60 / \
+              (m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"])
+        ),
+        doc="Salt flow in gal per min"
+    )
+    # Density in lb per ft3
+    m.fs.charge.hitec_salt_disjunct.dens_lbft3 = Expression(
+        expr=m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
+        density["Liq"] * 0.062428,
+        doc="pump size factor"
+    )
+    # Pump size factor
+    m.fs.charge.hitec_salt_disjunct.spump_sf = Expression(
+        expr=m.fs.charge.hitec_salt_disjunct.spump_Qgpm * \
+        (m.fs.charge.spump_head ** 0.5),
+        doc="pump size factor"
+    )
+    # Pump purchase cost
+    m.fs.charge.hitec_salt_disjunct.pump_CP = Expression(
+        expr=(m.fs.charge.spump_FT * m.fs.charge.spump_FM * exp(
+            9.2951
+            - 0.6019 * log(m.fs.charge.hitec_salt_disjunct.spump_sf)
+            + 0.0519 * ((log(m.fs.charge.hitec_salt_disjunct.spump_sf))**2))
+        ),
+        doc="Salt Pump Base Cost in $"
+    )
+    # Costing motor
+    m.fs.charge.hitec_salt_disjunct.spump_np = Expression(
+        expr=(-0.316
+              + 0.24015 * log(m.fs.charge.hitec_salt_disjunct.spump_Qgpm)
+              - 0.01199 * ((log(m.fs.charge.hitec_salt_disjunct.spump_Qgpm))**2)
+        ),
+        doc="fractional efficiency of the pump horse power"
+    )
+    # Motor power consumption
+    m.fs.charge.hitec_salt_disjunct.motor_pc = Expression(
+        expr=(
+            (m.fs.charge.hitec_salt_disjunct.spump_Qgpm * \
+             m.fs.charge.spump_head * m.fs.charge.hitec_salt_disjunct.dens_lbft3)
+            / (33000 * m.fs.charge.hitec_salt_disjunct.spump_np * m.fs.charge.spump_nm)
+        ),
+        doc="Horsepower consumption"
+    )
+    # Motor purchase cost
+    m.fs.charge.hitec_salt_disjunct.motor_CP = Expression(
+        expr=(m.fs.charge.spump_motorFT * exp(
+            5.4866
+            + 0.13141 * log(m.fs.charge.hitec_salt_disjunct.motor_pc)
+            + 0.053255 * ((log(m.fs.charge.hitec_salt_disjunct.motor_pc))**2)
+            + 0.028628 * ((log(m.fs.charge.hitec_salt_disjunct.motor_pc))**3)
+            - 0.0035549 * ((log(m.fs.charge.hitec_salt_disjunct.motor_pc))**4))
+        ),
+        doc="Salt Pump's Motor Base Cost in $"
+    )
+
+    # Pump and motor purchase cost
+    # pump toal cost constraint
+    m.fs.charge.hitec_salt_disjunct.spump_purchase_cost = Var(
+        initialize=100000,
+        bounds=(0, None),
+        doc="Salt pump and motor purchase cost in $"
+    )
+
+    def solar_spump_purchase_cost_rule(b):
+        return (
+            m.fs.charge.hitec_salt_disjunct.spump_purchase_cost * \
+            m.fs.charge.num_of_years == (
+                m.fs.charge.hitec_salt_disjunct.pump_CP 
+                + m.fs.charge.hitec_salt_disjunct.motor_CP) * (m.CE_index / 394)
+        )
+    m.fs.charge.hitec_salt_disjunct.spump_purchase_cost_eq = Constraint(
+        rule=solar_spump_purchase_cost_rule)
+
+    # Initialize cost correlation
+    calculate_variable_from_constraint(
+        m.fs.charge.hitec_salt_disjunct.spump_purchase_cost,
+        m.fs.charge.hitec_salt_disjunct.spump_purchase_cost_eq)
 
     #--------------------------------------------
     #  Solar salt storage tank costing: vertical vessel
@@ -1186,158 +1324,313 @@ def build_costing(m, solver=None, optarg={}):
         doc='Storage tank thickness assumed based on reference'
     )
     # Tank size and dimension computation
-    m.fs.charge.tank_volume = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.tank_volume = pyo.Var(
         initialize=1000,
         bounds=(1, 5000),
         units=pyunits.m**3,
         doc="Volume of the Salt Tank w/20% excess capacity")
-    m.fs.charge.tank_surf_area = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.tank_surf_area = pyo.Var(
         initialize=1000,
         bounds=(1, 5000),
         units=pyunits.m**2,
         doc="surface area of the Salt Tank")
-    m.fs.charge.tank_diameter = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.tank_diameter = pyo.Var(
         initialize=1.0,
         bounds=(0.5, 40),
         units=pyunits.m,
         doc="Diameter of the Salt Tank ")
-    m.fs.charge.tank_height = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.tank_height = pyo.Var(
         initialize=1.0,
         bounds=(0.5, 13),
         units=pyunits.m,
         doc="Length of the salt tank [m]")
-    m.fs.charge.no_of_tanks = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.no_of_tanks = pyo.Var(
         initialize=1,
         bounds=(1, 3),
         doc='No of Tank units to use cost correlations')
 
     # Number of tanks change
-    m.fs.charge.no_of_tanks.fix()
+    m.fs.charge.solar_salt_disjunct.no_of_tanks.fix()
 
     # Computing tank volume - jfr: editing to include 20% margin
     def solar_tank_volume_rule(b):
         return (
-            m.fs.charge.tank_volume * \
-            m.fs.charge.hxc.side_2.properties_in[0].density["Liq"] == \
-            m.fs.charge.salt_amount * 1.10
+            m.fs.charge.solar_salt_disjunct.tank_volume * \
+            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"] == \
+            m.fs.charge.solar_salt_disjunct.salt_amount * 1.10
         )
-    m.fs.charge.tank_volume_eq = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.tank_volume_eq = pyo.Constraint(
         rule=solar_tank_volume_rule)
 
     # Compute surface area of tank: surf area of sides + top surf area
     # base area is accounted in foundation costs
     def solar_tank_surf_area_rule(b):
         return (
-            m.fs.charge.tank_surf_area == (
-                pi * m.fs.charge.tank_diameter * m.fs.charge.tank_height)
-            + (pi*m.fs.charge.tank_diameter**2)/4
+            m.fs.charge.solar_salt_disjunct.tank_surf_area == (
+                pi * m.fs.charge.solar_salt_disjunct.tank_diameter * \
+                m.fs.charge.solar_salt_disjunct.tank_height)
+            + (pi * m.fs.charge.solar_salt_disjunct.tank_diameter**2) / 4
         )
-    m.fs.charge.tank_surf_area_eq = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.tank_surf_area_eq = pyo.Constraint(
         rule=solar_tank_surf_area_rule)
 
     # Computing diameter for an assumed L by D
     def solar_tank_diameter_rule(b):
         return (
-            m.fs.charge.tank_diameter == (
-                (4 * (m.fs.charge.tank_volume / m.fs.charge.no_of_tanks) / \
+            m.fs.charge.solar_salt_disjunct.tank_diameter == (
+                (4 * (m.fs.charge.solar_salt_disjunct.tank_volume / \
+                      m.fs.charge.solar_salt_disjunct.no_of_tanks) / \
                  (m.fs.charge.l_by_d * pi))** (1 / 3))
         )
-    m.fs.charge.tank_diameter_eq = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.tank_diameter_eq = pyo.Constraint(
         rule=solar_tank_diameter_rule)
 
     # Computing height of tank
     def solar_tank_height_rule(b):
-        return m.fs.charge.tank_height == (
-            m.fs.charge.l_by_d * m.fs.charge.tank_diameter)
-    m.fs.charge.tank_height_eq = pyo.Constraint(
+        return m.fs.charge.solar_salt_disjunct.tank_height == (
+            m.fs.charge.l_by_d * m.fs.charge.solar_salt_disjunct.tank_diameter)
+    m.fs.charge.solar_salt_disjunct.tank_height_eq = pyo.Constraint(
         rule=solar_tank_height_rule)
 
     # Initialize tanks design correlations
     calculate_variable_from_constraint(
-        m.fs.charge.tank_volume,
-        m.fs.charge.tank_volume_eq)
+        m.fs.charge.solar_salt_disjunct.tank_volume,
+        m.fs.charge.solar_salt_disjunct.tank_volume_eq)
     calculate_variable_from_constraint(
-        m.fs.charge.tank_diameter,
-        m.fs.charge.tank_diameter_eq)
+        m.fs.charge.solar_salt_disjunct.tank_diameter,
+        m.fs.charge.solar_salt_disjunct.tank_diameter_eq)
     calculate_variable_from_constraint(
-        m.fs.charge.tank_height,
-        m.fs.charge.tank_height_eq)
+        m.fs.charge.solar_salt_disjunct.tank_height,
+        m.fs.charge.solar_salt_disjunct.tank_height_eq)
 
     # A dummy pyomo block for salt storage tank is declared for costing
     # The diameter and length for this tank is assumed
     # based on a number of tank (see the above for m.fs.no_of_tanks)
     # Costing for each vessel designed above
-    m.fs.charge.salt_tank = pyo.Block()
-    m.fs.charge.salt_tank.costing = pyo.Block()
-    # m.fs.charge.salt_tank.costing = pyo.Block()
+    # m.fs.charge.salt_tank = pyo.Block()
+    m.fs.charge.solar_salt_disjunct.costing = pyo.Block()
 
-    m.fs.charge.salt_tank.costing.material_cost = pyo.Param(
+    m.fs.charge.solar_salt_disjunct.costing.material_cost = pyo.Param(
         initialize=m.data_cost['storage_tank_material'],
         doc='$/kg of SS316 material'
     )
 
-    m.fs.charge.salt_tank.costing.insulation_cost = pyo.Param(
+    m.fs.charge.solar_salt_disjunct.costing.insulation_cost = pyo.Param(
         initialize=m.data_cost['storage_tank_insulation'],
         doc='$/m2'
     )
 
-    m.fs.charge.salt_tank.costing.foundation_cost = pyo.Param(
+    m.fs.charge.solar_salt_disjunct.costing.foundation_cost = pyo.Param(
         initialize=m.data_cost['storage_tank_foundation'],
         doc='$/m2'
     )
 
-    m.fs.charge.salt_tank.costing.material_density = pyo.Param(
+    m.fs.charge.solar_salt_disjunct.costing.material_density = pyo.Param(
         initialize=m.data_storage_tank['material_density'],
         doc='Kg/m3'
     )
 
-    m.fs.charge.salt_tank.costing.tank_material_cost = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.costing.tank_material_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
 
-    m.fs.charge.salt_tank.costing.tank_insulation_cost = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.costing.tank_insulation_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
 
-    m.fs.charge.salt_tank.costing.tank_foundation_cost = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.costing.tank_foundation_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
 
     def rule_tank_material_cost(b):
-        return m.fs.charge.salt_tank.costing.tank_material_cost == (
-            m.fs.charge.salt_tank.costing.material_cost * \
-            m.fs.charge.salt_tank.costing.material_density * \
-            m.fs.charge.tank_surf_area * \
+        return m.fs.charge.solar_salt_disjunct.costing.tank_material_cost == (
+            m.fs.charge.solar_salt_disjunct.costing.material_cost * \
+            m.fs.charge.solar_salt_disjunct.costing.material_density * \
+            m.fs.charge.solar_salt_disjunct.tank_surf_area * \
             m.fs.charge.tank_thickness
         )
-    m.fs.charge.salt_tank.costing.eq_tank_material_cost = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.costing.eq_tank_material_cost = pyo.Constraint(
         rule=rule_tank_material_cost)
 
     def rule_tank_insulation_cost(b):
-        return m.fs.charge.salt_tank.costing.tank_insulation_cost == (
-            m.fs.charge.salt_tank.costing.insulation_cost * \
-            m.fs.charge.tank_surf_area
+        return m.fs.charge.solar_salt_disjunct.costing.tank_insulation_cost == (
+            m.fs.charge.solar_salt_disjunct.costing.insulation_cost * \
+            m.fs.charge.solar_salt_disjunct.tank_surf_area
         )
-    m.fs.charge.salt_tank.costing.eq_tank_insulation_cost = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.costing.eq_tank_insulation_cost = pyo.Constraint(
         rule=rule_tank_insulation_cost)
 
     def rule_tank_foundation_cost(b):
-        return m.fs.charge.salt_tank.costing.tank_foundation_cost == (
-            m.fs.charge.salt_tank.costing.foundation_cost * \
-            pi * m.fs.charge.tank_diameter**2 / 4
+        return m.fs.charge.solar_salt_disjunct.costing.tank_foundation_cost == (
+            m.fs.charge.solar_salt_disjunct.costing.foundation_cost * \
+            pi * m.fs.charge.solar_salt_disjunct.tank_diameter**2 / 4
         )
-    m.fs.charge.salt_tank.costing.eq_tank_foundation_cost = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.costing.eq_tank_foundation_cost = pyo.Constraint(
         rule=rule_tank_foundation_cost)
 
     # Expression to compute the total cost for the salt tank
-    m.fs.charge.salt_tank.costing.total_tank_cost = pyo.Expression(
-        expr=m.fs.charge.salt_tank.costing.tank_material_cost 
-        + m.fs.charge.salt_tank.costing.tank_foundation_cost 
-        + m.fs.charge.salt_tank.costing.tank_insulation_cost
+    m.fs.charge.solar_salt_disjunct.costing.total_tank_cost = pyo.Expression(
+        expr=m.fs.charge.solar_salt_disjunct.costing.tank_material_cost 
+        + m.fs.charge.solar_salt_disjunct.costing.tank_foundation_cost 
+        + m.fs.charge.solar_salt_disjunct.costing.tank_insulation_cost
     )
+
+    #--------------------------------------------
+    #  Hitec salt storage tank costing: vertical vessel
+    #--------------------------------------------
+    # Tank size and dimension computation
+    m.fs.charge.hitec_salt_disjunct.tank_volume = Var(
+        initialize=1000,
+        bounds=(1, 10000),
+        units=pyunits.m**3,
+        doc="Volume of the Salt Tank w/20% excess capacity")
+    m.fs.charge.hitec_salt_disjunct.tank_surf_area = Var(
+        initialize=1000,
+        bounds=(1, 5000),
+        units=pyunits.m**2,
+        doc="surface area of the Salt Tank")
+    m.fs.charge.hitec_salt_disjunct.tank_diameter = Var(
+        initialize=1.0,
+        bounds=(0.5, 40),
+        units=pyunits.m,
+        doc="Diameter of the Salt Tank ")
+    m.fs.charge.hitec_salt_disjunct.tank_height = Var(
+        initialize=1.0,
+        bounds=(0.5, 13),
+        units=pyunits.m,
+        doc="Length of the salt tank [m]")
+    m.fs.charge.hitec_salt_disjunct.no_of_tanks = Var(
+        initialize=1, bounds=(1, 4),
+        doc='No of Tank units to use cost correlations')
+
+    # Number of tanks change
+    m.fs.charge.hitec_salt_disjunct.no_of_tanks.fix()
+
+    # Computing tank volume with a 20% margin
+    def hitec_tank_volume_rule(b):
+        return (
+            m.fs.charge.hitec_salt_disjunct.tank_volume * \
+            m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"] == \
+            m.fs.charge.hitec_salt_disjunct.salt_amount * 1.10
+        )
+    m.fs.charge.hitec_salt_disjunct.tank_volume_eq = Constraint(
+        rule=hitec_tank_volume_rule)
+
+    # Compute surface area of tank: surf area of sides + top surf area
+    # base area is accounted in foundation costs
+    def hitec_tank_surf_area_rule(b):
+        return m.fs.charge.hitec_salt_disjunct.tank_surf_area == (
+            (pi * m.fs.charge.hitec_salt_disjunct.tank_diameter * \
+             m.fs.charge.hitec_salt_disjunct.tank_height)
+            + (pi*m.fs.charge.hitec_salt_disjunct.tank_diameter**2) / 4
+        )
+    m.fs.charge.hitec_salt_disjunct.tank_surf_area_eq = Constraint(
+        rule=hitec_tank_surf_area_rule)
+
+    # Computing diameter for an assumed L by D
+    def hitec_tank_diameter_rule(b):
+        return (
+            m.fs.charge.hitec_salt_disjunct.tank_diameter ==
+            ((4 * (m.fs.charge.hitec_salt_disjunct.tank_volume /
+                   m.fs.charge.hitec_salt_disjunct.no_of_tanks)
+              / (m.fs.charge.l_by_d * pi)) ** (1 / 3))
+        )
+    m.fs.charge.hitec_salt_disjunct.tank_diameter_eq = \
+        Constraint(rule=hitec_tank_diameter_rule)
+
+    # Computing height of tank
+    def hitec_tank_height_rule(b):
+        return m.fs.charge.hitec_salt_disjunct.tank_height == \
+            m.fs.charge.l_by_d * m.fs.charge.hitec_salt_disjunct.tank_diameter
+    m.fs.charge.hitec_salt_disjunct.tank_height_eq = \
+        Constraint(rule=hitec_tank_height_rule)
+
+    # Initialize tanks design correlations
+    calculate_variable_from_constraint(
+        m.fs.charge.hitec_salt_disjunct.tank_volume,
+        m.fs.charge.hitec_salt_disjunct.tank_volume_eq)
+    calculate_variable_from_constraint(
+        m.fs.charge.hitec_salt_disjunct.tank_diameter,
+        m.fs.charge.hitec_salt_disjunct.tank_diameter_eq)
+    calculate_variable_from_constraint(
+        m.fs.charge.hitec_salt_disjunct.tank_height,
+        m.fs.charge.hitec_salt_disjunct.tank_height_eq)
+
+    # A dummy pyomo block for salt storage tank is declared for costing
+    # The diameter and length for this tank is assumed
+    # based on a number of tank (see the above for m.fs.charge.no_of_tanks)
+    # Costing for each vessel designed above
+    m.fs.charge.hitec_salt_disjunct.costing = Block()
+
+    m.fs.charge.hitec_salt_disjunct.costing.material_cost = Param(
+        initialize=m.design_data['storage_tank']['material_cost'],
+        doc='$/kg of SS316 material'
+    )
+
+    m.fs.charge.hitec_salt_disjunct.costing.insulation_cost = Param(
+        initialize=m.design_data['storage_tank']['insulation_cost'],
+        doc='$/m2'
+    )
+
+    m.fs.charge.hitec_salt_disjunct.costing.foundation_cost = Param(
+        initialize=m.design_data['storage_tank']['foundation_cost'],
+        doc='$/m2'
+    )
+
+    m.fs.charge.hitec_salt_disjunct.costing.material_density = Param(
+        initialize=m.design_data['storage_tank']['material_density'],
+        doc='Kg/m3'
+    )
+
+    m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost = Var(
+        initialize=5000,
+        bounds=(1000, 1e7)
+    )
+
+    m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost = Var(
+        initialize=5000,
+        bounds=(1000, 1e7)
+    )
+
+    m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost = Var(
+        initialize=5000,
+        bounds=(1000, 1e7)
+    )
+
+    def rule_hitec_tank_material_cost(b):
+        return m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost == (
+            m.fs.charge.hitec_salt_disjunct.costing.material_cost * \
+            m.fs.charge.hitec_salt_disjunct.costing.material_density * \
+            m.fs.charge.hitec_salt_disjunct.tank_surf_area * \
+            m.fs.charge.tank_thickness
+        )
+    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_material_cost = Constraint(
+        rule=rule_hitec_tank_material_cost)
+
+    def rule_hitec_tank_insulation_cost(b):
+        return (m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost ==
+                m.fs.charge.hitec_salt_disjunct.costing.insulation_cost *
+                m.fs.charge.hitec_salt_disjunct.tank_surf_area)
+    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_insulation_cost = Constraint(
+        rule=rule_hitec_tank_insulation_cost)
+
+    def rule_hitec_tank_foundation_cost(b):
+        return (m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost ==
+                m.fs.charge.hitec_salt_disjunct.costing.foundation_cost *
+                pi * m.fs.charge.hitec_salt_disjunct.tank_diameter**2 / 4)
+    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_foundation_cost = Constraint(
+        rule=rule_hitec_tank_foundation_cost)
+
+    # Expression to compute the total cost for the salt tank
+    m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost = Expression(
+        expr=m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost
+        + m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost 
+        + m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost
+    )
+
 
     #--------------------------------------------
     # Total annualized capital cost for solar salt
@@ -1348,26 +1641,69 @@ def build_costing(m, solver=None, optarg={}):
         initialize=1000000,
         doc="Annualized capital cost")
 
+    m.fs.charge.solar_salt_disjunct.capital_cost = Var(
+        initialize=1000000,
+        doc="Annualized capital cost for solar salt")
+
+
     # Annualized capital cost for the solar salt
     def solar_cap_cost_rule(b):
-        return m.fs.charge.capital_cost == (
-            m.fs.charge.salt_purchase_cost 
-            + m.fs.charge.spump_purchase_cost
+        return m.fs.charge.solar_salt_disjunct.capital_cost == (
+            m.fs.charge.solar_salt_disjunct.salt_purchase_cost 
+            + m.fs.charge.solar_salt_disjunct.spump_purchase_cost
             + (
-                m.fs.charge.hxc.costing.purchase_cost
+                m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost
                 + m.fs.charge.hx_pump.costing.purchase_cost
-                + m.fs.charge.no_of_tanks
-                * m.fs.charge.salt_tank.costing.total_tank_cost
+                + m.fs.charge.solar_salt_disjunct.no_of_tanks
+                * m.fs.charge.solar_salt_disjunct.salt_tank.costing.total_tank_cost
                )
             / m.fs.charge.num_of_years
         )
-    m.fs.charge.cap_cost_eq = pyo.Constraint(
+    m.fs.charge.solar_salt_disjunct.cap_cost_eq = pyo.Constraint(
         rule=solar_cap_cost_rule)
+    
+    # Adding constraint to link the fs capital cost var to
+    # solar salt disjunct
+    m.fs.charge.solar_salt_disjunct.fs_cap_cost_eq = Constraint(
+        expr=m.fs.charge.capital_cost == m.fs.charge.solar_salt_disjunct.capital_cost)
+
     
     # Initialize
     calculate_variable_from_constraint(
-        m.fs.charge.capital_cost,
-        m.fs.charge.cap_cost_eq)
+        m.fs.charge.solar_salt_disjunct.capital_cost,
+        m.fs.charge.solar_salt_disjunct.cap_cost_eq)
+
+    #--------------------------------------------
+    # Total annualized capital cost for hitec salt
+    #--------------------------------------------
+    m.fs.charge.hitec_salt_disjunct.capital_cost = Var(
+        initialize=1000000,
+        doc="Annualized capital cost for solar salt")
+
+    # Annualized capital cost for the solar salt
+    def hitec_cap_cost_rule(b):
+        return m.fs.charge.hitec_salt_disjunct.capital_cost == (
+            m.fs.charge.hitec_salt_disjunct.salt_purchase_cost
+            + m.fs.charge.hitec_salt_disjunct.spump_purchase_cost
+            + (m.fs.charge.hitec_salt_disjunct.hxc.costing.purchase_cost
+               + m.fs.charge.hx_pump.costing.purchase_cost
+               + m.fs.charge.hitec_salt_disjunct.no_of_tanks * \
+               m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost)
+            / m.fs.charge.num_of_years
+        )
+    m.fs.charge.hitec_salt_disjunct.cap_cost_eq = Constraint(
+        rule=hitec_cap_cost_rule)
+
+    # Adding constraint to link the fs capital cost var to
+    # solar salt disjunct
+    m.fs.charge.hitec_salt_disjunct.fs_cap_cost_eq = Constraint(
+        expr=m.fs.charge.capital_cost == m.fs.charge.hitec_salt_disjunct.capital_cost)
+
+    # Initialize
+    calculate_variable_from_constraint(
+        m.fs.charge.hitec_salt_disjunct.capital_cost,
+        m.fs.charge.hitec_salt_disjunct.cap_cost_eq)
+
 
     ###########################################################################
     #  Annual operating cost
@@ -1398,7 +1734,9 @@ def build_costing(m, solver=None, optarg={}):
         m.fs.charge.operating_cost,
         m.fs.charge.op_cost_eq)
 
-    res = solver.solve(m, tee=True, symbolic_solver_labels=True)
+    res = solver.solve(m,
+                       tee=True,
+                       symbolic_solver_labels=True)
     print("Cost Initialization = ",
           res.solver.termination_condition)
     print("******************** Costing Initialized *************************")
