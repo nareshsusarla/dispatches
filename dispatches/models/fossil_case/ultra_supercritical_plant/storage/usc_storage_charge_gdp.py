@@ -277,12 +277,12 @@ def solar_salt_disjunct_equations(disj):
 
     # HTC calculations for solar salt heat exchanger
     # setting the scaling factor for area = 1
-    iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.area, 1e-2)
-    # setting the scaling factor for overall_heat_transfer_coefficient = 1
-    iscale.set_scaling_factor(
-        m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
-    iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-6)
-    iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.tube.heat, 1e-6)
+    # iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.area, 1e-2)
+    # # setting the scaling factor for overall_heat_transfer_coefficient = 1
+    # iscale.set_scaling_factor(
+    #     m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
+    # iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-6)
+    # iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.tube.heat, 1e-6)
 
 
 
@@ -498,12 +498,12 @@ def hitec_salt_disjunct_equations(disj):
 
     # HTC calculations for solar salt heat exchanger
     # setting the scaling factor for area = 1
-    iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
-    # setting the scaling factor for overall_heat_transfer_coefficient = 1
-    iscale.set_scaling_factor(
-        m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
-    iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-6)
-    iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.tube.heat, 1e-6)
+    # iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
+    # # setting the scaling factor for overall_heat_transfer_coefficient = 1
+    # iscale.set_scaling_factor(
+    #     m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
+    # iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-6)
+    # iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.tube.heat, 1e-6)
 
 
     m.fs.charge.data_hxc_hitec = {
@@ -799,14 +799,19 @@ def set_model_input(m):
     ###########################################################################
     # Heat Exchanger Area from supercritical plant model_input 
     # For conceptual design optimization, area is unfixed and optimized
-    m.fs.charge.hxc.area.fix(100)  # m2
+    m.fs.charge.solar_salt_disjunct.hxc.area.fix(100)  # m2
+    m.fs.charge.hitec_salt_disjunct.hxc.area.fix(100)  # m2
 
     # Salt conditions
     # Salt inlet flow is fixed during initialization but is unfixed and determined
     # during optimization
-    m.fs.charge.hxc.inlet_2.flow_mass.fix(100)   # kg/s
-    m.fs.charge.hxc.inlet_2.temperature.fix(513.15)  # K
-    m.fs.charge.hxc.inlet_2.pressure.fix(101325)  # Pa
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass.fix(100)   # kg/s
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature.fix(513.15)  # K
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_2.pressure.fix(101325)  # Pa
+
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass.fix(100)   # kg/s
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.fix(513.15)  # K
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.pressure.fix(101325)  # Pa
 
     # Cooler outlet enthalpy is fixed during model build to ensure the inlet
     # to the pump is liquid. However, this is unfixed during
@@ -843,16 +848,31 @@ def set_model_input(m):
     #--------
     
 def set_scaling_factors(m):
-    # scaling factors in the flowsheet
+    """
+    Scaling factors in the flowsheet
+    """
 
-    iscale.set_scaling_factor(m.fs.charge.hxc.area, 1e-2)
+    # Scaling factors for charge heat exchangers
     iscale.set_scaling_factor(
-        m.fs.charge.hxc.overall_heat_transfer_coefficient, 1e-3)
+        m.fs.charge.solar_salt_disjunct.hxc.area, 1e-2)
+    iscale.set_scaling_factor(
+        m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
+    iscale.set_scaling_factor(
+        m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-6)
+    iscale.set_scaling_factor(
+        m.fs.charge.solar_salt_disjunct.hxc.tube.heat, 1e-6)
 
-    # scaling factors for storage
+    iscale.set_scaling_factor(
+        m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
+    iscale.set_scaling_factor(
+        m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
+    iscale.set_scaling_factor(
+        m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-6)
+    iscale.set_scaling_factor(
+        m.fs.charge.hitec_salt_disjunct.hxc.tube.heat, 1e-6)
+
+    # Scaling factors for storage section
     iscale.set_scaling_factor(m.fs.charge.hx_pump.control_volume.work, 1e-6)
-    iscale.set_scaling_factor(m.fs.charge.hxc.shell.heat, 1e-6)
-    iscale.set_scaling_factor(m.fs.charge.hxc.tube.heat, 1e-6)
     iscale.set_scaling_factor(m.fs.charge.cooler.control_volume.heat, 1e-6)
     # return m
 
@@ -1788,16 +1808,16 @@ def view_result(outfile, m):
         m.fs.charge.recycle_mixer.mixed_state[0].vapor_frac)))
 
     # Charge heat exchanger
-    tags['hxsteam_Fout'] = ("%4.4f" % (value(
-        m.fs.charge.hxc.outlet_1.flow_mol[0])*1e-3))
-    tags['hxsteam_Tout'] = ("%4.4f" % (value(
-        m.fs.charge.hxc.side_1.properties_out[0].temperature)))
-    tags['hxsteam_Pout'] = ("%4.4f" % (
-        value(m.fs.charge.hxc.outlet_1.pressure[0])*1e-6))
-    tags['hxsteam_Hout'] = ("%4.2f" % (
-        value(m.fs.charge.hxc.outlet_1.enth_mol[0])))
-    tags['hxsteam_xout'] = ("%4.4f" % (
-        value(m.fs.charge.hxc.side_1.properties_out[0].vapor_frac)))
+    # tags['hxsteam_Fout'] = ("%4.4f" % (value(
+    #     m.fs.charge.hxc.outlet_1.flow_mol[0])*1e-3))
+    # tags['hxsteam_Tout'] = ("%4.4f" % (value(
+    #     m.fs.charge.hxc.side_1.properties_out[0].temperature)))
+    # tags['hxsteam_Pout'] = ("%4.4f" % (
+    #     value(m.fs.charge.hxc.outlet_1.pressure[0])*1e-6))
+    # tags['hxsteam_Hout'] = ("%4.2f" % (
+    #     value(m.fs.charge.hxc.outlet_1.enth_mol[0])))
+    # tags['hxsteam_xout'] = ("%4.4f" % (
+    #     value(m.fs.charge.hxc.side_1.properties_out[0].vapor_frac)))
 
     # (sub)Cooler
     tags['cooler_Fout'] = ("%4.4f" % (value(
@@ -1846,41 +1866,42 @@ def add_bounds(m):
     m.flow_max = m.main_flow * 1.2 # in mol/s
     m.salt_flow_max = 1000 # in kg/s
 
-    # Charge heat exchanger section
-    m.fs.charge.hxc.inlet_1.flow_mol.setlb(0)  
-    m.fs.charge.hxc.inlet_1.flow_mol.setub(0.2 * m.flow_max)  
-    m.fs.charge.hxc.inlet_2.flow_mass.setlb(0)  
-    m.fs.charge.hxc.inlet_2.flow_mass.setub(m.salt_flow_max)  
-    #-------- added by esrawli
-    m.fs.charge.hxc.outlet_1.flow_mol.setlb(0)  
-    m.fs.charge.hxc.outlet_1.flow_mol.setub(0.2 * m.flow_max)  
-    m.fs.charge.hxc.outlet_2.flow_mass.setlb(0)  
-    m.fs.charge.hxc.outlet_2.flow_mass.setub(m.salt_flow_max)  
-    m.fs.charge.hxc.inlet_2.pressure.setlb(101320)  
-    m.fs.charge.hxc.inlet_2.pressure.setub(101330)  
-    m.fs.charge.hxc.outlet_2.pressure.setlb(101320) 
-    m.fs.charge.hxc.outlet_2.pressure.setub(101330) 
-    m.fs.charge.hxc.heat_duty.setlb(0)  
-    m.fs.charge.hxc.heat_duty.setub(200e6)  
-    m.fs.charge.hxc.shell.heat.setlb(-200e6)
-    m.fs.charge.hxc.shell.heat.setub(0)  
-    m.fs.charge.hxc.tube.heat.setlb(0)  
-    m.fs.charge.hxc.tube.heat.setub(200e6) 
-    m.fs.charge.hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
-    m.fs.charge.hxc.tube.properties_in[0].\
-        enthalpy_mass.setub(1.5e6)
-    m.fs.charge.hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
-    m.fs.charge.hxc.tube.properties_out[0].\
-        enthalpy_mass.setub(1.5e6)
-    m.fs.charge.hxc.overall_heat_transfer_coefficient.setlb(0)
-    m.fs.charge.hxc.overall_heat_transfer_coefficient.setub(10000)
-    m.fs.charge.hxc.area.setlb(0)
-    m.fs.charge.hxc.area.setub(5000)  # TODO: Check this value
-    #--------
-    m.fs.charge.hxc.delta_temperature_out.setlb(10)  # K
-    m.fs.charge.hxc.delta_temperature_in.setlb(10)  # K
-    # m.fs.charge.hxc.delta_temperature_out.setub(80)  
-    # m.fs.charge.hxc.delta_temperature_in.setub(80) 
+    for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
+                     m.fs.charge.hitec_salt_disjunct.hxc]:
+        salt_hxc.inlet_1.flow_mol.setlb(0)  
+        salt_hxc.inlet_1.flow_mol.setub(0.2 * m.flow_max)  
+        salt_hxc.inlet_2.flow_mass.setlb(0)  
+        salt_hxc.inlet_2.flow_mass.setub(m.salt_flow_max)  
+        #-------- added by esrawli
+        salt_hxc.outlet_1.flow_mol.setlb(0)  
+        salt_hxc.outlet_1.flow_mol.setub(0.2 * m.flow_max)  
+        salt_hxc.outlet_2.flow_mass.setlb(0)  
+        salt_hxc.outlet_2.flow_mass.setub(m.salt_flow_max)  
+        salt_hxc.inlet_2.pressure.setlb(101320)  
+        salt_hxc.inlet_2.pressure.setub(101330)  
+        salt_hxc.outlet_2.pressure.setlb(101320) 
+        salt_hxc.outlet_2.pressure.setub(101330) 
+        salt_hxc.heat_duty.setlb(0)  
+        salt_hxc.heat_duty.setub(200e6)  
+        salt_hxc.shell.heat.setlb(-200e6)
+        salt_hxc.shell.heat.setub(0)  
+        salt_hxc.tube.heat.setlb(0)  
+        salt_hxc.tube.heat.setub(200e6) 
+        salt_hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
+        salt_hxc.tube.properties_in[0].\
+            enthalpy_mass.setub(1.5e6)
+        salt_hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
+        salt_hxc.tube.properties_out[0].\
+            enthalpy_mass.setub(1.5e6)
+        salt_hxc.overall_heat_transfer_coefficient.setlb(0)
+        salt_hxc.overall_heat_transfer_coefficient.setub(10000)
+        salt_hxc.area.setlb(0)
+        salt_hxc.area.setub(5000)  # TODO: Check this value
+        #--------
+        salt_hxc.delta_temperature_out.setlb(10)  # K
+        salt_hxc.delta_temperature_in.setlb(10)  # K
+        # salt_hxc.delta_temperature_out.setub(80)  
+        # salt_hxc.delta_temperature_in.setub(80) 
 
     #-------- added by esrawli
     # Adding missing bounds for the hx pump and cooler. For this flow,
@@ -1915,14 +1936,17 @@ def add_bounds(m):
     # Cost-related terms
     m.fs.charge.capital_cost.setlb(0)  # no units
     m.fs.charge.capital_cost.setub(1e7)
-
-    m.fs.charge.salt_purchase_cost.setlb(0)  
-    m.fs.charge.salt_purchase_cost.setub(1e7)
-    m.fs.charge.spump_purchase_cost.setlb(0)  
-    m.fs.charge.spump_purchase_cost.setub(1e7)
     m.fs.charge.hx_pump.costing.purchase_cost.setlb(0) 
     m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)
 
+    for salt_cost in [m.fs.charge.solar_salt_disjunct,
+                      m.fs.charge.hitec_salt_disjunct]:
+        salt_cost.salt_purchase_cost.setlb(0)  
+        salt_cost.salt_purchase_cost.setub(1e7)
+        salt_cost.capital_cost.setlb(0)  
+        salt_cost.capital_cost.setub(1e7)  
+        salt_cost.spump_purchase_cost.setlb(0)  
+        salt_cost.spump_purchase_cost.setub(1e7)
 
     return m
 
@@ -1949,6 +1973,8 @@ def main(m_usc):
 
     add_bounds(m)
 
+    add_disjunction(m)
+
     return m, solver
 
 
@@ -1963,19 +1989,32 @@ def model_analysis(m, solver):
 
     # Unfix salt flow to charge heat exchanger, temperature, and area
     # of charge heat exchanger
-    m.fs.charge.hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
-    # m.fs.charge.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
-
-    m.fs.charge.hxc.area.unfix() # 1 DOF
-    m.fs.charge.hxc.heat_duty.fix(70*1e6)  # in W
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
+    # m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
+    # m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
+    m.fs.charge.solar_salt_disjunct.hxc.area.unfix() # 1 DOF
+    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(70*1e6)  # in W
+    m.fs.charge.hitec_salt_disjunct.hxc.area.unfix() # 1 DOF
+    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(70*1e6)  # in W
+    
     m.fs.charge.cooler.outlet.enth_mol[0].unfix() # 1 DOF
 
     #-------- added by esrawli
+    # Unfix inputs
     # Unfix the connector and cooler inlets
-    # for unit in [m.fs.charge.connector]:
-    #     unit.inlet.flow_mol.unfix()
-    #     unit.inlet.enth_mol.unfix()
-    #     unit.inlet.pressure.unfix()
+    for unit in [m.fs.charge.connector,
+                 m.fs.charge.connector]:
+        unit.inlet.flow_mol.unfix()
+        unit.inlet.enth_mol.unfix()
+        unit.inlet.pressure.unfix()
+
+    # Unfix the solar and hitec salt charge heat exchanger inlet
+    for salt_hxc in [m.fs.charge.solar_salt_disjunct,
+                     m.fs.charge.hitec_salt_disjunct]:
+        salt_hxc.hxc.inlet_1.flow_mol.unfix()
+        salt_hxc.hxc.inlet_1.enth_mol.unfix()
+        salt_hxc.hxc.inlet_1.pressure.unfix()
     #--------
 
     # adding a dummy objective for the simulation model
@@ -1989,6 +2028,22 @@ def model_analysis(m, solver):
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
     print('DOF before solution = ', degrees_of_freedom(m))
+
+    #-------- aded by esrawli
+    # Disjunction 1: salt selection
+    if salt == "solar":
+        m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
+        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
+    else:
+        m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
+        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(1)
+        
+    TransformationFactory('gdp.fix_disjuncts').apply_to(m)
+    
+    print("The degrees of freedom after gdp transformation ",
+          degrees_of_freedom(m))
+    #--------
+    
     solver.solve(m,
                   tee=True,
                   symbolic_solver_labels=True,
@@ -2008,23 +2063,6 @@ def model_analysis(m, solver):
     print("Operating costs ($/y) =",
           pyo.value(m.fs.charge.operating_cost))
     print('')
-    print("Heat exchanger area (m2) =",
-          value(m.fs.charge.hxc.area))
-    print('')
-    print("Salt flow (kg/s) =",
-          value(m.fs.charge.hxc.inlet_2.flow_mass[0]))
-    print("Salt temperature in (K) =",
-          value(m.fs.charge.hxc.inlet_2.temperature[0]))
-    print("Salt temperature out (K) =",
-          value(m.fs.charge.hxc.outlet_2.temperature[0]))
-    print('')
-    print("Steam flow to storage (mol/s) =",
-          value(m.fs.charge.hxc.inlet_1.flow_mol[0]))
-    print("Water temperature in (K) =",
-          value(m.fs.charge.hxc.side_1.properties_in[0].temperature))
-    print("Steam temperature out (K) =",
-          value(m.fs.charge.hxc.side_1.properties_out[0].temperature))
-    print('')
     print('Plant Power (MW) =',
           value(m.fs.plant_power_out[0]))
     print('')
@@ -2036,21 +2074,104 @@ def model_analysis(m, solver):
                       + m.fs.reheater[2].heat_duty[0])
                     * 1e-6))
     print('')
-    print("Salt cost ($/y) =",
-          pyo.value(m.fs.charge.salt_purchase_cost))
-    print("Tank cost ($/y) =",
-          pyo.value(m.fs.charge.salt_tank.costing.total_tank_cost / 5))
-    print("Salt pump cost ($/y) =",
-          pyo.value(m.fs.charge.spump_purchase_cost))
     print("HX pump cost ($/y) =",
           pyo.value(m.fs.charge.hx_pump.costing.purchase_cost / 5))
-    print("Heat exchanger cost ($/y) =",
-          pyo.value(m.fs.charge.hxc.costing.purchase_cost / 5))
     print("Cooling duty (MW_th) =",
           pyo.value(m.fs.charge.cooler.heat_duty[0] * -1e-6))
+    print('')
+    print('====================================================================================')
+    print("Disjunctions")
+    for d in m.component_data_objects(ctype=Disjunct,
+                                      active=True,
+                                      sort=True, descend_into=True):
+        if abs(d.indicator_var.value - 1) < 1e-6:
+            print(d.name, ' should be selected!')
+    print('')
+    print('')
+    print('====================================================================================')
+    print(' ')
+    if m.fs.charge.solar_salt_disjunct.indicator_var == 1:
+        print("Salt: Solar salt is selected!")
+        print("Heat exchanger area (m2):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.area))
+        print("Heat exchanger cost ($/y):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost / 15))
+        print("Salt flow (kg/s):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0]))
+        print("Salt temperature in (K):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature[0]))
+        print("Salt temperature out (K):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.outlet_2.temperature[0]))
+        print("Steam flow to storage (mol/s):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol[0]))
+        print("Water temperature in (K):",
+              value(m.fs.charge.solar_salt_disjunct.
+                    hxc.side_1.properties_in[0].temperature))
+        print("Steam temperature out (K):",
+              value(m.fs.charge.solar_salt_disjunct.
+                    hxc.side_1.properties_out[0].temperature))
+        print("delta temperature at inlet (K):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in[0]))
+        print("delta temperature at outlet (K):",
+              value(m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out[0]))
+        print("Salt cost ($/y):",
+              value(m.fs.charge.solar_salt_disjunct.salt_purchase_cost))
+        print("Tank cost ($/y):",
+              value(m.fs.charge.solar_salt_disjunct.costing.total_tank_cost / 15))
+        print("Salt pump cost ($/y):",
+              value(m.fs.charge.solar_salt_disjunct.spump_purchase_cost))
+        print("")
+        print("Salt storage tank volume in m3: ",
+              value(m.fs.charge.solar_salt_disjunct.tank_volume))
+        print("Salt density: ",
+              value(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"]))
+        print("HXC heat duty: ",
+              value(m.fs.charge.solar_salt_disjunct.hxc.heat_duty[0]) / 1e6)
+    else:
+        print("Salt: Hitec salt is selected")
+        print("Heat exchanger area (m2):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.area))
+        print("Heat exchanger cost ($/y):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.costing.purchase_cost / 15))
+        print("Salt flow (kg/s):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0]))
+        print("Salt temperature in (K):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature[0]))
+        print("Salt temperature out (K):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.outlet_2.temperature[0]))
+        print("Steam flow to storage (mol/s):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol[0]))
+        print("Water temperature in (K):",
+              value(m.fs.charge.hitec_salt_disjunct.
+                    hxc.side_1.properties_in[0].temperature))
+        print("Steam temperature out (K):",
+              value(m.fs.charge.hitec_salt_disjunct.
+                    hxc.side_1.properties_out[0].temperature))
+        print("delta temperature at inlet (K):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in[0]))
+        print("delta temperature at outlet (K):",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out[0]))
+        print("Salt cost ($/y):",
+              value(m.fs.charge.hitec_salt_disjunct.salt_purchase_cost))
+        print("Tank cost ($/y):",
+              value(m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost / 15))
+        print("Salt pump cost ($/y):",
+              value(m.fs.charge.hitec_salt_disjunct.spump_purchase_cost))
+        print("")
+        print("Salt storage tank volume in m3: ",
+              value(m.fs.charge.hitec_salt_disjunct.tank_volume))
+        print("Salt density: ",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"]))
+        print("HXC heat duty: ",
+              value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6)
+        print("")
+        print("Solver details")
+        print(results)
+        print('')
 
     # for unit_k in [m.fs.boiler, m.fs.charge.ess_hp_split,
-    #                m.fs.charge.hxc]:
+    #                m.fs.charge.solar_salt_disjunct.hxc,
+    #                m.fs.charge.solar_salt_disjunct.hxc]:
     #     unit_k.report()
     # for k in pyo.RangeSet(m.number_turbines):
     #     m.fs.turbine[k].report()
