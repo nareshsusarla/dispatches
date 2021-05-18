@@ -2065,15 +2065,8 @@ def model_analysis(m, solver):
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
-    # #-------- aded by esrawli
+    #-------- aded by esrawli
     # # Disjunction 1: salt selection
-    # if salt == "solar":
-    #     m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
-    #     m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
-    # else:
-    #     m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
-    #     m.fs.charge.hitec_salt_disjunct.indicator_var.fix(1)
-
     m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
     m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
 
