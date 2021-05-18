@@ -892,9 +892,9 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     #  Connector initialization
     _set_port(m.fs.charge.connector.inlet,
               m.fs.charge.ess_hp_split.to_hxc)
-    m.fs.charge.connector.inlet.flow_mol.fix()
-    m.fs.charge.connector.inlet.enth_mol.fix()
-    m.fs.charge.connector.inlet.pressure.fix()
+    # m.fs.charge.connector.inlet.flow_mol.fix()
+    # m.fs.charge.connector.inlet.enth_mol.fix()
+    # m.fs.charge.connector.inlet.pressure.fix()
     m.fs.charge.connector.initialize(outlvl=outlvl,
                                      optarg=solver.options)
     #--------
@@ -1033,7 +1033,7 @@ def build_costing(m, solver=None, optarg={}):
         initialize=m.data_cost['solar_salt_price'],
         doc='Solar salt price in $/kg')
     m.fs.charge.hitec_salt_price = Param(
-        initialize=m.design_data['hx']['hitec']['salt_price'],
+        initialize=m.data_cost['hitec_salt_price'],
         doc='Hitec salt price in $/kg')
 
 
@@ -1067,7 +1067,7 @@ def build_costing(m, solver=None, optarg={}):
     #--------------------------------------------
     # Total inventory of salt required
     m.fs.charge.solar_salt_disjunct.salt_amount = Expression(
-        expr=(m.fs.charge.hxc.inlet_2.flow_mass[0] * \
+        expr=(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0] * \
               m.fs.charge.hours_per_day * 3600),
         doc="Salt flow in gal per min"
     )
