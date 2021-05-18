@@ -49,6 +49,7 @@ from pyomo.network import Arc
 from pyomo.common.fileutils import this_file_dir
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
 from pyomo.gdp import Disjunct, Disjunction
+from pyomo.network.plugins import expand_arcs
 
 # Import IDAES libraries
 from idaes.core import FlowsheetBlock, MaterialBalanceType
@@ -229,10 +230,10 @@ def _make_constraints(m):
     # hx pump
     # The outlet pressure of hx_pump is then fixed to be the same as
     # boiler feed pump's outlet pressure
-    # @m.fs.Constraint(m.fs.time)
-    # def constraint_hxpump_presout(b, t):
-    #     return m.fs.charge.hx_pump.outlet.pressure[t] >= \
-    #         (m.main_steam_pressure * 1.1231)
+    @m.fs.Constraint(m.fs.time)
+    def constraint_hxpump_presout(b, t):
+        return m.fs.charge.hx_pump.outlet.pressure[t] >= \
+            (m.main_steam_pressure * 1.1231)
 
     # Recycle mixer
     # The outlet pressure of the recycle mixer is same as
@@ -824,7 +825,7 @@ def set_model_input(m):
 
     # Hx pump efficiecncy assumption
     m.fs.charge.hx_pump.efficiency_pump.fix(0.80)
-    m.fs.charge.hx_pump.outlet.pressure[0].fix(m.main_steam_pressure * 1.1231)
+    # m.fs.charge.hx_pump.outlet.pressure[0].fix(m.main_steam_pressure * 1.1231)
 
     ###########################################################################
     #  ESS HP splitter                                                        #
@@ -2002,7 +2003,7 @@ def main(m_usc):
     # assert degrees_of_freedom(m) == 0
     print('DOF after init = ', degrees_of_freedom(m))
     #--------
-
+    # m.fs.charge.hx_pump.report()
     # raise Exception("costing")
     build_costing(m, solver=solver)
 
@@ -2064,14 +2065,14 @@ def model_analysis(m, solver):
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
-    #-------- aded by esrawli
-    # Disjunction 1: salt selection
-    if salt == "solar":
-        m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
-        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
-    else:
-        m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
-        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(1)
+    # #-------- aded by esrawli
+    # # Disjunction 1: salt selection
+    # if salt == "solar":
+    #     m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
+    #     m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
+    # else:
+    #     m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
+    #     m.fs.charge.hitec_salt_disjunct.indicator_var.fix(1)
         
     TransformationFactory('gdp.fix_disjuncts').apply_to(m)
     
@@ -2201,7 +2202,7 @@ def model_analysis(m, solver):
               value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6)
         print("")
         print("Solver details")
-        print(results)
+        # print(results)
         print('')
 
     # for unit_k in [m.fs.boiler, m.fs.charge.ess_hp_split,
