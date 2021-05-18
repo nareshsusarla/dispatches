@@ -40,7 +40,8 @@ __author__ = "Naresh Susarla & Edna Soraya Rawlings"
 # Import Pyomo libraries
 import os
 from pyomo.environ import (log, Block, Param, Constraint, Objective,
-                           TransformationFactory, Expression, value,
+                           TransformationFactory, SolverFactory,
+                           Expression, value,
                            log, exp, Var)
 #--------
 import pyomo.environ as pyo
@@ -1927,11 +1928,19 @@ def add_bounds(m):
         salt_hxc.overall_heat_transfer_coefficient.setub(10000)
         salt_hxc.area.setlb(0)
         salt_hxc.area.setub(5000)  # TODO: Check this value
+        salt_hxc.costing.pressure_factor.setlb(0)  # no unit
+        salt_hxc.costing.pressure_factor.setub(1e5)  # no unit
+        salt_hxc.costing.purchase_cost.setlb(0)  # no unit
+        salt_hxc.costing.purchase_cost.setub(1e7)  # no unit
+        salt_hxc.costing.base_cost_per_unit.setlb(0)
+        salt_hxc.costing.base_cost_per_unit.setub(1e6)
+        salt_hxc.costing.material_factor.setlb(0)
+        salt_hxc.costing.material_factor.setub(10)
         #--------
         salt_hxc.delta_temperature_out.setlb(10)  # K
         salt_hxc.delta_temperature_in.setlb(10)  # K
-        # salt_hxc.delta_temperature_out.setub(80)  
-        # salt_hxc.delta_temperature_in.setub(80) 
+        salt_hxc.delta_temperature_out.setub(80)  
+        salt_hxc.delta_temperature_in.setub(80) 
 
     #-------- added by esrawli
     # Adding missing bounds for the hx pump and cooler. For this flow,
@@ -2013,6 +2022,63 @@ def main(m_usc):
 
     return m, solver
 
+#-------- added by esrawli
+def run_nlps(m, solver=None,
+             salt=None):
+    """
+    This function fixes the indicator variables for the two salts
+    so to solve NLP problems 
+    """
+
+    # Disjunction 1: salt selection
+    if salt == "solar":
+        m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
+        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
+    else:
+        m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
+        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(1)
+
+    TransformationFactory('gdp.fix_disjuncts').apply_to(m)
+
+    print("The degrees of freedom after gdp transformation ",
+          degrees_of_freedom(m))
+
+    results = solver.solve(m,
+                           tee=True,
+                           symbolic_solver_labels=True,
+                           options={
+                               "max_iter": 300,
+                               # "halt_on_ampl_error": "yes"
+                           }
+    )
+
+    return m, results
+
+
+def run_gdp(m):
+    """
+    This function solves the GDP problem using the solver GDPopt
+    """
+    
+    opt = SolverFactory('gdpopt')
+    opt.CONFIG.strategy = 'LOA'  # RIC is an option
+    opt.CONFIG.mip_solver = 'gurobi_direct'
+    opt.CONFIG.nlp_solver = 'ipopt'
+    opt.CONFIG.tee = True
+    opt.CONFIG.init_strategy = "no_init"
+    # opt.CONFIG.init_strategy = "set_covering"
+    opt.CONFIG.time_limit = "2400"
+
+    results = opt.solve(m, tee=True,
+                        nlp_solver_args=dict(tee=True,
+                                             symbolic_solver_labels=True,
+                                             options={
+                                                 "max_iter": 100}
+                        )
+    )
+    
+    return m, results
+#--------
 
 def model_analysis(m, solver):
 
@@ -2065,24 +2131,16 @@ def model_analysis(m, solver):
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
-    #-------- aded by esrawli
-    # # Disjunction 1: salt selection
-    m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
-    m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
+    #-------- modified by esrawli
+    # Adding two functions to run either an NLP problem
+    # by fixing the disjuncts or the GDP problem
+    # run_nlps(m,
+    #          solver=solver,
+    #          salt="solar")
 
-    # TransformationFactory('gdp.fix_disjuncts').apply_to(m)
-    
-    print("The degrees of freedom after gdp transformation ",
-          degrees_of_freedom(m))
+    run_gdp(m)
     #--------
-    
-    solver.solve(m,
-                  tee=True,
-                  symbolic_solver_labels=True,
-                  options={
-                      "max_iter": 300,
-                      "halt_on_ampl_error": "yes"}
-    )
+
     print("***************** Printing Results ******************")
     print('')
     print("Obj =",
