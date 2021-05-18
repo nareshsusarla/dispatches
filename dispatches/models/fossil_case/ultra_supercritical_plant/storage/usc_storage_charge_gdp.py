@@ -2048,7 +2048,7 @@ def run_nlps(m, solver=None,
                            symbolic_solver_labels=True,
                            options={
                                "max_iter": 300,
-                               # "halt_on_ampl_error": "yes"
+                               "halt_on_ampl_error": "yes"
                            }
     )
 
@@ -2069,11 +2069,12 @@ def run_gdp(m):
     # opt.CONFIG.init_strategy = "set_covering"
     opt.CONFIG.time_limit = "2400"
 
-    results = opt.solve(m, tee=True,
+    results = opt.solve(m,
+                        tee=True,
                         nlp_solver_args=dict(tee=True,
                                              symbolic_solver_labels=True,
                                              options={
-                                                 "max_iter": 100}
+                                                 "max_iter": 300}
                         )
     )
     
@@ -2086,53 +2087,47 @@ def model_analysis(m, solver):
     # Unfixing variables for analysis
     # (This section is deactived for the simulation of square model)
     ###########################################################################
+
+    # Fixing the power plant produced power
+    m.fs.plant_power_out.fix(400)
+
+    # Unfixing the boiler flowrate
+    m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
+    # m.fs.boiler.inlet.flow_mol.fix(m.main_flow)  # mol/s
+    m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
+
     # Unfix the hp steam split fraction to charge heat exchanger
     m.fs.charge.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
 
-    # Unfix salt flow to charge heat exchanger, temperature, and area
-    # of charge heat exchanger
-    m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
-    # m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
-    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
-    # m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.unfix()  # K, 1 DOF
-    m.fs.charge.solar_salt_disjunct.hxc.area.unfix() # 1 DOF
-    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(70*1e6)  # in W
-    m.fs.charge.hitec_salt_disjunct.hxc.area.unfix() # 1 DOF
-    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(70*1e6)  # in W
-    
+    # Charge heat exchanger section
+    # Unfix charge heat exchanger salt flow, steam flow, temperature,
+    # and area
+    for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
+                     m.fs.charge.hitec_salt_disjunct.hxc]:
+        salt_hxc.inlet_1.flow_mol.unfix()
+        salt_hxc.inlet_1.enth_mol.unfix()
+        salt_hxc.inlet_1.pressure.unfix()
+        salt_hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
+        # salt_hxc.inlet_2.temperature.unfix()  # K, 1 DOF
+        salt_hxc.area.unfix() # 1 DOF
+        salt_hxc.heat_duty.fix(70*1e6)  # in W
+        
     m.fs.charge.cooler.outlet.enth_mol[0].unfix() # 1 DOF
 
-    #-------- added by esrawli
-    # Unfix inputs
     # Unfix the connector and cooler inlets
-    for unit in [m.fs.charge.connector,
-                 m.fs.charge.connector]:
-        unit.inlet.flow_mol.unfix()
-        unit.inlet.enth_mol.unfix()
-        unit.inlet.pressure.unfix()
-
-    # Unfix the solar and hitec salt charge heat exchanger inlet
-    for salt_hxc in [m.fs.charge.solar_salt_disjunct,
-                     m.fs.charge.hitec_salt_disjunct]:
-        salt_hxc.hxc.inlet_1.flow_mol.unfix()
-        salt_hxc.hxc.inlet_1.enth_mol.unfix()
-        salt_hxc.hxc.inlet_1.pressure.unfix()
-    #--------
+    # for unit in [m.fs.charge.connector]:
+    #     unit.inlet.flow_mol.unfix()
+    #     unit.inlet.enth_mol.unfix()
+    #     unit.inlet.pressure.unfix()
 
     # adding a dummy objective for the simulation model
     m.obj = Objective(expr=m.fs.charge.capital_cost
                       + m.fs.charge.operating_cost)
 
-    m.fs.plant_power_out.fix(400)
-
-    m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
-    # m.fs.boiler.inlet.flow_mol.fix(m.main_flow)  # mol/s
-    m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-
     print('DOF before solution = ', degrees_of_freedom(m))
 
     #-------- modified by esrawli
-    # Adding two functions to run either an NLP problem
+    # Adding two functions to solve either an NLP problem
     # by fixing the disjuncts or the GDP problem
     # run_nlps(m,
     #          solver=solver,
@@ -2170,14 +2165,14 @@ def model_analysis(m, solver):
           pyo.value(m.fs.charge.cooler.heat_duty[0] * -1e-6))
     print('')
     print('====================================================================================')
-    print("Disjunctions")
-    for d in m.component_data_objects(ctype=Disjunct,
-                                      active=True,
-                                      sort=True, descend_into=True):
-        if abs(d.indicator_var.value - 1) < 1e-6:
-            print(d.name, ' should be selected!')
-    print('')
-    print('')
+    # print("Disjunctions")
+    # for d in m.component_data_objects(ctype=Disjunct,
+    #                                   active=True,
+    #                                   sort=True, descend_into=True):
+    #     if abs(d.indicator_var.value - 1) < 1e-6:
+    #         print(d.name, ' should be selected!')
+    # print('')
+    # print('')
     print('====================================================================================')
     print(' ')
     if m.fs.charge.solar_salt_disjunct.indicator_var == 1:
