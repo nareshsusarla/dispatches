@@ -281,8 +281,8 @@ def solar_salt_disjunct_equations(disj):
 
     # HTC calculations for solar salt heat exchanger
     # setting the scaling factor for area = 1
-    # iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.area, 1e-2)
     # # setting the scaling factor for overall_heat_transfer_coefficient = 1
+    # iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.area, 1e-2)
     # iscale.set_scaling_factor(
     #     m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
     # iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-6)
@@ -502,8 +502,8 @@ def hitec_salt_disjunct_equations(disj):
 
     # HTC calculations for solar salt heat exchanger
     # setting the scaling factor for area = 1
-    # iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
     # # setting the scaling factor for overall_heat_transfer_coefficient = 1
+    # iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
     # iscale.set_scaling_factor(
     #     m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
     # iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-6)
@@ -857,23 +857,12 @@ def set_scaling_factors(m):
     """
 
     # Scaling factors for charge heat exchangers
-    iscale.set_scaling_factor(
-        m.fs.charge.solar_salt_disjunct.hxc.area, 1e-2)
-    iscale.set_scaling_factor(
-        m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
-    iscale.set_scaling_factor(
-        m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-3)
-    iscale.set_scaling_factor(
-        m.fs.charge.solar_salt_disjunct.hxc.tube.heat, 1e-3)
-
-    iscale.set_scaling_factor(
-        m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
-    iscale.set_scaling_factor(
-        m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
-    iscale.set_scaling_factor(
-        m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-3)
-    iscale.set_scaling_factor(
-        m.fs.charge.hitec_salt_disjunct.hxc.tube.heat, 1e-3)
+    for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
+                     m.fs.charge.hitec_salt_disjunct.hxc]:
+        iscale.set_scaling_factor(salt_hxc.area, 1e-2)
+        iscale.set_scaling_factor(salt_hxc.overall_heat_transfer_coefficient, 1e-3)
+        iscale.set_scaling_factor(salt_hxc.shell.heat, 1e-6)
+        iscale.set_scaling_factor(salt_hxc.tube.heat, 1e-6)
 
     # Scaling factors for storage section
     iscale.set_scaling_factor(m.fs.charge.hx_pump.control_volume.work, 1e-6)
