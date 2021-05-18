@@ -232,7 +232,7 @@ def _make_constraints(m):
     # boiler feed pump's outlet pressure
     @m.fs.Constraint(m.fs.time)
     def constraint_hxpump_presout(b, t):
-        return m.fs.charge.hx_pump.outlet.pressure[t] >= \
+        return m.fs.charge.hx_pump.outlet.pressure[t] == \
             (m.main_steam_pressure * 1.1231)
 
     # Recycle mixer
@@ -833,7 +833,7 @@ def set_model_input(m):
     # The model is built for a fixed flow of steam through the charger.
     # This flow of steam to the charger is unfixed and determine during
     # design optimization
-    m.fs.charge.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.05)
+    m.fs.charge.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.01)
 
     ###########################################################################
     #  Recycle mixer                                                          #
@@ -861,18 +861,18 @@ def set_scaling_factors(m):
     iscale.set_scaling_factor(
         m.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
     iscale.set_scaling_factor(
-        m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-6)
+        m.fs.charge.solar_salt_disjunct.hxc.shell.heat, 1e-3)
     iscale.set_scaling_factor(
-        m.fs.charge.solar_salt_disjunct.hxc.tube.heat, 1e-6)
+        m.fs.charge.solar_salt_disjunct.hxc.tube.heat, 1e-3)
 
     iscale.set_scaling_factor(
         m.fs.charge.hitec_salt_disjunct.hxc.area, 1e-2)
     iscale.set_scaling_factor(
         m.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient, 1e-3)
     iscale.set_scaling_factor(
-        m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-6)
+        m.fs.charge.hitec_salt_disjunct.hxc.shell.heat, 1e-3)
     iscale.set_scaling_factor(
-        m.fs.charge.hitec_salt_disjunct.hxc.tube.heat, 1e-6)
+        m.fs.charge.hitec_salt_disjunct.hxc.tube.heat, 1e-3)
 
     # Scaling factors for storage section
     iscale.set_scaling_factor(m.fs.charge.hx_pump.control_volume.work, 1e-6)
@@ -1616,22 +1616,22 @@ def build_costing(m, solver=None, optarg={}):
     m.fs.charge.hitec_salt_disjunct.costing = Block()
 
     m.fs.charge.hitec_salt_disjunct.costing.material_cost = Param(
-        initialize=m.design_data['storage_tank']['material_cost'],
+        initialize=m.data_cost['storage_tank_material'],
         doc='$/kg of SS316 material'
     )
 
     m.fs.charge.hitec_salt_disjunct.costing.insulation_cost = Param(
-        initialize=m.design_data['storage_tank']['insulation_cost'],
+        initialize=m.data_cost['storage_tank_insulation'],
         doc='$/m2'
     )
 
     m.fs.charge.hitec_salt_disjunct.costing.foundation_cost = Param(
-        initialize=m.design_data['storage_tank']['foundation_cost'],
+        initialize=m.data_cost['storage_tank_foundation'],
         doc='$/m2'
     )
 
     m.fs.charge.hitec_salt_disjunct.costing.material_density = Param(
-        initialize=m.design_data['storage_tank']['material_density'],
+        initialize=m.data_storage_tank['material_density'],
         doc='Kg/m3'
     )
 
@@ -1705,7 +1705,7 @@ def build_costing(m, solver=None, optarg={}):
                 m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost
                 + m.fs.charge.hx_pump.costing.purchase_cost
                 + m.fs.charge.solar_salt_disjunct.no_of_tanks
-                * m.fs.charge.solar_salt_disjunct.salt_tank.costing.total_tank_cost
+                * m.fs.charge.solar_salt_disjunct.costing.total_tank_cost
                )
             / m.fs.charge.num_of_years
         )
@@ -1772,7 +1772,7 @@ def build_costing(m, solver=None, optarg={}):
     def op_cost_rule(b):
         return m.fs.charge.operating_cost == (
             m.fs.charge.operating_hours * m.fs.charge.coal_price * \
-            (m.fs.plant_heat_duty[0]*1e6
+            (m.fs.plant_heat_duty[0] * 1e6
                 - m.fs.q_baseline)
             - (m.fs.charge.cooling_price * m.fs.charge.operating_hours * \
                m.fs.charge.cooler.heat_duty[0])
@@ -2073,8 +2073,11 @@ def model_analysis(m, solver):
     # else:
     #     m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     #     m.fs.charge.hitec_salt_disjunct.indicator_var.fix(1)
-        
-    TransformationFactory('gdp.fix_disjuncts').apply_to(m)
+
+    m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
+    m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
+
+    # TransformationFactory('gdp.fix_disjuncts').apply_to(m)
     
     print("The degrees of freedom after gdp transformation ",
           degrees_of_freedom(m))
