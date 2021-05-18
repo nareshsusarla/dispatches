@@ -23,7 +23,7 @@ References:
         and Thermochemical Properties
     (2) Change et al., (2015) Energy Procedia, 69, 779 - 789
     
-updated on 02/25/2021
+updated on 05/18/2021
 """
 
 
@@ -38,8 +38,8 @@ from pyomo.environ import (Constraint,
                            RangeSet,
                            Var,
                            Reals)
-from pyomo.environ import units
-from pyomo.opt import SolverFactory, TerminationCondition
+from pyomo.environ import units as pyunits
+from pyomo.opt import TerminationCondition
 # Import IDAES
 from idaes.core import (declare_process_block_class,
                         StateBlock,
@@ -52,6 +52,8 @@ from idaes.core.util.initialization import solve_indexed_blocks
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes.core.phases import LiquidPhase
 from idaes.core.components import Component
+from idaes.core.util import get_solver
+import idaes.logger as idaeslog
 
 # Some more inforation about this module
 _author_ = "Naresh Susarla"
@@ -143,20 +145,22 @@ class PhysicalParameterData(PhysicalParameterBlock):
                                                  'units': 'Pa.s'},
                             'thermal_conductivity':{'method': None,
                                                     'units': 'W/m/K'}})
-        obj.add_default_units({'time': units.s,
-                               'length': units.m,
-                               'mass': units.kg,
-                               'amount': units.mol,
-                               'temperature': units.K})
+        obj.add_default_units({'time': pyunits.s,
+                               'length': pyunits.m,
+                               'mass': pyunits.kg,
+                               'amount': pyunits.mol,
+                               'temperature': pyunits.K})
 
 class _StateBlock(StateBlock):
     """
     This Class contains methods which should be applied to Property Blocks as a
     whole, rather than individual elements of indexed Property Blocks.
     """
-    def initialize(blk, state_args=None, outlvl=0, hold_state=False,
-                   state_vars_fixed=False, solver='ipopt',
-                   optarg={'tol': 1e-8}):
+    def initialize(blk, state_args=None,
+                   outlvl=0, hold_state=False,
+                   state_vars_fixed=False,
+                   solver=None,
+                   optarg={}):
         """
         Declare initialisation routine.
         Keyword Arguments:
@@ -243,8 +247,7 @@ class _StateBlock(StateBlock):
         else:
             stee = False
 
-        opt = SolverFactory(solver)
-        opt.options = optarg
+        opt = get_solver(solver, optarg)
 
         # ---------------------------------------------------------------------
         # Solve property correlation
@@ -325,15 +328,15 @@ class StateTestBlockData(StateBlockData):
         """Declare the necessary state variable objects."""
         self.flow_mass = Var(domain=Reals,
                             initialize=100,
-                            units=units.kg/units.s,
+                            units=pyunits.kg/pyunits.s,
                             doc='Fluid mass flowrate [kg/s]')
         self.pressure = Var(domain=Reals,
                             initialize=1.01325E5,
-                            units=units.Pa,
+                            units=pyunits.Pa,
                             doc='State pressure [Pa]')
         self.temperature = Var(domain=Reals,
                                initialize=550,
-                               units=units.K,
+                               units=pyunits.K,
                                doc='State temperature [K]',
                                bounds=(435.15, 788.15)) # 162 - 515 C
 
