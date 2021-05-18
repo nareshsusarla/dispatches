@@ -2074,7 +2074,8 @@ def run_gdp(m):
                         nlp_solver_args=dict(tee=True,
                                              symbolic_solver_labels=True,
                                              options={
-                                                 "max_iter": 300}
+                                                 "max_iter": 300
+                                             }
                         )
     )
     
@@ -2110,8 +2111,13 @@ def model_analysis(m, solver):
         salt_hxc.inlet_2.flow_mass.unfix()   # kg/s, 1 DOF
         # salt_hxc.inlet_2.temperature.unfix()  # K, 1 DOF
         salt_hxc.area.unfix() # 1 DOF
-        salt_hxc.heat_duty.fix(70*1e6)  # in W
-        
+        # salt_hxc.heat_duty.fix(70*1e6)  # in W
+        salt_hxc.heat_duty.fix(100*1e6)  # in W
+    # m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature.unfix()  # K
+    m.fs.charge.solar_salt_disjunct.hxc.outlet_2.temperature.unfix()  # K
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.fix(435.15)  # K
+    m.fs.charge.hitec_salt_disjunct.hxc.outlet_2.temperature.unfix()  # K
+
     m.fs.charge.cooler.outlet.enth_mol[0].unfix() # 1 DOF
 
     # Unfix the connector and cooler inlets
@@ -2165,14 +2171,14 @@ def model_analysis(m, solver):
           pyo.value(m.fs.charge.cooler.heat_duty[0] * -1e-6))
     print('')
     print('====================================================================================')
-    # print("Disjunctions")
-    # for d in m.component_data_objects(ctype=Disjunct,
-    #                                   active=True,
-    #                                   sort=True, descend_into=True):
-    #     if abs(d.indicator_var.value - 1) < 1e-6:
-    #         print(d.name, ' should be selected!')
-    # print('')
-    # print('')
+    print("Disjunctions")
+    for d in m.component_data_objects(ctype=Disjunct,
+                                      active=True,
+                                      sort=True, descend_into=True):
+        if abs(d.indicator_var.value - 1) < 1e-6:
+            print(d.name, ' should be selected!')
+    print('')
+    print('')
     print('====================================================================================')
     print(' ')
     if m.fs.charge.solar_salt_disjunct.indicator_var == 1:
@@ -2251,7 +2257,7 @@ def model_analysis(m, solver):
               value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6)
         print("")
         print("Solver details")
-        # print(results)
+        print(results)
         print('')
 
     # for unit_k in [m.fs.boiler, m.fs.charge.ess_hp_split,
