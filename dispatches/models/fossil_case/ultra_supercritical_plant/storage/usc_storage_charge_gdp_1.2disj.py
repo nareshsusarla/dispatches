@@ -190,20 +190,10 @@ def create_charge_model(m):
     #   1. solar_salt_disjunct -------> solar salt used as the storage medium
     #   1. hitec_salt_disjunct -------> hitec salt used as the storage medium 
     #
+    
     m.fs.charge.solar_salt_disjunct = Disjunct(rule=solar_salt_disjunct_equations)
     m.fs.charge.hitec_salt_disjunct = Disjunct(rule=hitec_salt_disjunct_equations)
 
-    # Connecting the cooler to the two different storage heat exchangers in
-    # disjunction 3
-    m.fs.charge.solar_salt_disjunct.hxc_to_cooler = Arc(
-        source=m.fs.charge.solar_salt_disjunct.hxc.outlet_1,
-        destination=m.fs.charge.cooler.inlet
-    )
-    m.fs.charge.hitec_salt_disjunct.hxc_to_cooler = Arc(
-        source=m.fs.charge.hitec_salt_disjunct.hxc.outlet_1,
-        destination=m.fs.charge.cooler.inlet
-    )
-    #--------
 
     ###########################################################################
     #  Create the stream Arcs and return the model                            #
@@ -264,7 +254,7 @@ def solar_salt_disjunct_equations(disj):
     Block of equations for disjunct 1 for the selection of 
     solar salt as the storage medium in disjunction 1
     """
-
+    
     m = disj.model()
 
     m.fs.charge.solar_salt_disjunct.hxc = HeatExchanger(
@@ -476,6 +466,13 @@ def solar_salt_disjunct_equations(disj):
         source=m.fs.charge.connector.outlet,
         destination=m.fs.charge.solar_salt_disjunct.hxc.inlet_1
     )
+    # Connecting the cooler to the two different storage heat exchangers in
+    # disjunction 3
+    m.fs.charge.solar_salt_disjunct.hxc_to_cooler = Arc(
+        source=m.fs.charge.solar_salt_disjunct.hxc.outlet_1,
+        destination=m.fs.charge.cooler.inlet
+    )
+    #--------
 
 
 def hitec_salt_disjunct_equations(disj):
@@ -485,7 +482,6 @@ def hitec_salt_disjunct_equations(disj):
     """
 
     m = disj.model()
-
 
     # Charge heat exchanger for storage using hitec salt
     m.fs.charge.hitec_salt_disjunct.hxc = HeatExchanger(
@@ -727,7 +723,13 @@ def hitec_salt_disjunct_equations(disj):
         source=m.fs.charge.connector.outlet,
         destination=m.fs.charge.hitec_salt_disjunct.hxc.inlet_1
     )
-#--------
+    # Connecting the cooler to the two different storage heat exchangers in
+    # disjunction 3
+    m.fs.charge.hitec_salt_disjunct.hxc_to_cooler = Arc(
+        source=m.fs.charge.hitec_salt_disjunct.hxc.outlet_1,
+        destination=m.fs.charge.cooler.inlet
+    )
+    #--------
 
 def _create_arcs(m):
 
@@ -814,13 +816,18 @@ def set_model_input(m):
     m.fs.charge.solar_salt_disjunct.hxc.inlet_2.pressure.fix(101325)  # Pa
 
     m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass.fix(100)   # kg/s
-    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.fix(513.15)  # K
+    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.fix(435.15)  # K
     m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.pressure.fix(101325)  # Pa
 
     # Cooler outlet enthalpy is fixed during model build to ensure the inlet
     # to the pump is liquid. However, this is unfixed during
     # design optimization. The temperature is at the outlet of cooler is
     # constrained in the model
+    
+    m.fs.charge.cooler.inlet.flow_mol[0].fix(100)
+    m.fs.charge.cooler.inlet.enth_mol[0].fix(20000)
+    m.fs.charge.cooler.inlet.pressure[0].fix(m.main_steam_pressure)
+
     m.fs.charge.cooler.outlet.enth_mol[0].fix(10000)
     m.fs.charge.cooler.deltaP[0].fix(0)
 
@@ -867,6 +874,7 @@ def set_scaling_factors(m):
     # Scaling factors for storage section
     iscale.set_scaling_factor(m.fs.charge.hx_pump.control_volume.work, 1e-6)
     iscale.set_scaling_factor(m.fs.charge.cooler.control_volume.heat, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.connector.control_volume.heat, 1e-1)
     # return m
 
 def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
@@ -897,9 +905,9 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     # Note that these should be unfixed during optimization
     _set_port(m.fs.charge.solar_salt_disjunct.hxc.inlet_1,
               m.fs.charge.connector.outlet)
-    m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol.fix()
-    m.fs.charge.solar_salt_disjunct.hxc.inlet_1.enth_mol.fix()
-    m.fs.charge.solar_salt_disjunct.hxc.inlet_1.pressure.fix()
+    # m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol.fix()
+    # m.fs.charge.solar_salt_disjunct.hxc.inlet_1.enth_mol.fix()
+    # m.fs.charge.solar_salt_disjunct.hxc.inlet_1.pressure.fix()
     m.fs.charge.solar_salt_disjunct.hxc.initialize(outlvl=outlvl,
                                                    optarg=solver.options)
 
@@ -909,16 +917,17 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     # Note that this should be unfixed during optimization
     _set_port(m.fs.charge.hitec_salt_disjunct.hxc.inlet_1,
               m.fs.charge.connector.outlet)
-    m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol.fix()
-    m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.enth_mol.fix()
-    m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.pressure.fix()
+    # m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol.fix()
+    # m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.enth_mol.fix()
+    # m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.pressure.fix()
     m.fs.charge.hitec_salt_disjunct.hxc.initialize(
         outlvl=outlvl, optarg=solver.options)
     #--------
     
     #  Cooler
-    _set_port(m.fs.charge.cooler.inlet,
-              m.fs.charge.solar_salt_disjunct.hxc.outlet_1)
+    # _set_port(m.fs.charge.cooler.inlet,
+    #           m.fs.charge.solar_salt_disjunct.hxc.outlet_1)
+    # m.fs.charge.cooler.inlet.fix()
     m.fs.charge.cooler.initialize(outlvl=outlvl,
                                   optarg=solver.options)
     
@@ -1928,8 +1937,8 @@ def add_bounds(m):
         #--------
         salt_hxc.delta_temperature_out.setlb(10)  # K
         salt_hxc.delta_temperature_in.setlb(10)  # K
-        salt_hxc.delta_temperature_out.setub(80)  
-        salt_hxc.delta_temperature_in.setub(80) 
+        salt_hxc.delta_temperature_out.setub(100)  
+        salt_hxc.delta_temperature_in.setub(100) 
 
     #-------- added by esrawli
     # Adding missing bounds for the hx pump and cooler. For this flow,
@@ -2051,7 +2060,8 @@ def run_gdp(m):
     
     opt = SolverFactory('gdpopt')
     opt.CONFIG.strategy = 'LOA'  # RIC is an option
-    opt.CONFIG.mip_solver = 'gurobi_direct'
+    opt.CONFIG.mip_solver = 'glpk'
+    # opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
@@ -2102,12 +2112,14 @@ def model_analysis(m, solver):
         salt_hxc.area.unfix() # 1 DOF
         # salt_hxc.heat_duty.fix(70*1e6)  # in W
         salt_hxc.heat_duty.fix(100*1e6)  # in W
+
     # m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature.unfix()  # K
-    m.fs.charge.solar_salt_disjunct.hxc.outlet_2.temperature.unfix()  # K
-    m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.fix(435.15)  # K
-    m.fs.charge.hitec_salt_disjunct.hxc.outlet_2.temperature.unfix()  # K
+    # m.fs.charge.solar_salt_disjunct.hxc.outlet_2.temperature.unfix()  # K
+    # m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature.fix(435.15)  # K
+    # m.fs.charge.hitec_salt_disjunct.hxc.outlet_2.temperature.unfix()  # K
 
     m.fs.charge.cooler.outlet.enth_mol[0].unfix() # 1 DOF
+    m.fs.charge.cooler.inlet.unfix()
 
     # Unfix the connector and cooler inlets
     # for unit in [m.fs.charge.connector]:
@@ -2125,8 +2137,8 @@ def model_analysis(m, solver):
     # Adding two functions to solve either an NLP problem
     # by fixing the disjuncts or the GDP problem
     # run_nlps(m,
-    #          solver=solver,
-    #          salt="solar")
+    #           solver=solver,
+    #           salt="solar")
 
     run_gdp(m)
     #--------
@@ -2159,7 +2171,7 @@ def model_analysis(m, solver):
     print("Cooling duty (MW_th) =",
           pyo.value(m.fs.charge.cooler.heat_duty[0] * -1e-6))
     print('')
-    print('====================================================================================')
+    print('=================================================================')
     print("Disjunctions")
     for d in m.component_data_objects(ctype=Disjunct,
                                       active=True,
@@ -2168,7 +2180,7 @@ def model_analysis(m, solver):
             print(d.name, ' should be selected!')
     print('')
     print('')
-    print('====================================================================================')
+    print('=================================================================')
     print(' ')
     if m.fs.charge.solar_salt_disjunct.indicator_var == 1:
         print("Salt: Solar salt is selected!")
@@ -2246,7 +2258,7 @@ def model_analysis(m, solver):
               value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6)
         print("")
         print("Solver details")
-        print(results)
+        # print(results)
         print('')
 
     # for unit_k in [m.fs.boiler, m.fs.charge.ess_hp_split,
