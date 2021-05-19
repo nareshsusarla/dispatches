@@ -824,9 +824,9 @@ def set_model_input(m):
     # design optimization. The temperature is at the outlet of cooler is
     # constrained in the model
     
-    m.fs.charge.cooler.inlet.flow_mol[0].fix(100)
-    m.fs.charge.cooler.inlet.enth_mol[0].fix(20000)
-    m.fs.charge.cooler.inlet.pressure[0].fix(m.main_steam_pressure)
+    # m.fs.charge.cooler.inlet.flow_mol[0].fix(100)
+    # m.fs.charge.cooler.inlet.enth_mol[0].fix(20000)
+    # m.fs.charge.cooler.inlet.pressure[0].fix(m.main_steam_pressure)
 
     m.fs.charge.cooler.outlet.enth_mol[0].fix(10000)
     m.fs.charge.cooler.deltaP[0].fix(0)
@@ -925,9 +925,9 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
     #--------
     
     #  Cooler
-    # _set_port(m.fs.charge.cooler.inlet,
-    #           m.fs.charge.solar_salt_disjunct.hxc.outlet_1)
-    # m.fs.charge.cooler.inlet.fix()
+    _set_port(m.fs.charge.cooler.inlet,
+              m.fs.charge.solar_salt_disjunct.hxc.outlet_1)
+    m.fs.charge.cooler.inlet.fix()
     m.fs.charge.cooler.initialize(outlvl=outlvl,
                                   optarg=solver.options)
     
