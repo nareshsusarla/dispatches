@@ -2060,6 +2060,7 @@ def run_gdp(m):
     
     opt = SolverFactory('gdpopt')
     opt.CONFIG.strategy = 'LOA'  # RIC is an option
+    # opt.CONFIG.subproblem_presolve = False 
     opt.CONFIG.mip_solver = 'glpk'
     # opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
