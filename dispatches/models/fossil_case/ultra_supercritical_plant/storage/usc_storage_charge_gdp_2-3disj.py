@@ -227,6 +227,30 @@ def _make_constraints(m):
     def recyclemixer_pressure_constraint(b, t):
         return b.from_bfw_out_state[t].pressure == b.mixed_state[t].pressure
 
+    #-------- added by esrawli
+    # Connect the boiler to the ess hp splitter using constraints instead of an arc
+    @m.fs.charge.Constraint(m.fs.time)
+    def constraint_boilerout_flow(b, t):
+        return (
+            m.fs.charge.ess_hp_split.inlet.flow_mol[t] == \
+            m.fs.boiler.outlet.flow_mol[t]
+        )
+
+    @m.fs.charge.Constraint(m.fs.time)
+    def constraint_boilerout_enth(b, t):
+        return (
+            m.fs.charge.ess_hp_split.inlet.enth_mol[t] == \
+            m.fs.boiler.outlet.enth_mol[t]
+        )
+
+    @m.fs.charge.Constraint(m.fs.time)
+    def constraint_boilerout_pres(b, t):
+        return (
+            m.fs.charge.ess_hp_split.inlet.pressure[t] == \
+            m.fs.boiler.outlet.pressure[t]
+        )
+    #--------
+
 def _create_arcs(m):
 
     # boiler to turb
@@ -234,12 +258,14 @@ def _create_arcs(m):
         arc_s.expanded_block.enth_mol_equality.deactivate()
         arc_s.expanded_block.flow_mol_equality.deactivate()
         arc_s.expanded_block.pressure_equality.deactivate()
-        
-    # Connect the boiler to the ess hp splitter 
-    m.fs.charge.boiler_to_esshp = Arc(
-        source=m.fs.boiler.outlet,
-        destination=m.fs.charge.ess_hp_split.inlet
-    )
+
+    #-------- commented by esrawli
+    # # Connect the boiler to the ess hp splitter 
+    # m.fs.charge.boiler_to_esshp = Arc(
+    #     source=m.fs.boiler.outlet,
+    #     destination=m.fs.charge.ess_hp_split.inlet
+    # )
+    #--------
 
     # Connect the boiler to the ess hp splitter 
     m.fs.charge.esshp_to_turb1 = Arc(
