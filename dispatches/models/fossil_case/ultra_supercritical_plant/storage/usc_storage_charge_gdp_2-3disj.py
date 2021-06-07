@@ -2104,8 +2104,8 @@ def add_bounds(m):
 
     for split in [m.fs.charge.ess_hp_split]:
         #-------- added by esrawli
-        split.inlet.flow_mol[:].setlb(0.1)
-        split.inlet.flow_mol[:].setub(m.flow_max)
+        # split.inlet.flow_mol[:].setlb(0)
+        # split.inlet.flow_mol[:].setub(m.flow_max)
         #--------
         split.to_hxc.flow_mol[:].setlb(0.1)
         split.to_hxc.flow_mol[:].setub(0.2 * m.flow_max)
