@@ -1991,10 +1991,10 @@ def add_bounds(m):
         salt_hxc.costing.base_cost_per_unit.setub(1e6)
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
-        salt_hxc.delta_temperature_out.setlb(10)  # K
         salt_hxc.delta_temperature_in.setlb(10)  # K
-        salt_hxc.delta_temperature_out.setub(100)
-        salt_hxc.delta_temperature_in.setub(100)
+        salt_hxc.delta_temperature_in.setub(80)
+        salt_hxc.delta_temperature_out.setlb(10)  # K
+        salt_hxc.delta_temperature_out.setub(80)
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
         oil_hxc.inlet_1.flow_mol.setlb(0)
@@ -2021,10 +2021,10 @@ def add_bounds(m):
         oil_hxc.overall_heat_transfer_coefficient.setub(10000)
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(5000)  # TODO: Check this value
-        oil_hxc.delta_temperature_out.setlb(10)  # K
         oil_hxc.delta_temperature_in.setlb(10)  # K
-        oil_hxc.delta_temperature_out.setub(300)
         oil_hxc.delta_temperature_in.setub(300)
+        oil_hxc.delta_temperature_out.setlb(10)  # K
+        oil_hxc.delta_temperature_out.setub(300)
         # Bounds added based on the results from Andres's model
         oil_hxc.tube.properties_in[0].cp_mass.setlb(0)
         oil_hxc.tube.properties_in[0].cp_mass.setub(1e6)
@@ -2073,8 +2073,8 @@ def add_bounds(m):
                   m.fs.charge.ess_hp_split]:
         split.to_hxc.flow_mol[:].setlb(0)
         split.to_hxc.flow_mol[:].setub(0.2 * m.flow_max)
-        split.to_turbine.flow_mol[:].setlb(0)
-        split.to_turbine.flow_mol[:].setub(m.flow_max)
+        # split.to_turbine.flow_mol[:].setlb(0)
+        # split.to_turbine.flow_mol[:].setub(m.flow_max)
         split.split_fraction[0.0, "to_hxc"].setlb(0)
         split.split_fraction[0.0, "to_hxc"].setub(1)
         split.split_fraction[0.0, "to_turbine"].setlb(0)
