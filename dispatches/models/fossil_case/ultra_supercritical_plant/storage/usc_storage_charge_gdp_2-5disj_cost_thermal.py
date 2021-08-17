@@ -2074,9 +2074,9 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             m.fs.charge.thermal_oil_disjunct.salt_purchase_cost
             + m.fs.charge.thermal_oil_disjunct.spump_purchase_cost
             + (m.fs.charge.thermal_oil_disjunct.hxc.costing.purchase_cost
-                + m.fs.charge.hx_pump.costing.purchase_cost
-                + m.fs.charge.thermal_oil_disjunct.no_of_tanks * \
-                m.fs.charge.thermal_oil_disjunct.costing.total_tank_cost)
+               + m.fs.charge.hx_pump.costing.purchase_cost
+               + m.fs.charge.thermal_oil_disjunct.no_of_tanks * \
+               m.fs.charge.thermal_oil_disjunct.costing.total_tank_cost)
             / m.fs.charge.num_of_years
         )
     m.fs.charge.thermal_oil_disjunct.cap_cost_eq = Constraint(
@@ -2100,7 +2100,10 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         doc="Number of operating hours per year")
     m.fs.charge.operating_cost = pyo.Var(
         initialize=1000000,
-        bounds=(1e-5, None),
+        #-------- modified by esrawli
+        # bounds=(1e-5, None),
+        bounds=(0, None),
+        #--------
         doc="Operating cost") # add units
 
     def op_cost_rule(b):
@@ -2117,6 +2120,68 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     calculate_variable_from_constraint(
         m.fs.charge.operating_cost,
         m.fs.charge.op_cost_eq)
+
+    #-------- added by esrawli
+    ###########################################################################
+    #  Annual capital and operating cost for full plant
+    ###########################################################################
+    # Capital cost for power plant
+    m.fs.charge.plant_capital_cost = pyo.Var(
+        initialize=1000000,
+        # bounds=(1e-5, None),
+        doc="Annualized capital cost for the plant in $")
+    m.fs.charge.plant_fixed_operating_cost = pyo.Var(
+        initialize=1000000,
+        bounds=(0, None),
+        doc="Plant fixed operating cost in $/yr")
+    m.fs.charge.plant_variable_operating_cost = pyo.Var(
+        initialize=1000000,
+        bounds=(0, None),
+        doc="Plant variable operating cost in $/yr")
+
+    # Add function to calculate the plant capital cost. Equations from
+    # "USC Cost function.pptx" sent by Naresh
+    def plant_cap_cost_rule(b):
+        return m.fs.charge.plant_capital_cost == (
+            (2688973 * m.fs.plant_heat_duty[0] # in MW
+             # (2688973 * m.fs.plant_power_out[0] # in MW
+             + 618968072
+            ) / m.fs.charge.num_of_years
+        ) * m.CE_index
+    m.fs.charge.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
+
+    # Initialize capital cost of power plant
+    calculate_variable_from_constraint(
+        m.fs.charge.plant_capital_cost,
+        m.fs.charge.plant_cap_cost_eq)
+
+    # Add function to calculate fixed and variable operating costs in
+    # the plant. Equations from "USC Cost function.pptx" sent by
+    # Naresh
+    def op_fixed_plant_cost_rule(b):
+        return m.fs.charge.plant_fixed_operating_cost == (
+            (16657.5 * m.fs.plant_heat_duty[0] # in MW
+             # (16657.5 * m.fs.plant_power_out[0] # in MW
+             + 6109833.3
+            ) / m.fs.charge.num_of_years
+        ) * m.CE_index # annualized, in $/y
+    m.fs.charge.op_fixed_plant_cost_eq = pyo.Constraint(rule=op_fixed_plant_cost_rule)
+
+    def op_variable_plant_cost_rule(b):
+        return m.fs.charge.plant_variable_operating_cost == (
+            31754.7 * m.fs.plant_heat_duty[0] # in MW
+            # 31754.7 * m.fs.plant_power_out[0] # in MW
+        ) # in $/yr
+    m.fs.charge.op_variable_plant_cost_eq = pyo.Constraint(rule=op_variable_plant_cost_rule)
+
+    # Initialize plant fixed and variable operating costs
+    calculate_variable_from_constraint(
+        m.fs.charge.plant_fixed_operating_cost,
+        m.fs.charge.op_fixed_plant_cost_eq)
+    calculate_variable_from_constraint(
+        m.fs.charge.plant_variable_operating_cost,
+        m.fs.charge.op_variable_plant_cost_eq)
+    #--------
 
     res = solver.solve(m,
                        tee=False,
@@ -2277,9 +2342,13 @@ def add_bounds(m):
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
         salt_hxc.delta_temperature_in.setlb(10)  # K
-        salt_hxc.delta_temperature_in.setub(80)
+        # salt_hxc.delta_temperature_in.setub(80)
         salt_hxc.delta_temperature_out.setlb(10)  # K
-        salt_hxc.delta_temperature_out.setub(80)
+        # salt_hxc.delta_temperature_out.setub(80)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(80)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81)
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
         oil_hxc.inlet_1.flow_mol.setlb(0)
@@ -2307,7 +2376,7 @@ def add_bounds(m):
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(5000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)  # K
-        oil_hxc.delta_temperature_in.setub(559)
+        oil_hxc.delta_temperature_in.setub(557)
         oil_hxc.delta_temperature_out.setlb(10)  # K
         oil_hxc.delta_temperature_out.setub(500)
         # Bounds added based on the results from Andres's model
@@ -2404,6 +2473,10 @@ def add_bounds(m):
         unit_k.outlet.flow_mol[:].setub(m.flow_max)  # mol/s
     #--------
 
+    # Add bounds to plant capital cost
+    m.fs.charge.plant_capital_cost.setlb(0)
+    m.fs.charge.plant_capital_cost.setub(1e12)
+
     return m
 
 
@@ -2489,38 +2562,35 @@ def run_nlps(m,
 
 def print_model(nlp_model, nlp_data):
 
-    print('         _______________________________________')
+    print('       ___________________________________________')
     if nlp_model.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
-        print('       | Disjunction 1: Solar salt is selected |')
-        print("delta temperature at inlet (K):",
-              value(nlp_model.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in[0]))
-        print("delta temperature at outlet (K):",
-              value(nlp_model.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out[0]))
+        print('        Disjunction 1: Solar salt is selected')
+        print('        Delta temperature at inlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in[0])))
+        print('        Delta temperature at outlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out[0])))
     elif nlp_model.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
-        print('       | Disjunction 1: Hitec salt is selected |')
-        print("delta temperature at inlet (K):",
-              value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in[0]))
-        print("delta temperature at outlet (K):",
-              value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out[0]))
+        print('        Disjunction 1: Hitec salt is selected')
+        print('        Delta temperature at inlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in[0])))
+        print('        Delta temperature at outlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out[0])))
     else:
-        print('       | Disjunction 1: Thermal oil is selected |')
-        print("delta temperature at inlet (K):",
-              value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_in[0]))
-        print("delta temperature at outlet (K):",
-              value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_out[0]))
-        print("temperature at inlet (K):",
-              value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.inlet_2.temperature[0]))
-        print("temperature at outlet (K):",
-              value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.outlet_2.temperature[0]))
+        print('        Disjunction 1: Thermal oil is selected')
+        print('        Delta temperature at inlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_in[0])))
+        print('        Delta temperature at outlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_out[0])))
 
     if nlp_model.fs.charge.vhp_source_disjunct.indicator_var.value == 1:
-        print('       | Disjunction 2: VHP source is selected  |')
+        print('        Disjunction 2: VHP source is selected')
     else:
-        print('       | Disjunction 2: HP source is selected   |')
-    print('         _______________________________________')
+        print('        Disjunction 2: HP source is selected')
 
+    print('')
     print('        Cooler heat duty in MW',
           nlp_model.fs.charge.cooler.heat_duty[0].value * 1e-6)
+    print('       ___________________________________________')
     print('')
 
 def run_gdp(m):
@@ -2557,140 +2627,146 @@ def run_gdp(m):
 
 def print_results(m, results):
 
+    print('====================================================================================')
     print("***************** Printing Results ******************")
     print('')
-    print("Obj (M$/year):",
-          value(m.obj) * 1e-6)
-    print("Charge capital cost ($/y):",
-          pyo.value(m.fs.charge.capital_cost) * 1e-6)
-    print("Charge Operating costs ($/y):",
-          pyo.value(m.fs.charge.operating_cost) * 1e-6)
-    print('Plant Power (MW):',
-          value(m.fs.plant_power_out[0]))
-    print("Boiler feed water flow (mol/s):",
-          value(m.fs.boiler.inlet.flow_mol[0]))
-    print("Boiler duty (MW_th):",
-          value((m.fs.boiler.heat_duty[0]
-                 + m.fs.reheater[1].heat_duty[0]
-                 + m.fs.reheater[2].heat_duty[0])
-                * 1e-6))
-    print("Cooling duty (MW_th):",
-          pyo.value(m.fs.charge.cooler.heat_duty[0]) * -1e-6)
-    print('')
-    print('====================================================================================')
     print("Disjunctions")
     for d in m.component_data_objects(ctype=Disjunct,
                                       active=True,
                                       sort=True, descend_into=True):
         if abs(d.indicator_var.value - 1) < 1e-6:
             print(d.name, ' should be selected!')
-    print('====================================================================================')
-    print(' ')
+    print('')
+    print('Obj (M$/year): {:.6f}'.format(value(m.obj) * 1e-6))
+    print('Plant capital cost (M$/y): {:.6f}'.format(
+        pyo.value(m.fs.charge.plant_capital_cost) * 1e-6))
+    print('Plant fixed operating costs (M$/y): {:.6f}'.format(
+        pyo.value(m.fs.charge.plant_fixed_operating_cost) * 1e-6))
+    print('Plant variable operating costs (M$/y): {:.6f}'.format(
+        pyo.value(m.fs.charge.plant_variable_operating_cost) * 1e-6))
+    print('Charge capital cost ($/y): {:.6f}'.format(
+        pyo.value(m.fs.charge.capital_cost) * 1e-6))
+    print('Charge Operating costs ($/y): {:.6f}'.format(
+        pyo.value(m.fs.charge.operating_cost) * 1e-6))
+    print('Plant Power (MW): {:.6f}'.format(
+        value(m.fs.plant_power_out[0])))
+    print('Boiler feed water flow (mol/s): {:.6f}'.format(
+        value(m.fs.boiler.inlet.flow_mol[0])))
+    print('Boiler duty (MW_th): {:.6f}'.format(
+        value((m.fs.boiler.heat_duty[0]
+               + m.fs.reheater[1].heat_duty[0]
+               + m.fs.reheater[2].heat_duty[0])
+              * 1e-6)))
+    print('Cooling duty (MW_th): {:.6f}'.format(
+        pyo.value(m.fs.charge.cooler.heat_duty[0]) * -1e-6))
+    print('')
     if m.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
-        print("Salt: Solar salt is selected!")
-        print("Heat exchanger area (m2):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.area))
-        print("Heat exchanger cost ($/y):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost / 15))
-        print("Salt flow (kg/s):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0]))
-        print("Salt temperature in (K):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature[0]))
-        print("Salt temperature out (K):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.outlet_2.temperature[0]))
-        print("Steam flow to storage (mol/s):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol[0]))
-        print("Water temperature in (K):",
-              value(m.fs.charge.solar_salt_disjunct.
-                    hxc.side_1.properties_in[0].temperature))
-        print("Steam temperature out (K):",
-              value(m.fs.charge.solar_salt_disjunct.
-                    hxc.side_1.properties_out[0].temperature))
-        print("delta temperature at inlet (K):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in[0]))
-        print("delta temperature at outlet (K):",
-              value(m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out[0]))
-        print("Salt cost ($/y):",
-              value(m.fs.charge.solar_salt_disjunct.salt_purchase_cost))
-        print("Tank cost ($/y):",
-              value(m.fs.charge.solar_salt_disjunct.costing.total_tank_cost / 15))
-        print("Salt pump cost ($/y):",
-              value(m.fs.charge.solar_salt_disjunct.spump_purchase_cost))
-        print("")
-        print("Salt storage tank volume in m3: ",
-              value(m.fs.charge.solar_salt_disjunct.tank_volume))
-        print("Salt density: ",
-              value(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"]))
-        print("HXC heat duty: ",
-              value(m.fs.charge.solar_salt_disjunct.hxc.heat_duty[0]) / 1e6)
+        print('Salt: Solar salt is selected!')
+        print('Heat exchanger area (m2): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.area)))
+        print('Heat exchanger cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost / 15)))
+        print('Salt flow (kg/s): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0])))
+        print('Salt temperature in (K): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature[0])))
+        print('Salt temperature out (K): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.outlet_2.temperature[0])))
+        print('Steam flow to storage (mol/s): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol[0])))
+        print('Water temperature in (K): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.
+                  hxc.side_1.properties_in[0].temperature)))
+        print('Steam temperature out (K): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.
+                  hxc.side_1.properties_out[0].temperature)))
+        print('Delta temperature at inlet (K): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in[0])))
+        print('elta temperature at outlet (K): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out[0])))
+        print('Salt cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.salt_purchase_cost)))
+        print('Tank cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.costing.total_tank_cost / 15)))
+        print('Salt pump cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.spump_purchase_cost)))
+        print('')
+        print('Salt storage tank volume in m3: {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.tank_volume)))
+        print('Salt density: {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density['Liq'])))
+        print('HXC heat duty: {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.heat_duty[0]) / 1e6))
     elif m.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
-        print("Salt: Hitec salt is selected")
-        print("Heat exchanger area (m2):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.area))
-        print("Heat exchanger cost ($/y):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.costing.purchase_cost / 15))
-        print("Salt flow (kg/s):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0]))
-        print("Salt temperature in (K):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature[0]))
-        print("Salt temperature out (K):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.outlet_2.temperature[0]))
-        print("Steam flow to storage (mol/s):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol[0]))
-        print("Water temperature in (K):",
-              value(m.fs.charge.hitec_salt_disjunct.
-                    hxc.side_1.properties_in[0].temperature))
-        print("Steam temperature out (K):",
-              value(m.fs.charge.hitec_salt_disjunct.
-                    hxc.side_1.properties_out[0].temperature))
-        print("delta temperature at inlet (K):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in[0]))
-        print("delta temperature at outlet (K):",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out[0]))
-        print("Salt cost ($/y):",
-              value(m.fs.charge.hitec_salt_disjunct.salt_purchase_cost))
-        print("Tank cost ($/y):",
-              value(m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost / 15))
-        print("Salt pump cost ($/y):",
-              value(m.fs.charge.hitec_salt_disjunct.spump_purchase_cost))
-        print("")
-        print("Salt storage tank volume in m3: ",
-              value(m.fs.charge.hitec_salt_disjunct.tank_volume))
-        print("Salt density: ",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"]))
-        print("HXC heat duty: ",
-              value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6)
+        print('Salt: Hitec salt is selected')
+        print('Heat exchanger area (m2): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.area)))
+        print('Heat exchanger cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.costing.purchase_cost / 15)))
+        print('Salt flow (kg/s): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0])))
+        print('Salt temperature in (K): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature[0])))
+        print('Salt temperature out (K): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.outlet_2.temperature[0])))
+        print('Steam flow to storage (mol/s): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol[0])))
+        print('Water temperature in (K): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.
+                  hxc.side_1.properties_in[0].temperature)))
+        print('Steam temperature out (K): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.
+                  hxc.side_1.properties_out[0].temperature)))
+        print('Delta temperature at inlet (K): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in[0])))
+        print('Delta temperature at outlet (K): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out[0])))
+        print('Salt cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.salt_purchase_cost)))
+        print('Tank cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost / 15)))
+        print('Salt pump cost ($/y): {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.spump_purchase_cost)))
+        print('')
+        print('Salt storage tank volume in m3: {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.tank_volume)))
+        print('Salt density: {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].density['Liq'])))
+        print('HXC heat duty: {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6))
     else:
-        print("Salt: Thermal oil is selected!")
-        print("Heat exchanger area (m2):",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.area))
-        # print("Heat exchanger cost ($/y):",
-        #       value(m.fs.charge.thermal_oil_disjunct.hxc.costing.purchase_cost / 15))
-        print("Oil flow (kg/s):",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.flow_mass[0]))
-        print("Oil temperature in (K):",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.temperature[0]))
-        print("Oil temperature out (K):",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.outlet_2.temperature[0]))
-        print("Steam flow to storage (mol/s):",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_1.flow_mol[0]))
-        print("Water temperature in (K):",
-              value(m.fs.charge.thermal_oil_disjunct.
-                    hxc.side_1.properties_in[0].temperature))
-        print("Steam temperature out (K):",
-              value(m.fs.charge.thermal_oil_disjunct.
-                    hxc.side_1.properties_out[0].temperature))
-        print("delta temperature at inlet (K):",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_in[0]))
-        print("delta temperature at outlet (K):",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_out[0]))
-        print("Oil density: ",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.tube.properties_in[0].density))
-        print("HXC heat duty: ",
-              value(m.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0]) * 1e-6)
-    print("")
-    print("Solver details")
+        print('Salt: Thermal oil is selected!')
+        print('Heat exchanger area (m2): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.area)))
+        # print('Heat exchanger cost ($/y): {:.6f}'.format(
+        #       value(m.fs.charge.thermal_oil_disjunct.hxc.costing.purchase_cost / 15)))
+        print('Oil flow (kg/s): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.flow_mass[0])))
+        print('Oil temperature in (K): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.temperature[0])))
+        print('Oil temperature out (K): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.outlet_2.temperature[0])))
+        print('Steam flow to storage (mol/s): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_1.flow_mol[0])))
+        print('Water temperature in (K): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.
+                  hxc.side_1.properties_in[0].temperature)))
+        print('Steam temperature out (K): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.
+                  hxc.side_1.properties_out[0].temperature)))
+        print('Delta temperature at inlet (K): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_in[0])))
+        print('Delta temperature at outlet (K): {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_out[0])))
+        print('Oil density: {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.tube.properties_in[0].density)))
+        print('HXC heat duty: {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0]) * 1e-6))
+    print('')
+    print('Solver details')
     print(results)
+    print(' ')
+    print('====================================================================================')
 
 
 def print_reports(m):
@@ -2760,6 +2836,9 @@ def model_analysis(m, solver):
         expr=(
             m.fs.charge.capital_cost
             + m.fs.charge.operating_cost
+            + m.fs.charge.plant_capital_cost
+            + m.fs.charge.plant_fixed_operating_cost
+            + m.fs.charge.plant_variable_operating_cost
         )
     )
 
@@ -2794,5 +2873,5 @@ if __name__ == "__main__":
     # View results in a process flow diagram
     # view_result("pfd_usc_powerplant_gdp_results.svg", m)
 
-    log_infeasible_constraints(m)
-    log_close_to_bounds(m)
+    # log_infeasible_constraints(m)
+    # log_close_to_bounds(m)
