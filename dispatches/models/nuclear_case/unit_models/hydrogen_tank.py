@@ -360,8 +360,8 @@ see property package for documentation.}"""))
 
         # energy accumulation
         @self.Constraint(self.flowsheet().config.time,
-                          doc="Enthalpy accumulation")
-        def energy_accumulation_eq(b, t):
+                          doc="Energy accumulation")
+        def energy_accumulation_equation(b, t):
             return (
                 sum(b.energy_accumulation[t, p] for p in phase_list)
                 * b.dt[t] == sum(b.energy_holdup[t, p] for p in phase_list) -
@@ -371,8 +371,8 @@ see property package for documentation.}"""))
         # energy holdup calculation
         @self.Constraint(self.flowsheet().config.time,
                          phase_list,
-                         doc="Energy holdup integration")
-        def energy_holdup_integration(b, t, p):
+                         doc="Energy holdup calculation")
+        def energy_holdup_calculation(b, t, p):
             if (self.control_volume.properties_in[0]
                 .get_material_flow_basis() == MaterialFlowBasis.molar):
                 return (
@@ -398,7 +398,7 @@ see property package for documentation.}"""))
         #     where, n is number of moles, U is internal energy, H is enthalpy
         @self.Constraint(self.flowsheet().config.time,
                           doc="Energy balance")
-        def energy_balance_equation(b, t):
+        def energy_balances(b, t):
             return (
                     sum(b.energy_holdup[t, p] for p in phase_list) ==
                     sum(b.previous_energy_holdup[t, p] for p in phase_list) +
@@ -565,25 +565,25 @@ see property package for documentation.}"""))
                         default=1, warning=True))
 
         # Enthalpy Balances
-        if hasattr(self, "enthalpy_balances"):
-            for t, c in self.enthalpy_balances.items():
+        if hasattr(self, "energy_accumulation_equation"):
+            for t, c in self.energy_accumulation_equation.items():
                 iscale.constraint_scaling_transform(
                     c, iscale.get_scaling_factor(
                         self.energy_accumulation[t, p], 
                         default=1, warning=True))
 
         # Energy Holdup Integration
-        if hasattr(self, "energy_holdup_integration"):
-            for (t, i), c in self.energy_holdup_integration.items():
+        if hasattr(self, "energy_holdup_calculation"):
+            for (t, i), c in self.energy_holdup_calculation.items():
                 iscale.constraint_scaling_transform(
                     c, iscale.get_scaling_factor(
                         self.energy_holdup[t, i], 
                         default=1, warning=True))
 
-        # Tank Temperature Calculation
-        if hasattr(self, "tank_temperature_calculation"):
-            for t, c in self.tank_temperature_calculation.items():
+        # Energy Balance Equation
+        if hasattr(self, "energy_balances"):
+            for t, c in self.energy_balance_equation.items():
                 iscale.constraint_scaling_transform(
                     c, iscale.get_scaling_factor(
-                        self.previous_state[t].temperature, 
+                        self.energy_holdup[t, i], 
                         default=1, warning=True))
