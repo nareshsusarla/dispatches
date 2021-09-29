@@ -2571,8 +2571,10 @@ def add_bounds(m):
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(5000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)  # K
-        oil_hxc.delta_temperature_in.setub(556)
-        oil_hxc.delta_temperature_out.setlb(10)  # K
+        # oil_hxc.delta_temperature_in.setub(556)
+        # oil_hxc.delta_temperature_out.setlb(10)  # K
+        oil_hxc.delta_temperature_in.setub(557) # value that works for esrawli
+        oil_hxc.delta_temperature_out.setlb(9.73) # value that works for esrawli
         oil_hxc.delta_temperature_out.setub(500)
         # Bounds added based on the results from Andres's model
         oil_hxc.tube.properties_in[0].cp_mass.setlb(0)
@@ -2764,18 +2766,24 @@ def print_model(nlp_model, nlp_data):
             value(nlp_model.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in[0])))
         print('        Delta temperature at outlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out[0])))
+        print('        Heat exchanger area (m): {:.4f}'.format(
+            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.area)))
     elif nlp_model.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: Hitec salt is selected')
         print('        Delta temperature at inlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in[0])))
         print('        Delta temperature at outlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out[0])))
+        print('        Heat exchanger area (m): {:.4f}'.format(
+            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.area)))
     else:
         print('        Disjunction 1: Thermal oil is selected')
         print('        Delta temperature at inlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_in[0])))
         print('        Delta temperature at outlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.delta_temperature_out[0])))
+        print('        Heat exchanger area (m): {:.4f}'.format(
+            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.area)))
 
     if nlp_model.fs.charge.vhp_source_disjunct.indicator_var.value == 1:
         print('        Disjunction 2: VHP source is selected')
@@ -2787,6 +2795,10 @@ def print_model(nlp_model, nlp_data):
           nlp_model.fs.charge.cooler.heat_duty[0].value * 1e-6)
     print('       ___________________________________________')
     print('')
+
+    # log_infeasible_constraints(nlp_model)
+    log_close_to_bounds(nlp_model)
+
 
 def run_gdp(m):
     """Declare solver GDPopt and its options
@@ -3068,5 +3080,5 @@ if __name__ == "__main__":
     # View results in a process flow diagram
     # view_result("pfd_usc_powerplant_gdp_results.svg", m)
 
-    log_infeasible_constraints(m)
-    log_close_to_bounds(m)
+    # log_infeasible_constraints(m)
+    # log_close_to_bounds(m)
