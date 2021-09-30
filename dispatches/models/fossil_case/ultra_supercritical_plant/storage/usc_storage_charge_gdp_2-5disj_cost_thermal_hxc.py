@@ -2536,14 +2536,21 @@ def add_bounds(m):
         salt_hxc.costing.base_cost_per_unit.setub(1e6)
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
-        salt_hxc.delta_temperature_in.setlb(10)  # K
-        # salt_hxc.delta_temperature_in.setub(80)
-        salt_hxc.delta_temperature_out.setlb(10)  # K
-        # salt_hxc.delta_temperature_out.setub(80)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(80)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81)
+        # salt_hxc.delta_temperature_in.setlb(10)  # K
+        # salt_hxc.delta_temperature_out.setlb(10)  # K
+    # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(80)
+    # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(10)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.5) # value works for esrawli
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(10)
+
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79.9) # value works for esrawli
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9) # value works for esrawli
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79.4) # value works for esrawli
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.6) # value works for esrawli
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
         oil_hxc.inlet_1.flow_mol.setlb(0)
@@ -3008,8 +3015,8 @@ def model_analysis(m, solver):
     # Fix variables in the flowsheet
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(150*1e6) # in W [TODO: change this to 150]
-    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(150*1e6) # in W [TODO: change this to 150]
+    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(150*1e6) # in W
+    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(150*1e6) # in W
     m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(150*1e6) # in W # from Andres's model
 
     # Unfix variables fixed in model input and during initialization
