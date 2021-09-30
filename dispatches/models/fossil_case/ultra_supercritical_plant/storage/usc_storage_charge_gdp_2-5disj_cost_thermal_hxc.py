@@ -3008,8 +3008,8 @@ def model_analysis(m, solver):
     # Fix variables in the flowsheet
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(100*1e6) # in W [TODO: change this to 150]
-    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(100*1e6) # in W [TODO: change this to 150]
+    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(150*1e6) # in W [TODO: change this to 150]
+    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(150*1e6) # in W [TODO: change this to 150]
     m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(150*1e6) # in W # from Andres's model
 
     # Unfix variables fixed in model input and during initialization
