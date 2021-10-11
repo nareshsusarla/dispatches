@@ -2694,7 +2694,7 @@ def add_bounds(m):
         # oil_hxc.delta_temperature_in.setub(556)
         # oil_hxc.delta_temperature_out.setlb(10)  # K
         oil_hxc.delta_temperature_in.setub(557)  # works for esrawli
-        oil_hxc.delta_temperature_out.setlb(9.73) # works for esrawli
+        oil_hxc.delta_temperature_out.setlb(9.73)  # works for esrawli
         oil_hxc.delta_temperature_out.setub(500)
         # Bounds added based on the results from Andres's model
         oil_hxc.tube.properties_in[0].cp_mass.setlb(0)

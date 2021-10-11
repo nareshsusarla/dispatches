@@ -38,9 +38,10 @@ __author__ = "Naresh Susarla and Soraya Rawlings"
 
 # Import Python libraries
 from math import pi
+import logging
 # Import Pyomo libraries
 import os
-from pyomo.environ import (log, Block, Param, Constraint, Objective,
+from pyomo.environ import (Block, Param, Constraint, Objective,
                            TransformationFactory, SolverFactory,
                            Expression, value, log, exp, Var)
 import pyomo.environ as pyo
@@ -51,7 +52,8 @@ from pyomo.util.calc_var_value import calculate_variable_from_constraint
 from pyomo.gdp import Disjunct, Disjunction
 
 # Import IDAES libraries
-from idaes.core import FlowsheetBlock, MaterialBalanceType
+from idaes.core import MaterialBalanceType
+from idaes.core.util.initialization import propagate_state
 from idaes.core.util import get_solver, copy_port_values as _set_port
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes.generic_models.unit_models import (HeatExchanger,
@@ -70,8 +72,6 @@ from idaes.generic_models.unit_models.heat_exchanger import (
     delta_temperature_underwood_callback, HeatExchangerFlowPattern)
 from idaes.generic_models.unit_models.pressure_changer import (
     ThermodynamicAssumption)
-from idaes.generic_models.unit_models.heat_exchanger import (
-    delta_temperature_underwood_callback)
 import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
 from idaes.core.util.misc import svg_tag
@@ -81,7 +81,7 @@ import ultra_supercritical_powerplant as usc
 
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
-import solarsalt_properties_new
+import solarsalt_properties
 import hitecsalt_properties
 import thermal_oil
 
@@ -100,7 +100,7 @@ def create_charge_model(m):
     m.fs.charge = Block()
 
     # Add molten salt properties (Solar and Hitec salt)
-    m.fs.solar_salt_properties = solarsalt_properties_new.SolarsaltParameterBlock()
+    m.fs.solar_salt_properties = solarsalt_properties.SolarsaltParameterBlock()
     m.fs.hitec_salt_properties = hitecsalt_properties.HitecsaltParameterBlock()
     m.fs.therminol66_properties = thermal_oil.ThermalOilParameterBlock()
 
@@ -2573,14 +2573,14 @@ def add_bounds(m):
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(10)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.3)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.2)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(10)
 
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(80.2)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(80)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(81.1)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(83.1)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(81.2)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(83.2)
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
         oil_hxc.inlet_1.flow_mol.setlb(0)
@@ -2633,9 +2633,9 @@ def add_bounds(m):
         oil_hxc.costing.base_cost_per_unit.setub(1e6)
         oil_hxc.costing.material_factor.setlb(0)
         oil_hxc.costing.material_factor.setub(10)
-        oil_hxc.delta_temperature_in.setlb(9)
+        oil_hxc.delta_temperature_in.setlb(9.1)
         oil_hxc.delta_temperature_in.setub(551)
-        oil_hxc.delta_temperature_out.setlb(8)
+        oil_hxc.delta_temperature_out.setlb(8.1)
         oil_hxc.delta_temperature_out.setub(500)
 
     # Add bounds for the HX pump and Cooler
@@ -3105,8 +3105,13 @@ def model_analysis(m, solver):
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
+    results = run_nlps(m,
+                  solver=solver,
+                   fluid="solar_salt",
+                  # fluid="thermal_oil",
+                  source="ip")
 
-    results = run_gdp(m)
+    # results = run_gdp(m)
 
     print_results(m, results)
     # print_reports(m)
