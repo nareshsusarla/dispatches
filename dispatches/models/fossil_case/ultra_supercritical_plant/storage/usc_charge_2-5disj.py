@@ -87,7 +87,7 @@ import thermal_oil
 
 from pyomo.network.plugins import expand_arcs
 
-# from IPython import embed
+from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
 
