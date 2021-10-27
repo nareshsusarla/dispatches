@@ -40,6 +40,7 @@ updated (05/11/2021)
 __author__ = "Naresh Susarla & E S Rawlings"
 
 import os
+import logging
 
 # Import Pyomo libraries
 from pyomo.environ import (ConcreteModel, RangeSet, TransformationFactory,
@@ -71,6 +72,9 @@ from idaes.core.util.misc import svg_tag
 
 # Import Property Packages (IAPWS95 for Water/Steam)
 from idaes.generic_models.properties import iapws95
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                    log_close_to_bounds)
+logging.basicConfig(level=logging.INFO)
 
 
 def declare_unit_model():
@@ -1142,8 +1146,7 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
 
 def add_bounds(m):
     
-    m.flow_max = m.main_flow * 1.2 # number from Naresh
-    m.salt_flow_max = 1000 # in kg/s
+    m.flow_max = m.main_flow * 3 # number from Naresh
 
     for unit_k in [m.fs.boiler, m.fs.reheater[1],
                    m.fs.reheater[2], m.fs.cond_pump,
@@ -1425,7 +1428,9 @@ if __name__ == "__main__":
     # User can import the model from build_plant_model for analysis
     # A sample analysis function is called below
     m_result = model_analysis(m, solver)
+    # log_infeasible_constraints(m)
+    # log_close_to_bounds(m)
 
     # View results in a process flow diagram
-    view_result("pfd_usc_powerplant_result.svg", m_result)
+    view_result("pfd_usc_powerplant_result_1.0.svg", m_result)
 
