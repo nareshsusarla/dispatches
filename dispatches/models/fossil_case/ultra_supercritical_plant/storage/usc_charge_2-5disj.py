@@ -79,8 +79,8 @@ from idaes.core.util.misc import svg_tag
 # Import ultra supercritical power plant model
 import ultra_supercritical_powerplant as usc
 
-# from pyomo.util.infeasible import (log_infeasible_constraints,
-#                                    log_close_to_bounds)
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                    log_close_to_bounds)
 import solarsalt_properties
 import hitecsalt_properties
 import thermal_oil
@@ -2679,11 +2679,11 @@ def add_bounds(m):
         oil_hxc.outlet_2.pressure.setlb(101320)
         oil_hxc.outlet_2.pressure.setub(101330)
         oil_hxc.heat_duty.setlb(0)
-        oil_hxc.heat_duty.setub(300e6)  # increasing from 200 to 300
-        oil_hxc.shell.heat.setlb(-300e6)  # increasing from 200 to 300
+        oil_hxc.heat_duty.setub(200e6)  # increasing from 200 to 300
+        oil_hxc.shell.heat.setlb(-200e6)  # increasing from 200 to 300
         oil_hxc.shell.heat.setub(0)
         oil_hxc.tube.heat.setlb(0)
-        oil_hxc.tube.heat.setub(300e6)  # increasing from 200 to 300
+        oil_hxc.tube.heat.setub(200e6)  # increasing from 200 to 300
         oil_hxc.inlet_1.enth_mol[0.0].setlb(0)  # from Andres's model
         oil_hxc.inlet_1.enth_mol[0.0].setub(8e4)  # from Andres's model
         oil_hxc.overall_heat_transfer_coefficient.setlb(0)
@@ -2924,7 +2924,7 @@ def print_model(nlp_model, nlp_data):
     print('')
 
     # log_infeasible_constraints(nlp_model)
-    # log_close_to_bounds(nlp_model)
+    log_close_to_bounds(nlp_model)
 
 
 def run_gdp(m):
@@ -3153,9 +3153,9 @@ def model_analysis(m, solver):
     # Fix variables in the flowsheet
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(150*1e6)  # in W
-    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(150*1e6)  # in W
-    m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(150*1e6)  # in W
+    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(100*1e6)  # in W
+    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(100*1e6)  # in W
+    m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(100*1e6)  # in W
 
     # Unfix variables fixed in model input and during initialization
     m.fs.boiler.inlet.flow_mol.unfix()  # mol/s

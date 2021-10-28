@@ -86,8 +86,8 @@ from dispatches.models.fossil_case.ultra_supercritical_plant import (
 
 # import ultra_supercritical_powerplant as usc
 
-# from pyomo.util.infeasible import (log_infeasible_constraints,
-#                                    log_close_to_bounds)
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                    log_close_to_bounds)
 import solarsalt_properties
 import hitecsalt_properties
 import thermal_oil
@@ -2631,11 +2631,11 @@ def add_bounds(m):
         salt_hxc.outlet_2.pressure.setlb(101320)
         salt_hxc.outlet_2.pressure.setub(101330)
         salt_hxc.heat_duty.setlb(0)
-        salt_hxc.heat_duty.setub(200e6)
-        salt_hxc.shell.heat.setlb(-200e6)
+        salt_hxc.heat_duty.setub(500e6)
+        salt_hxc.shell.heat.setlb(-500e6)
         salt_hxc.shell.heat.setub(0)
         salt_hxc.tube.heat.setlb(0)
-        salt_hxc.tube.heat.setub(200e6)
+        salt_hxc.tube.heat.setub(500e6)
         salt_hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
         salt_hxc.tube.properties_in[0].\
             enthalpy_mass.setub(1.5e6)
@@ -2645,7 +2645,7 @@ def add_bounds(m):
         salt_hxc.overall_heat_transfer_coefficient.setlb(0)
         salt_hxc.overall_heat_transfer_coefficient.setub(10000)
         salt_hxc.area.setlb(0)
-        salt_hxc.area.setub(5000)  # TODO: Check this value
+        salt_hxc.area.setub(8000)  # TODO: Check this value
         salt_hxc.costing.pressure_factor.setlb(0)  # no unit
         salt_hxc.costing.pressure_factor.setub(1e5)  # no unit
         salt_hxc.costing.purchase_cost.setlb(0)  # no unit
@@ -2686,17 +2686,17 @@ def add_bounds(m):
         oil_hxc.outlet_2.pressure.setlb(101320)
         oil_hxc.outlet_2.pressure.setub(101330)
         oil_hxc.heat_duty.setlb(0)
-        oil_hxc.heat_duty.setub(300e6)  # increasing from 200 to 300
-        oil_hxc.shell.heat.setlb(-300e6)  # increasing from 200 to 300
+        oil_hxc.heat_duty.setub(500e6)  # increasing from 200 to 300
+        oil_hxc.shell.heat.setlb(-500e6)  # increasing from 200 to 300
         oil_hxc.shell.heat.setub(0)
         oil_hxc.tube.heat.setlb(0)
-        oil_hxc.tube.heat.setub(300e6)  # increasing from 200 to 300
+        oil_hxc.tube.heat.setub(500e6)  # increasing from 200 to 300
         oil_hxc.inlet_1.enth_mol[0.0].setlb(0)  # from Andres's model
         oil_hxc.inlet_1.enth_mol[0.0].setub(8e4)  # from Andres's model
         oil_hxc.overall_heat_transfer_coefficient.setlb(0)
         oil_hxc.overall_heat_transfer_coefficient.setub(10000)
         oil_hxc.area.setlb(0)
-        oil_hxc.area.setub(5000)  # TODO: Check this value
+        oil_hxc.area.setub(8000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)  # K
         # oil_hxc.delta_temperature_in.setub(556)
         # oil_hxc.delta_temperature_out.setlb(10)  # K
@@ -3160,9 +3160,9 @@ def model_analysis(m, solver):
     # Fix variables in the flowsheet
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(150*1e6)  # in W
-    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(150*1e6)  # in W
-    m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(150*1e6)  # in W
+    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(200*1e6)  # in W
+    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(200*1e6)  # in W
+    m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(200*1e6)  # in W
 
     # Unfix variables fixed in model input and during initialization
     m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
@@ -3238,5 +3238,5 @@ if __name__ == "__main__":
     # View results in a process flow diagram
     # view_result("pfd_usc_powerplant_gdp_results.svg", m)
 
-    # log_infeasible_constraints(m)
-    # log_close_to_bounds(m)
+    log_infeasible_constraints(m)
+    log_close_to_bounds(m)
