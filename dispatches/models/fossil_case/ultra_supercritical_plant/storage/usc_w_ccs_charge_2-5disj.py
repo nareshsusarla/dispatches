@@ -87,7 +87,7 @@ from dispatches.models.fossil_case.ultra_supercritical_plant import (
 # import ultra_supercritical_powerplant as usc
 
 from pyomo.util.infeasible import (log_infeasible_constraints,
-                                    log_close_to_bounds)
+                                   log_close_to_bounds)
 import solarsalt_properties
 import hitecsalt_properties
 import thermal_oil
@@ -2631,11 +2631,11 @@ def add_bounds(m):
         salt_hxc.outlet_2.pressure.setlb(101320)
         salt_hxc.outlet_2.pressure.setub(101330)
         salt_hxc.heat_duty.setlb(0)
-        salt_hxc.heat_duty.setub(500e6)
-        salt_hxc.shell.heat.setlb(-500e6)
+        salt_hxc.heat_duty.setub(200e6)
+        salt_hxc.shell.heat.setlb(-200e6)
         salt_hxc.shell.heat.setub(0)
         salt_hxc.tube.heat.setlb(0)
-        salt_hxc.tube.heat.setub(500e6)
+        salt_hxc.tube.heat.setub(200e6)
         salt_hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
         salt_hxc.tube.properties_in[0].\
             enthalpy_mass.setub(1.5e6)
@@ -2645,7 +2645,7 @@ def add_bounds(m):
         salt_hxc.overall_heat_transfer_coefficient.setlb(0)
         salt_hxc.overall_heat_transfer_coefficient.setub(10000)
         salt_hxc.area.setlb(0)
-        salt_hxc.area.setub(8000)  # TODO: Check this value
+        salt_hxc.area.setub(5000)  # TODO: Check this value
         salt_hxc.costing.pressure_factor.setlb(0)  # no unit
         salt_hxc.costing.pressure_factor.setub(1e5)  # no unit
         salt_hxc.costing.purchase_cost.setlb(0)  # no unit
@@ -2662,14 +2662,14 @@ def add_bounds(m):
     # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(10)
     # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.5)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.4)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(10)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(9.87)
 
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79.9)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79.4)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.6)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(80.509)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.61)
     # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
@@ -2686,22 +2686,22 @@ def add_bounds(m):
         oil_hxc.outlet_2.pressure.setlb(101320)
         oil_hxc.outlet_2.pressure.setub(101330)
         oil_hxc.heat_duty.setlb(0)
-        oil_hxc.heat_duty.setub(500e6)  # increasing from 200 to 300
-        oil_hxc.shell.heat.setlb(-500e6)  # increasing from 200 to 300
+        oil_hxc.heat_duty.setub(300e6)  # increasing from 200 to 300
+        oil_hxc.shell.heat.setlb(-300e6)  # increasing from 200 to 300
         oil_hxc.shell.heat.setub(0)
         oil_hxc.tube.heat.setlb(0)
-        oil_hxc.tube.heat.setub(500e6)  # increasing from 200 to 300
+        oil_hxc.tube.heat.setub(300e6)  # increasing from 200 to 300
         oil_hxc.inlet_1.enth_mol[0.0].setlb(0)  # from Andres's model
         oil_hxc.inlet_1.enth_mol[0.0].setub(8e4)  # from Andres's model
         oil_hxc.overall_heat_transfer_coefficient.setlb(0)
         oil_hxc.overall_heat_transfer_coefficient.setub(10000)
         oil_hxc.area.setlb(0)
-        oil_hxc.area.setub(8000)  # TODO: Check this value
+        oil_hxc.area.setub(5000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)  # K
         # oil_hxc.delta_temperature_in.setub(556)
         # oil_hxc.delta_temperature_out.setlb(10)  # K
         oil_hxc.delta_temperature_in.setub(557)  # works for esrawli
-        oil_hxc.delta_temperature_out.setlb(9.73)  # works for esrawli
+        oil_hxc.delta_temperature_out.setlb(9.728)  # works for esrawli
         oil_hxc.delta_temperature_out.setub(500)
         # Bounds added based on the results from Andres's model
         oil_hxc.tube.properties_in[0].cp_mass.setlb(0)
@@ -2898,6 +2898,8 @@ def print_model(nlp_model, nlp_data):
                   delta_temperature_out[0])))
         print('        Heat exchanger area (m): {:.4f}'.format(
             value(nlp_model.fs.charge.solar_salt_disjunct.hxc.area)))
+        print('        Heat exchanger heat duty (MW): {:.4f}'.format(
+            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.heat_duty[0])*1e-6))
     elif nlp_model.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: Hitec salt is selected')
         print('        Delta temperature at inlet (K): {:.4f}'.format(
@@ -2908,6 +2910,8 @@ def print_model(nlp_model, nlp_data):
                   delta_temperature_out[0])))
         print('        Heat exchanger area (m): {:.4f}'.format(
             value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.area)))
+        print('        Heat exchanger heat duty (MW): {:.4f}'.format(
+            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0])*1e-6))
     else:
         print('        Disjunction 1: Thermal oil is selected')
         print('        Delta temperature at inlet (K): {:.4f}'.format(
@@ -2918,6 +2922,8 @@ def print_model(nlp_model, nlp_data):
                   delta_temperature_out[0])))
         print('        Heat exchanger area (m): {:.4f}'.format(
             value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.area)))
+        print('        Heat exchanger heat duty (MW): {:.4f}'.format(
+            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0])*1e-6))
 
     if nlp_model.fs.charge.vhp_source_disjunct.indicator_var.value == 1:
         print('        Disjunction 2: VHP source is selected')
@@ -2931,7 +2937,7 @@ def print_model(nlp_model, nlp_data):
     print('')
 
     # log_infeasible_constraints(nlp_model)
-    # log_close_to_bounds(nlp_model)
+    log_close_to_bounds(nlp_model)
 
 
 def run_gdp(m):
@@ -2943,7 +2949,8 @@ def run_gdp(m):
     # opt.CONFIG.OA_penalty_factor = 1e4
     # opt.CONFIG.max_slack = 1e4
     opt.CONFIG.call_after_subproblem_solve = print_model
-    opt.CONFIG.mip_solver = 'glpk'
+    # opt.CONFIG.mip_solver = 'glpk'
+    opt.CONFIG.mip_solver = 'cbc'
     # opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
     opt.CONFIG.tee = True
@@ -3152,7 +3159,7 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver):
+def model_analysis(m, solver, heat_duty=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
@@ -3160,9 +3167,9 @@ def model_analysis(m, solver):
     # Fix variables in the flowsheet
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(200*1e6)  # in W
-    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(200*1e6)  # in W
-    m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(200*1e6)  # in W
+    m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(heat_duty*1e6)  # in W
+    m.fs.charge.hitec_salt_disjunct.hxc.heat_duty.fix(heat_duty*1e6)  # in W
+    m.fs.charge.thermal_oil_disjunct.hxc.heat_duty.fix(heat_duty*1e6)  # in W
 
     # Unfix variables fixed in model input and during initialization
     m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
@@ -3233,10 +3240,13 @@ if __name__ == "__main__":
 
     m_chg, solver = main(m_usc)
 
-    m = model_analysis(m_chg, solver)
+    heat_duty_data = [150]
+    for k in heat_duty_data:
+        print('Charge heat duty (MW):', k)
+        m = model_analysis(m_chg, solver, heat_duty=k)
 
     # View results in a process flow diagram
     # view_result("pfd_usc_powerplant_gdp_results.svg", m)
 
-    log_infeasible_constraints(m)
-    log_close_to_bounds(m)
+    # log_infeasible_constraints(m)
+    # log_close_to_bounds(m)
