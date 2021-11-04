@@ -2612,8 +2612,9 @@ def add_bounds(m):
     # Pa, flow in mol/s, massic flow in kg/s, and heat and heat duty
     # in W
 
-    m.flow_max = m.main_flow * 3  # in mol/s
+    m.flow_max = m.main_flow * 3.2  # in mol/s
     m.salt_flow_max = 1000  # in kg/s
+    m.heat_duty_bound = 200e6
 
     # Charge heat exchanger section
     for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
@@ -2631,11 +2632,11 @@ def add_bounds(m):
         salt_hxc.outlet_2.pressure.setlb(101320)
         salt_hxc.outlet_2.pressure.setub(101330)
         salt_hxc.heat_duty.setlb(0)
-        salt_hxc.heat_duty.setub(200e6)
-        salt_hxc.shell.heat.setlb(-200e6)
+        salt_hxc.heat_duty.setub(m.heat_duty_bound)
+        salt_hxc.shell.heat.setlb(-m.heat_duty_bound)
         salt_hxc.shell.heat.setub(0)
         salt_hxc.tube.heat.setlb(0)
-        salt_hxc.tube.heat.setub(200e6)
+        salt_hxc.tube.heat.setub(m.heat_duty_bound)
         salt_hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
         salt_hxc.tube.properties_in[0].\
             enthalpy_mass.setub(1.5e6)
@@ -2686,11 +2687,11 @@ def add_bounds(m):
         oil_hxc.outlet_2.pressure.setlb(101320)
         oil_hxc.outlet_2.pressure.setub(101330)
         oil_hxc.heat_duty.setlb(0)
-        oil_hxc.heat_duty.setub(300e6)  # increasing from 200 to 300
-        oil_hxc.shell.heat.setlb(-300e6)  # increasing from 200 to 300
+        oil_hxc.heat_duty.setub(m.heat_duty_bound)  # increasing from 200 to 300
+        oil_hxc.shell.heat.setlb(-m.heat_duty_bound)  # increasing from 200 to 300
         oil_hxc.shell.heat.setub(0)
         oil_hxc.tube.heat.setlb(0)
-        oil_hxc.tube.heat.setub(300e6)  # increasing from 200 to 300
+        oil_hxc.tube.heat.setub(m.heat_duty_bound)  # increasing from 200 to 300
         oil_hxc.inlet_1.enth_mol[0.0].setlb(0)  # from Andres's model
         oil_hxc.inlet_1.enth_mol[0.0].setub(8e4)  # from Andres's model
         oil_hxc.overall_heat_transfer_coefficient.setlb(0)
@@ -2937,7 +2938,7 @@ def print_model(nlp_model, nlp_data):
     print('')
 
     # log_infeasible_constraints(nlp_model)
-    log_close_to_bounds(nlp_model)
+    # log_close_to_bounds(nlp_model)
 
 
 def run_gdp(m):
