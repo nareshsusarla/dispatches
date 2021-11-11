@@ -1095,7 +1095,7 @@ def set_model_input(m):
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
     m.fs.charge.solar_salt_disjunct.hxc.area.fix(2000)  # m2
-    m.fs.charge.hitec_salt_disjunct.hxc.area.fix(2000)  # m2
+    m.fs.charge.hitec_salt_disjunct.hxc.area.fix(2500)  # m2
     m.fs.charge.thermal_oil_disjunct.hxc.area.fix(2500)  # for now, not from Andres's model
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
@@ -2027,12 +2027,18 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Tank size and dimension computation
     m.fs.charge.hitec_salt_disjunct.tank_volume = Var(
         initialize=1000,
-        bounds=(1, 10000),
+        #-------- modified by esrawli
+        # bounds=(1, 10000),
+        bounds=(1, 20000),
+        #--------
         units=pyunits.m**3,
         doc="Volume of the Salt Tank w/20% excess capacity")
     m.fs.charge.hitec_salt_disjunct.tank_surf_area = Var(
         initialize=1000,
-        bounds=(1, 5000),
+        #-------- modified by esrawli
+        # bounds=(1, 5000),
+        bounds=(1, 6000),
+        #--------
         units=pyunits.m**2,
         doc="surface area of the Salt Tank")
     m.fs.charge.hitec_salt_disjunct.tank_diameter = Var(
@@ -2678,13 +2684,13 @@ def add_bounds(m):
     # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.4)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(9.87)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(9)
 
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79.9)  # 79.9)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9)  # 79.9)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(80.509)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.61)
-    m.fs.charge.hitec_salt_disjunct.hxc.shell.heat[0.0].setub(300e6)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(83.925)
+    # m.fs.charge.hitec_salt_disjunct.hxc.shell.heat[0.0].setub(200e6)
     # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
@@ -2761,8 +2767,7 @@ def add_bounds(m):
     m.fs.charge.hx_pump.costing.purchase_cost.setlb(0)
     m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)
 
-    for salt_cost in [m.fs.charge.solar_salt_disjunct,
-                      m.fs.charge.hitec_salt_disjunct]:
+    for salt_cost in [m.fs.charge.solar_salt_disjunct]:
         salt_cost.salt_purchase_cost.setlb(0)
         salt_cost.salt_purchase_cost.setub(1e7)
         salt_cost.capital_cost.setlb(0)
@@ -2770,7 +2775,15 @@ def add_bounds(m):
         salt_cost.spump_purchase_cost.setlb(0)
         salt_cost.spump_purchase_cost.setub(1e7)
     # m.fs.charge.thermal_oil_disjunct.salt_purchase_cost.setub(2e7)
-    m.fs.charge.hitec_salt_disjunct.salt_purchase_cost.setub(2e7)
+    # m.fs.charge.hitec_salt_disjunct.salt_purchase_cost.setub(2e7)
+
+    for salt_cost in [m.fs.charge.hitec_salt_disjunct]:
+        salt_cost.salt_purchase_cost.setlb(0)
+        salt_cost.salt_purchase_cost.setub(1e10)
+        salt_cost.capital_cost.setlb(0)
+        salt_cost.capital_cost.setub(1e10)
+        salt_cost.spump_purchase_cost.setlb(0)
+        salt_cost.spump_purchase_cost.setub(1e10)
 
     for fluid_cost in [m.fs.charge.thermal_oil_disjunct]:
         fluid_cost.salt_purchase_cost.setlb(0)
@@ -2830,7 +2843,7 @@ def add_bounds(m):
         expr=m.fs.charge.capital_cost <= 1e7
     )
     m.fs.charge.hitec_salt_disjunct.capital_cost_upper_bound = Constraint(
-        expr=m.fs.charge.capital_cost <= 2e7
+        expr=m.fs.charge.capital_cost <= 1e10
     )
     m.fs.charge.thermal_oil_disjunct.capital_cost_upper_bound = Constraint(
         expr=m.fs.charge.capital_cost <= 1e11
@@ -3270,7 +3283,8 @@ def model_analysis(m, solver, heat_duty=None):
     results = run_nlps(m,
                        solver=solver,
                        # fluid="solar_salt",
-                       fluid="thermal_oil",
+                       fluid="hitec_salt",
+                       # fluid="thermal_oil",
                        source="hp")
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
