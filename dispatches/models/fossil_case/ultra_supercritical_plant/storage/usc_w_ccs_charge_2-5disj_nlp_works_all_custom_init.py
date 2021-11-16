@@ -2789,7 +2789,8 @@ def main(m_usc, fluid=None, source=None):
 def run_nlps(m,
              solver=None,
              fluid=None,
-             source=None):
+             source=None,
+             heat_duty=None):
     """This function fixes the indicator variables of the disjuncts so to
     solve NLP problems
 
@@ -2837,6 +2838,8 @@ def run_nlps(m,
         }
     )
     log_close_to_bounds(m)
+
+    m.write('nlp_suproblem_{}_{}_{}.nl'.format(fluid, source, heat_duty))
 
     return m, results
 
@@ -3189,7 +3192,8 @@ def model_analysis(m, solver, heat_duty=None, fluid=None, source=None):
     results = run_nlps(m,
                        solver=solver,
                        fluid=fluid,
-                       source=source)
+                       source=source,
+                       heat_duty=heat_duty)
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
@@ -3209,8 +3213,8 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
-    source_data = ['hp']
-    fluid_data = ['solar_salt']
+    source_data = ['vhp', 'hp']
+    fluid_data = ['solar_salt', 'hitec_salt', 'thermal_oil']
     heat_duty_data = [100, 150, 200]
     for i in source_data:
         for j in fluid_data:
