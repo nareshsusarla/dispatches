@@ -2790,7 +2790,8 @@ def run_nlps(m,
              solver=None,
              fluid=None,
              source=None,
-             heat_duty=None):
+             heat_duty=None,
+             save_nl_files=None):
     """This function fixes the indicator variables of the disjuncts so to
     solve NLP problems
 
@@ -2826,22 +2827,25 @@ def run_nlps(m,
     print("The degrees of freedom after gdp transformation ",
           degrees_of_freedom(m))
 
-    results = solver.solve(
-        m,
-        tee=True,
-        symbolic_solver_labels=True,
-        options={
-            "linear_solver": "ma27",
-            "max_iter": 150,
-            # "bound_push": 1e-12,
-            # "mu_init": 1e-8
-        }
-    )
-    log_close_to_bounds(m)
-
-    m.write('nlp_suproblem_{}_{}_{}.nl'.format(fluid, source, heat_duty))
-
-    return m, results
+    if save_nl_files:
+        # Save nl files
+        print('Saving nl file for {} {} {}'.format(fluid, source, heat_duty))
+        m.write('nlp_suproblem_{}_{}_{}.nl'.format(fluid, source, heat_duty))
+        return m
+    else:
+        results = solver.solve(
+            m,
+            tee=True,
+            symbolic_solver_labels=True,
+            options={
+                "linear_solver": "ma27",
+                "max_iter": 150,
+                # "bound_push": 1e-12,
+                # "mu_init": 1e-8
+            }
+        )
+        # log_close_to_bounds(m)
+        return m, results
 
 
 def print_model(nlp_model, nlp_data):
@@ -3137,7 +3141,7 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver, heat_duty=None, fluid=None, source=None):
+def model_analysis(m, solver, heat_duty=None, fluid=None, source=None, save_nl_files=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
@@ -3193,16 +3197,19 @@ def model_analysis(m, solver, heat_duty=None, fluid=None, source=None):
                        solver=solver,
                        fluid=fluid,
                        source=source,
-                       heat_duty=heat_duty)
+                       heat_duty=heat_duty,
+                       save_nl_files=save_nl_files)
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.thermal_oil_disjunct.indicator_var.fix(1)
 
     # results = run_gdp(m)
-
-    print_results(m, results)
-    # print_reports(m)
+    if save_nl_files:
+        print('No results since nl files are being saved')
+    else:
+        print_results(m, results)
+        # print_reports(m)
 
 
 if __name__ == "__main__":
@@ -3213,9 +3220,15 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
-    source_data = ['vhp', 'hp']
-    fluid_data = ['solar_salt', 'hitec_salt', 'thermal_oil']
-    heat_duty_data = [100, 150, 200]
+    save_nl_files_data = False
+    if save_nl_files_data:
+        source_data = ['vhp', 'hp']
+        fluid_data = ['solar_salt', 'hitec_salt', 'thermal_oil']
+        heat_duty_data = [100, 150, 200]
+    else:
+        source_data = ['hp']
+        fluid_data = ['solar_salt']
+        heat_duty_data = [100, 150, 200]
     for i in source_data:
         for j in fluid_data:
             for k in heat_duty_data:
@@ -3224,4 +3237,4 @@ if __name__ == "__main__":
                 m_chg, solver = main(m_usc, fluid=j, source=i)
 
                 print('Charge heat duty (MW):', k)
-                m = model_analysis(m_chg, solver, heat_duty=k, fluid=j, source=i)
+                m = model_analysis(m_chg, solver, heat_duty=k, fluid=j, source=i, save_nl_files=save_nl_files_data)
