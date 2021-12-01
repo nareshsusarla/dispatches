@@ -2731,10 +2731,15 @@ def add_bounds(m):
         # NS: works for 150 MW
         # for 100 MW: TO-VHP & TO-HP is MaxIter
         # for 200 MW: TO & Solar are Max/iter
-        oil_hxc.delta_temperature_in.setlb(10)
-        oil_hxc.delta_temperature_in.setub(556)
-        oil_hxc.delta_temperature_out.setlb(9)
-        oil_hxc.delta_temperature_out.setub(510)
+        oil_hxc.delta_temperature_in.setlb(10)  # 10
+        oil_hxc.delta_temperature_in.setub(391)  # 561
+        oil_hxc.delta_temperature_out.setlb(10)  # 9
+        oil_hxc.delta_temperature_out.setub(245)  # 500
+
+        # oil_hxc.inlet_2.temperature.setlb(300)
+        # oil_hxc.inlet_2.temperature.setub(616)
+        # oil_hxc.outlet_2.temperature.setlb(300)
+        # oil_hxc.outlet_2.temperature.setub(616)
 
         # # NS: works for 150 MW
         # # for 100 MW: TO-VHP & TO-HP is MaxIter
@@ -3278,7 +3283,7 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
-    heat_duty_data = [100]
+    heat_duty_data = [150]
     for k in heat_duty_data:
         m_usc = usc.build_plant_model()
         usc.initialize(m_usc)
