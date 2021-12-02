@@ -273,6 +273,16 @@ class ThermalOilStateBlockData(StateBlockData):
             doc="Specific heat capacity"
         )
 
+        # Specific Enthalpy
+        def enthalpy_correlation(self, p):
+            return (
+                self.enthalpy_mass[p]
+                == (1e3 * (0.003313*(self.temperature-273.15)**2/2 +
+                           0.0000008970785*(self.temperature-273.15)**3/3 +
+                           1.496005*(self.temperature-273.15))))
+        self.enthalpy_eq = Constraint(self.phase_list,
+                                      rule=enthalpy_correlation)
+
         # Viscosity
         self.visc_kin = Expression(
             self.phase_list,
@@ -297,13 +307,19 @@ class ThermalOilStateBlockData(StateBlockData):
             doc="Density"
         )
 
+        # Enthalpy flow terms
+        def rule_enthalpy_flow_terms(b, p):
+            return (self.enthalpy_mass[p] * self.flow_mass)
+
+        self.enthalpy_flow_terms = Expression(
+            self.config.parameters.phase_list,
+            rule=rule_enthalpy_flow_terms)
+
     def get_material_flow_terms(self, p, j):
         return self.flow_mass
 
     def get_enthalpy_flow_terms(self, p):
-        return self.flow_mass *1e3* (0.003313*(self.temperature-273.15)**2/2 +
-                                     0.0000008970785*(self.temperature-273.15)**3/3 +
-                                     1.496005*(self.temperature-273.15))
+        return self.enthalpy_flow_terms[p]
 
     def default_material_balance_type(self):
         return MaterialBalanceType.componentTotal
