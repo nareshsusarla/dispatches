@@ -2859,9 +2859,9 @@ def add_bounds(m):
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(8000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)
-        oil_hxc.delta_temperature_in.setub(580)
+        oil_hxc.delta_temperature_in.setub(555)
         oil_hxc.delta_temperature_out.setlb(9)
-        oil_hxc.delta_temperature_out.setub(255)
+        oil_hxc.delta_temperature_out.setub(224)
         #-------- modified by esrawli
         # Add calculated bounds
         oil_hxc.tube.properties_in[:].enthalpy_mass.setlb(m.fs.charge.thermal_oil_enthalpy_mass_min / m.factor)
