@@ -82,7 +82,7 @@ class PhysicalParameterData(PhysicalParameterBlock):
         self.set_default_scaling('enthalpy_mass', 1e-5)
         self.set_default_scaling('density', 1e-3)
         self.set_default_scaling('cp_mass', 1e-3)
-        # self.set_default_scaling('visc_kin', 10)
+        self.set_default_scaling('visc_kin', 10)
         self.set_default_scaling('therm_cond', 10)
         self.set_default_scaling('enthalpy_flow_terms', 1e-6)
 
