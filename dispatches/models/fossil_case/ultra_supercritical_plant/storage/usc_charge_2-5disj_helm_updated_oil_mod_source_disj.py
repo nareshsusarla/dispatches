@@ -40,6 +40,10 @@ updated (12/07/2021)
 # 2. The production constraint (to calculate plant_power_out) now includes the missing hx pump work
 # 3. The hx pump pressure out constraint is an inequality constraint instead of an equality constraint
 # 4. The VHP and HP splitters for the steam source disjunction are now include inside each disjunct
+# 5. Corrected constraints:
+#    - op_cost_rule, without the -q_baseline
+#    - plant_cap_cost_rule, op_fixed_cap_cost_rule, op_variable_cap_cost_rule
+#      using plant_power_out instead of heat_duty
 
 __author__ = "Naresh Susarla and Soraya Rawlings"
 
@@ -1319,7 +1323,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     #  Operating hours                                                        #
     ###########################################################################
     m.number_hours_per_day = 6
-    m.number_of_years = 5
+    # m.number_of_years = 5
+    m.number_of_years = 30
 
     m.fs.charge.hours_per_day = Var(
         initialize=m.number_hours_per_day,
@@ -1343,7 +1348,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.charge.solar_salt_disjunct.salt_amount = Expression(
         expr=(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0] *
               m.fs.charge.hours_per_day * 3600),
-        doc="Total Solar salt inventory flow in gal per min"
+        doc="Total Solar salt amoun in kg"
     )
     m.fs.charge.solar_salt_disjunct.salt_purchase_cost = Var(
         initialize=100000,
@@ -1351,15 +1356,15 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         # bounds=(0, None),
         bounds=(0, 1e7),
         #--------
-        doc="Solar salt purchase cost in $"
+        doc="Solar salt purchase cost in $/yr"
     )
 
     def solar_salt_purchase_cost_rule(b):
         return (
-            m.fs.charge.solar_salt_disjunct.salt_purchase_cost *
+            m.fs.charge.solar_salt_disjunct.salt_purchase_cost * # $/yr
             m.fs.charge.num_of_years == (
-                m.fs.charge.solar_salt_disjunct.salt_amount *
-                m.fs.charge.solar_salt_price
+                m.fs.charge.solar_salt_disjunct.salt_amount * # kg
+                m.fs.charge.solar_salt_price # $/kg
             )
         )
     m.fs.charge.solar_salt_disjunct.salt_purchase_cost_eq = Constraint(
@@ -1369,7 +1374,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.charge.hitec_salt_disjunct.salt_amount = Expression(
         expr=(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0] *
               m.fs.charge.hours_per_day * 3600),
-        doc="Total Hitec salt inventory flow in gal per min"
+        doc="Total Hitec salt amount in kg"
     )
     m.fs.charge.hitec_salt_disjunct.salt_purchase_cost = Var(
         initialize=100000,
@@ -1377,7 +1382,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         # bounds=(0, None),
         bounds=(0, 1e7),
         #--------
-        doc="Hitec salt purchase cost in $"
+        doc="Hitec salt purchase cost in $/yr"
     )
 
     def hitec_salt_purchase_cost_rule(b):
@@ -1394,7 +1399,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.charge.thermal_oil_disjunct.oil_amount = Expression(
         expr=(m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.flow_mass[0] *
               m.fs.charge.hours_per_day * 3600),
-        doc="Total Thermal oil inventory flow in kg/s"
+        doc="Total Thermal oil amount in kg"
     )
     m.fs.charge.thermal_oil_disjunct.salt_purchase_cost = Var(
         initialize=100000,
@@ -1402,7 +1407,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         # bounds=(0, None),
         bounds=(0, 1e10),
         #--------
-        doc="Thermal oil purchase cost in $"
+        doc="Thermal oil purchase cost in $/yr"
     )
 
     def thermal_oil_purchase_cost_rule(b):
@@ -2294,26 +2299,23 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         #----- added by esrawli
         bounds=(0, 1e10),
         #--------
-        doc="Annualized capital cost")
+        doc="Annualized capital cost in $/yr")
     m.fs.charge.solar_salt_disjunct.capital_cost = Var(
         initialize=1000000,
         #----- added by esrawli
         bounds=(0, 1e7),
         #--------
-        doc="Annualized capital cost for solar salt")
+        doc="Annualized capital cost for solar salt in $/yr")
 
     # Annualize capital cost for the solar salt
     def solar_cap_cost_rule(b):
         return m.fs.charge.solar_salt_disjunct.capital_cost == (
             m.fs.charge.solar_salt_disjunct.salt_purchase_cost
             + m.fs.charge.solar_salt_disjunct.spump_purchase_cost
-            + (
-                m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost
-                + m.fs.charge.hx_pump.costing.purchase_cost
-                + m.fs.charge.solar_salt_disjunct.no_of_tanks *
-                m.fs.charge.solar_salt_disjunct.costing.total_tank_cost
-            )
-            / m.fs.charge.num_of_years
+            + (m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost
+               + m.fs.charge.hx_pump.costing.purchase_cost
+               + m.fs.charge.solar_salt_disjunct.no_of_tanks *
+               m.fs.charge.solar_salt_disjunct.costing.total_tank_cost) / m.fs.charge.num_of_years
         )
     m.fs.charge.solar_salt_disjunct.cap_cost_eq = pyo.Constraint(
         rule=solar_cap_cost_rule)
@@ -2414,13 +2416,13 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         # bounds=(1e-5, None),
         bounds=(0, 1e12),
         # --------
-        doc="Operating cost")  # add units
+        doc="Operating cost in $/yr")  # add units
 
     def op_cost_rule(b):
         return m.fs.charge.operating_cost == (
             m.fs.charge.operating_hours * m.fs.charge.coal_price *
-            (m.fs.plant_heat_duty[0] * 1e6
-             - m.fs.q_baseline)
+            (m.fs.plant_heat_duty[0] * 1e6)
+             # - m.fs.q_baseline) # commented since we are not solving a retrofit case, like in scp
             - (m.fs.charge.cooling_price * m.fs.charge.operating_hours *
                m.fs.charge.cooler.heat_duty[0])
         )
@@ -2431,18 +2433,22 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.operating_cost,
         m.fs.charge.op_cost_eq)
 
-    # -------- added by esrawli
     ###########################################################################
     #  Annual capital and operating cost for full plant
     ###########################################################################
-    # Capital cost for power plant
+    #-------- modified by esrawli
+    # Add variables and functions to calculate the plant capital cost
+    # and variable and fixed operating costs. Equations from "USC Cost
+    # function.pptx" sent by Naresh. **Note ** The variable was
+    # removed and the plant capital cost is now calculated as an
+    # expression
     m.fs.charge.plant_capital_cost = pyo.Var(
         initialize=1000000,
         #-------- uncommented by esrawli
         # bounds=(1e-5, None),
         bounds=(0, 1e12),
         #--------
-        doc="Annualized capital cost for the plant in $")
+        doc="Annualized capital cost for the plant in $/y")
     m.fs.charge.plant_fixed_operating_cost = pyo.Var(
         initialize=1000000,
         #-------- modified by esrawli
@@ -2458,12 +2464,10 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         #--------
         doc="Plant variable operating cost in $/yr")
 
-    # Add function to calculate the plant capital cost. Equations from
-    # "USC Cost function.pptx" sent by Naresh
     def plant_cap_cost_rule(b):
         return m.fs.charge.plant_capital_cost == (
-            (2688973 * m.fs.plant_heat_duty[0]  # in MW
-             # (2688973 * m.fs.plant_power_out[0]  # in MW
+            # (2688973 * m.fs.plant_heat_duty[0]  # in MW
+             (2688973 * m.fs.plant_power_out[0]  # in MW
              + 618968072) /
             m.fs.charge.num_of_years
         ) * m.CE_index
@@ -2474,13 +2478,10 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.plant_capital_cost,
         m.fs.charge.plant_cap_cost_eq)
 
-    # Add function to calculate fixed and variable operating costs in
-    # the plant. Equations from "USC Cost function.pptx" sent by
-    # Naresh
     def op_fixed_plant_cost_rule(b):
         return m.fs.charge.plant_fixed_operating_cost == (
-            (16657.5 * m.fs.plant_heat_duty[0]  # in MW
-             # (16657.5 * m.fs.plant_power_out[0]  # in MW
+            # (16657.5 * m.fs.plant_heat_duty[0]  # in MW
+            (16657.5 * m.fs.plant_power_out[0]  # in MW
              + 6109833.3) /
             m.fs.charge.num_of_years
         ) * m.CE_index  # annualized, in $/y
@@ -2489,8 +2490,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def op_variable_plant_cost_rule(b):
         return m.fs.charge.plant_variable_operating_cost == (
-            31754.7 * m.fs.plant_heat_duty[0]  # in MW
-            # 31754.7 * m.fs.plant_power_out[0]  # in MW
+            # 31754.7 * m.fs.plant_heat_duty[0]  # in MW
+            31754.7 * m.fs.plant_power_out[0]  # in MW
         )  # in $/yr
     m.fs.charge.op_variable_plant_cost_eq = pyo.Constraint(
         rule=op_variable_plant_cost_rule)
@@ -2502,6 +2503,30 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     calculate_variable_from_constraint(
         m.fs.charge.plant_variable_operating_cost,
         m.fs.charge.op_variable_plant_cost_eq)
+
+    # m.fs.charge.plant_capital_cost = Expression(
+    #     expr=(
+    #         (2688973 * m.fs.plant_heat_duty[0]  # in MW
+    #         # (2688973 * m.fs.plant_power_out[0]  # in MW
+    #          + 618968072) /
+    #         m.fs.charge.num_of_years
+    #     ) * m.CE_index
+    # )
+    # m.fs.charge.plant_fixed_operating_cost = Expression(
+    #     expr=(
+    #         (16657.5 * m.fs.plant_heat_duty[0]  # in MW
+    #          # (16657.5 * m.fs.plant_power_out[0]  # in MW
+    #          + 6109833.3) /
+    #         m.fs.charge.num_of_years
+    #     ) * m.CE_index  # annualized, in $/y
+    # )
+
+    # m.fs.charge.plant_variable_operating_cost = Expression(
+    #     expr=(
+    #         31754.7 * m.fs.plant_heat_duty[0]  # in MW
+    #         # 31754.7 * m.fs.plant_power_out[0]  # in MW
+    #     )  # in $/yr
+    # )
     # --------
 
     res = solver.solve(m,
@@ -2771,6 +2796,9 @@ def add_bounds(m):
     m.salt_flow_max = 1000  # in kg/s
     m.fs.heat_duty_max = 200e6 # in MW
     m.factor = 2
+
+    # m.fs.plant_heat_duty.setlb(0)
+    # m.fs.plant_heat_duty.setub(2000e6)
     # Charge heat exchanger section
     for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
                      m.fs.charge.hitec_salt_disjunct.hxc]:
@@ -3072,11 +3100,19 @@ def print_model(nlp_model, nlp_data):
     print('')
     print('        Cooler heat duty in MW',
           nlp_model.fs.charge.cooler.heat_duty[0].value * 1e-6)
+    print('        Operating hours', value(nlp_model.fs.charge.operating_hours))
+    print('        Plant Power (MW): {:.6f}'.format(value(nlp_model.fs.plant_power_out[0])))
+    print('        Plant heat duty (MW): {:.6f}'.format(value(nlp_model.fs.plant_heat_duty[0])))
+    print('        Storage capital cost', value(nlp_model.fs.charge.capital_cost) * 1e-6)
+    print('        Operating cost', value(nlp_model.fs.charge.operating_cost) * 1e-6)
+    print('        Plant capital cost', value(nlp_model.fs.charge.plant_capital_cost) * 1e-6)
+    print('        Plant fixed op cost', value(nlp_model.fs.charge.plant_fixed_operating_cost) * 1e-6)
+    print('        Plant variable op cost', value(nlp_model.fs.charge.plant_variable_operating_cost) * 1e-6)
 
-    for k in nlp_model.set_turbine:
-        # nlp_model.fs.turbine[k].display()
-        print('        Turbine {} work (MW): {:.4f}'.
-              format(k, value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
+    # for k in nlp_model.set_turbine:
+    #     # nlp_model.fs.turbine[k].display()
+    #     print('        Turbine {} work (MW): {:.4f}'.
+    #           format(k, value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
     print('       ___________________________________________')
 
     print('')
@@ -3378,8 +3414,8 @@ def model_analysis(m, solver, heat_duty=None):
     # Solve the design optimization model
     # results = run_nlps(m,
     #                    solver=solver,
-    #                    # fluid="solar_salt",
-    #                    fluid="thermal_oil",
+    #                    fluid="solar_salt",
+    #                    # fluid="thermal_oil",
     #                    source="vhp")
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(False)
