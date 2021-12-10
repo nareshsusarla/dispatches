@@ -2847,12 +2847,12 @@ def add_bounds(m):
         salt_hxc.costing.base_cost_per_unit.setub(1e6)
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(88)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(88.2)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(84)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(10)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.4)
 
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(82)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(81.46)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(90)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(10)
@@ -2883,7 +2883,7 @@ def add_bounds(m):
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(8000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)
-        oil_hxc.delta_temperature_in.setub(553.35)
+        oil_hxc.delta_temperature_in.setub(553.264)
         oil_hxc.delta_temperature_out.setlb(9)
         oil_hxc.delta_temperature_out.setub(222)
         #-------- modified by esrawli
@@ -3403,11 +3403,17 @@ def model_analysis(m, solver, heat_duty=None):
         expr=(
             m.fs.charge.capital_cost
             + m.fs.charge.operating_cost
-            + m.fs.charge.plant_capital_cost
-            + m.fs.charge.plant_fixed_operating_cost
-            + m.fs.charge.plant_variable_operating_cost
         )
     )
+    # m.obj = Objective(
+    #     expr=(
+    #         m.fs.charge.capital_cost
+    #         + m.fs.charge.operating_cost
+    #         + m.fs.charge.plant_capital_cost
+    #         + m.fs.charge.plant_fixed_operating_cost
+    #         + m.fs.charge.plant_variable_operating_cost
+    #     )
+    # )
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
@@ -3419,8 +3425,8 @@ def model_analysis(m, solver, heat_duty=None):
     #                    source="vhp")
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(False)
-    # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(True)
-    # m.fs.charge.thermal_oil_disjunct.indicator_var.fix(False)
+    # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(False)
+    # m.fs.charge.thermal_oil_disjunct.indicator_var.fix(True)
 
     results = run_gdp(m)
 
