@@ -2470,7 +2470,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
              (2688973 * m.fs.plant_power_out[0]  # in MW
              + 618968072) /
             m.fs.charge.num_of_years
-        ) * m.CE_index
+        ) * (m.CE_index / 575.4)
     m.fs.charge.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
 
     # Initialize capital cost of power plant
@@ -2484,7 +2484,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             (16657.5 * m.fs.plant_power_out[0]  # in MW
              + 6109833.3) /
             m.fs.charge.num_of_years
-        ) * m.CE_index  # annualized, in $/y
+        ) * (m.CE_index / 575.4)  # annualized, in $/y
     m.fs.charge.op_fixed_plant_cost_eq = pyo.Constraint(
         rule=op_fixed_plant_cost_rule)
 
@@ -2492,7 +2492,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         return m.fs.charge.plant_variable_operating_cost == (
             # 31754.7 * m.fs.plant_heat_duty[0]  # in MW
             31754.7 * m.fs.plant_power_out[0]  # in MW
-        )  # in $/yr
+        ) * (m.CE_index / 575.4)# in $/yr
     m.fs.charge.op_variable_plant_cost_eq = pyo.Constraint(
         rule=op_variable_plant_cost_rule)
 
@@ -3399,21 +3399,21 @@ def model_analysis(m, solver, heat_duty=None):
     #--------
 
     # Objective function: total costs
-    m.obj = Objective(
-        expr=(
-            m.fs.charge.capital_cost
-            + m.fs.charge.operating_cost
-        )
-    )
     # m.obj = Objective(
     #     expr=(
     #         m.fs.charge.capital_cost
     #         + m.fs.charge.operating_cost
-    #         + m.fs.charge.plant_capital_cost
-    #         + m.fs.charge.plant_fixed_operating_cost
-    #         + m.fs.charge.plant_variable_operating_cost
     #     )
     # )
+    m.obj = Objective(
+        expr=(
+            m.fs.charge.capital_cost
+            + m.fs.charge.operating_cost
+            + m.fs.charge.plant_capital_cost
+            + m.fs.charge.plant_fixed_operating_cost
+            + m.fs.charge.plant_variable_operating_cost
+        )
+    )
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
