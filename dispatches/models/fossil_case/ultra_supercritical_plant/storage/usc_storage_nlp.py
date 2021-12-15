@@ -41,9 +41,9 @@ from math import pi
 import logging
 # Import Pyomo libraries
 # import os
-from pyomo.environ import (Block, Param, Constraint, Objective,
-                           TransformationFactory, Expression,
-                           value, log, exp, Var)
+from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
+                           NonNegativeReals, TransformationFactory, Expression,
+                           maximize, RangeSet, value, log, exp, Var)
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
@@ -595,16 +595,16 @@ def set_model_input(m):
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
     m.fs.hxc.area.fix(2500)  # m2
-    m.fs.hxd.area.fix(100)  # m2
+    m.fs.hxd.area.fix(2000)  # m2
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.hxc.inlet_2.flow_mass.fix(150)   # kg/s
+    m.fs.hxc.inlet_2.flow_mass.fix(140)   # kg/s
     m.fs.hxc.inlet_2.temperature.fix(513.15)  # K
     m.fs.hxc.inlet_2.pressure.fix(101325)  # Pa
 
-    m.fs.hxd.inlet_1.flow_mass.fix(50)  # 250
+    m.fs.hxd.inlet_1.flow_mass.fix(250)  # 250
     m.fs.hxd.inlet_1.temperature.fix(853.15)
     m.fs.hxd.inlet_1.pressure.fix(101325)
 
@@ -629,7 +629,7 @@ def set_model_input(m):
     # charger.  This flow of steam to the charger is unfixed and
     # determine during design optimization
     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.1)
-    m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.001)  # 0.1
+    m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.1)  # 0.1
 
 
 def set_scaling_factors(m):
@@ -718,6 +718,7 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     print('DOFs before init solution =', degrees_of_freedom(m))
     res = solver.solve(m,
                        tee=False,
+                       symbolic_solver_labels=True,
                        options=optarg)
 
     print("Charge Model Initialization = ",
@@ -793,7 +794,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     #  Operating hours                                                        #
     ###########################################################################
     m.number_hours_per_day = 6
-    m.number_of_years = 5
+    m.number_of_years = 30
 
     m.fs.hours_per_day = Var(
         initialize=m.number_hours_per_day,
@@ -809,16 +810,29 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         initialize=m.number_of_years,
         doc='Number of years for capital cost annualization')
 
+    m.fs.if_charge = Param(
+        initialize=1,
+        mutable=True,
+        doc='parameter indicating cycle, 1 for charge and 0 or discharge')
     ###########################################################################
     #  Capital cost                                                           #
     ###########################################################################
 
     #  Solar salt inventory
+    # m.fs.salt_amount = Expression(
+    #     expr=(m.fs.hxc.inlet_2.flow_mass[0] *
+    #           m.fs.hours_per_day * 3600),
+    #     doc="Total Solar salt inventory flow in kg per s"
+    # )
     m.fs.salt_amount = Expression(
-        expr=(m.fs.hxc.inlet_2.flow_mass[0] *
+        expr=(m.fs.hxd.inlet_1.flow_mass[0] *
               m.fs.hours_per_day * 3600),
-        doc="Total Solar salt inventory flow in gal per min"
+        doc="Total Solar salt inventory flow in kg per s"
     )
+    # m.fs.salt_amount = Expression(
+    #     expr=(m.fs.salt_amount_hxc + m.fs.salt_amount_hxd),
+    #     doc="Total Solar salt inventory flow in kg per s"
+    # )
     m.fs.salt_purchase_cost = Var(
         initialize=100000,
         bounds=(0, 1e7),
@@ -906,15 +920,59 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     #  Solar salt-pump costing
     m.fs.spump_Qgpm = Expression(
-        expr=(m.fs.hxc.side_2.properties_in[0].flow_mass *
-              264.17 * 60 /
-              (m.fs.hxc.side_2.properties_in[0].density["Liq"])),
+        expr=(
+            (m.fs.hxd.side_1.properties_in[0].flow_mass) *
+            264.17 * 60 /
+            (m.fs.hxd.side_1.properties_in[0].density["Liq"])
+            ),
         doc="Conversion of solar salt flow mass to vol flow [gal per min]"
     )
     m.fs.dens_lbft3 = Expression(
-        expr=m.fs.hxc.side_2.properties_in[0].density["Liq"] * 0.062428,
+        expr=(
+            (m.fs.hxd.side_1.properties_in[0].density["Liq"])
+            * 0.062428),
         doc="pump size factor"
     )  # density in lb per ft3
+
+    # #  Solar salt-pump costing
+    # m.fs.spump_Qgpm = Expression(
+    #     expr=(
+    #         (m.fs.hxc.side_2.properties_in[0].flow_mass) *
+    #         264.17 * 60 /
+    #         (m.fs.hxc.side_2.properties_in[0].density["Liq"])
+    #         ),
+    #     doc="Conversion of solar salt flow mass to vol flow [gal per min]"
+    # )
+    # m.fs.dens_lbft3 = Expression(
+    #     expr=(
+    #         (m.fs.hxc.side_2.properties_in[0].density["Liq"])
+    #         * 0.062428),
+    #     doc="pump size factor"
+    # )  # density in lb per ft3
+
+    # m.fs.spump_Qgpm = Expression(
+    #     expr=(
+    #         (m.fs.if_charge *
+    #          m.fs.hxc.side_2.properties_in[0].flow_mass +
+    #          (1 - m.fs.if_charge) *
+    #          m.fs.hxc.side_2.properties_in[0].flow_mass) *
+    #         264.17 * 60 /
+    #         (m.fs.if_charge *
+    #          m.fs.hxc.side_2.properties_in[0].density["Liq"] +
+    #          (1 - m.fs.if_charge) *
+    #          m.fs.hxd.side_1.properties_in[0].density["Liq"])
+    #         ),
+    #     doc="Conversion of solar salt flow mass to vol flow [gal per min]"
+    # )
+    # m.fs.dens_lbft3 = Expression(
+    #     expr=(
+    #         (m.fs.if_charge *
+    #          m.fs.hxc.side_2.properties_in[0].density["Liq"] +
+    #          (1 - m.fs.if_charge) *
+    #          m.fs.hxd.side_1.properties_in[0].density["Liq"])
+    #         * 0.062428),
+    #     doc="pump size factor"
+    # )  # density in lb per ft3
     m.fs.spump_sf = Expression(
         expr=(m.fs.spump_Qgpm
               * (m.fs.spump_head ** 0.5)),
@@ -1026,15 +1084,36 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.no_of_tanks.fix()
 
     # Computing tank volume - jfr: editing to include 20% margin
+    # def solar_tank_volume_rule(b):
+    #     return (
+    #         m.fs.tank_volume *
+    #         (m.fs.hxc.side_2.properties_in[0].density["Liq"]) ==
+    #         m.fs.salt_amount * 1.10
+    #     )
+    # m.fs.tank_volume_eq = Constraint(
+    #     rule=solar_tank_volume_rule)
+
     def solar_tank_volume_rule(b):
         return (
             m.fs.tank_volume *
-            m.fs.hxc.side_2.properties_in[0].density["Liq"] ==
+            (m.fs.hxd.side_1.properties_in[0].density["Liq"]) ==
             m.fs.salt_amount * 1.10
         )
     m.fs.tank_volume_eq = Constraint(
         rule=solar_tank_volume_rule)
 
+    # # Computing tank volume - jfr: editing to include 20% margin
+    # def solar_tank_volume_rule(b):
+    #     return (
+    #         m.fs.tank_volume *
+    #         (m.fs.if_charge *
+    #          m.fs.hxc.side_2.properties_in[0].density["Liq"] +
+    #          (1 - m.fs.if_charge) *
+    #          m.fs.hxd.side_1.properties_in[0].density["Liq"]) ==
+    #         m.fs.salt_amount * 1.10
+    #     )
+    # m.fs.tank_volume_eq = Constraint(
+    #     rule=solar_tank_volume_rule)
     # Compute surface area of tank: surf area of sides + top surf area
     # base area is accounted in foundation costs
     def solar_tank_surf_area_rule(b):
@@ -1216,11 +1295,10 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # "USC Cost function.pptx" sent by Naresh
     def plant_cap_cost_rule(b):
         return m.fs.plant_capital_cost == (
-            # (2688973 * m.fs.plant_heat_duty[0]  # in MW
             (2688973 * m.fs.plant_power_out[0]  # in MW
              + 618968072) /
             m.fs.num_of_years
-        ) * m.CE_index
+        ) * (m.CE_index / 575.4)
     m.fs.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
 
     # Initialize capital cost of power plant
@@ -1233,19 +1311,17 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Naresh
     def op_fixed_plant_cost_rule(b):
         return m.fs.plant_fixed_operating_cost == (
-            # (16657.5 * m.fs.plant_heat_duty[0]  # in MW
             (16657.5 * m.fs.plant_power_out[0]  # in MW
              + 6109833.3) /
             m.fs.num_of_years
-        ) * m.CE_index  # annualized, in $/y
+        ) * (m.CE_index / 575.4)  # annualized, in $/y
     m.fs.op_fixed_plant_cost_eq = Constraint(
         rule=op_fixed_plant_cost_rule)
 
     def op_variable_plant_cost_rule(b):
         return m.fs.plant_variable_operating_cost == (
-            # 31754.7 * m.fs.plant_heat_duty[0]  # in MW
             31754.7 * m.fs.plant_power_out[0]  # in MW
-        )  # in $/yr
+        ) * (m.CE_index / 575.4)  # in $/yr
     m.fs.op_variable_plant_cost_eq = Constraint(
         rule=op_variable_plant_cost_rule)
 
@@ -1281,62 +1357,112 @@ def add_bounds(m):
     # in W
 
     m.flow_max = m.main_flow * 3  # in mol/s
-    m.salt_flow_max = 1000  # in kg/s
+    m.salt_flow_max = 500  # in kg/s
     m.fs.heat_duty_max = 200e6  # in MW
     m.factor = 2
-    # Charge heat exchanger section
-    for salt_hxc in [m.fs.hxc]:
-        salt_hxc.inlet_1.flow_mol.setlb(0)
-        salt_hxc.inlet_1.flow_mol.setub(0.2 * m.flow_max)
-        salt_hxc.inlet_2.flow_mass.setlb(0)
-        salt_hxc.inlet_2.flow_mass.setub(m.salt_flow_max)
-        salt_hxc.outlet_1.flow_mol.setlb(0)
-        salt_hxc.outlet_1.flow_mol.setub(0.2 * m.flow_max)
-        salt_hxc.outlet_2.flow_mass.setlb(0)
-        salt_hxc.outlet_2.flow_mass.setub(m.salt_flow_max)
-        salt_hxc.inlet_2.pressure.setlb(101320)
-        salt_hxc.inlet_2.pressure.setub(101330)
-        salt_hxc.outlet_2.pressure.setlb(101320)
-        salt_hxc.outlet_2.pressure.setub(101330)
-        salt_hxc.heat_duty.setlb(0)
-        salt_hxc.heat_duty.setub(m.fs.heat_duty_max)
-        salt_hxc.shell.heat.setlb(-m.fs.heat_duty_max)
-        salt_hxc.shell.heat.setub(0)
-        salt_hxc.tube.heat.setlb(0)
-        salt_hxc.tube.heat.setub(m.fs.heat_duty_max)
-        salt_hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
-        salt_hxc.tube.properties_in[0].enthalpy_mass.setub(1.5e6)
-        salt_hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
-        salt_hxc.tube.properties_out[0].enthalpy_mass.setub(1.5e6)
-        # Add calculated bounds
-        # salt_hxc.tube.properties_in[:].enthalpy_mass.setlb(
-        #     m.fs.charge.salt_enthalpy_mass_min / m.factor)
-        # salt_hxc.tube.properties_in[:].enthalpy_mass.setub(
-        #     m.fs.charge.salt_enthalpy_mass_max * m.factor)
-        # salt_hxc.tube.properties_out[:].enthalpy_mass.setlb(
-        #     m.fs.charge.salt_enthalpy_mass_min / m.factor)
-        # salt_hxc.tube.properties_out[:].enthalpy_mass.setub(
-        #     m.fs.charge.salt_enthalpy_mass_max * m.factor)
 
-        salt_hxc.overall_heat_transfer_coefficient.setlb(0)
-        salt_hxc.overall_heat_transfer_coefficient.setub(10000)
-        salt_hxc.area.setlb(0)
-        salt_hxc.area.setub(6000)  # 5000
-        salt_hxc.costing.pressure_factor.setlb(0)  # no unit
-        salt_hxc.costing.pressure_factor.setub(1000)  # no unit
-        salt_hxc.costing.purchase_cost.setlb(0)  # no unit
-        salt_hxc.costing.purchase_cost.setub(1e7)  # no unit
-        salt_hxc.costing.base_cost_per_unit.setlb(0)
-        salt_hxc.costing.base_cost_per_unit.setub(1e6)
-        salt_hxc.costing.material_factor.setlb(0)
-        salt_hxc.costing.material_factor.setub(10)
+    # Charge heat exchanger
+    m.fs.hxc.inlet_1.flow_mol.setlb(0)
+    m.fs.hxc.inlet_1.flow_mol.setub(0.2 * m.flow_max)
+    m.fs.hxc.inlet_2.flow_mass.setlb(0)
+    m.fs.hxc.inlet_2.flow_mass.setub(m.salt_flow_max)
+    m.fs.hxc.outlet_1.flow_mol.setlb(0)
+    m.fs.hxc.outlet_1.flow_mol.setub(0.2 * m.flow_max)
+    m.fs.hxc.outlet_2.flow_mass.setlb(0)
+    m.fs.hxc.outlet_2.flow_mass.setub(m.salt_flow_max)
+    m.fs.hxc.inlet_2.pressure.setlb(101320)
+    m.fs.hxc.inlet_2.pressure.setub(101330)
+    m.fs.hxc.outlet_2.pressure.setlb(101320)
+    m.fs.hxc.outlet_2.pressure.setub(101330)
+    m.fs.hxc.heat_duty.setlb(0)
+    m.fs.hxc.heat_duty.setub(m.fs.heat_duty_max)
+    m.fs.hxc.shell.heat.setlb(-m.fs.heat_duty_max)
+    m.fs.hxc.shell.heat.setub(0)
+    m.fs.hxc.tube.heat.setlb(0)
+    m.fs.hxc.tube.heat.setub(m.fs.heat_duty_max)
+    m.fs.hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
+    m.fs.hxc.tube.properties_in[0].enthalpy_mass.setub(1.5e6)
+    m.fs.hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
+    m.fs.hxc.tube.properties_out[0].enthalpy_mass.setub(1.5e6)
+    # Add calculated bounds
+    # m.fs.hxc.tube.properties_in[:].enthalpy_mass.setlb(
+    #     m.fs.charge.salt_enthalpy_mass_min / m.factor)
+    # m.fs.hxc.tube.properties_in[:].enthalpy_mass.setub(
+    #     m.fs.charge.salt_enthalpy_mass_max * m.factor)
+    # m.fs.hxc.tube.properties_out[:].enthalpy_mass.setlb(
+    #     m.fs.charge.salt_enthalpy_mass_min / m.factor)
+    # m.fs.hxc.tube.properties_out[:].enthalpy_mass.setub(
+    #     m.fs.charge.salt_enthalpy_mass_max * m.factor)
 
+    m.fs.hxc.overall_heat_transfer_coefficient.setlb(0)
+    m.fs.hxc.overall_heat_transfer_coefficient.setub(10000)
+    m.fs.hxc.area.setlb(0)
+    m.fs.hxc.area.setub(6000)  # 5000
+    m.fs.hxc.costing.pressure_factor.setlb(0)  # no unit
+    m.fs.hxc.costing.pressure_factor.setub(1000)  # no unit
+    m.fs.hxc.costing.purchase_cost.setlb(0)  # no unit
+    m.fs.hxc.costing.purchase_cost.setub(1e7)  # no unit
+    m.fs.hxc.costing.base_cost_per_unit.setlb(0)
+    m.fs.hxc.costing.base_cost_per_unit.setub(1e6)
+    m.fs.hxc.costing.material_factor.setlb(0)
+    m.fs.hxc.costing.material_factor.setub(10)
     # Testing for NS
     m.fs.hxc.delta_temperature_in.setlb(10)
     m.fs.hxc.delta_temperature_out.setlb(10)
-
     m.fs.hxc.delta_temperature_in.setub(80.5)
     m.fs.hxc.delta_temperature_out.setub(81)
+
+    # Discharge heat exchanger
+    m.fs.hxd.inlet_2.flow_mol.setlb(0)
+    m.fs.hxd.inlet_2.flow_mol.setub(0.2 * m.flow_max)
+    m.fs.hxd.inlet_1.flow_mass.setlb(0)
+    m.fs.hxd.inlet_1.flow_mass.setub(m.salt_flow_max)
+    m.fs.hxd.outlet_2.flow_mol.setlb(0)
+    m.fs.hxd.outlet_2.flow_mol.setub(0.2 * m.flow_max)
+    m.fs.hxd.outlet_1.flow_mass.setlb(0)
+    m.fs.hxd.outlet_1.flow_mass.setub(m.salt_flow_max)
+    m.fs.hxd.inlet_1.pressure.setlb(101320)
+    m.fs.hxd.inlet_1.pressure.setub(101330)
+    m.fs.hxd.outlet_1.pressure.setlb(101320)
+    m.fs.hxd.outlet_1.pressure.setub(101330)
+    m.fs.hxd.heat_duty.setlb(0)
+    m.fs.hxd.heat_duty.setub(m.fs.heat_duty_max)
+
+    m.fs.hxd.tube.heat.setub(m.fs.heat_duty_max)
+    m.fs.hxd.tube.heat.setlb(0)
+    m.fs.hxd.shell.heat.setub(0)
+    m.fs.hxd.shell.heat.setlb(-m.fs.heat_duty_max)
+
+    m.fs.hxd.shell.properties_in[0].enthalpy_mass.setlb(0)
+    m.fs.hxd.shell.properties_in[0].enthalpy_mass.setub(1.5e6)
+    m.fs.hxd.shell.properties_out[0].enthalpy_mass.setlb(0)
+    m.fs.hxd.shell.properties_out[0].enthalpy_mass.setub(1.5e6)
+    # Add calculated bounds
+    # m.fs.hxd.tube.properties_in[:].enthalpy_mass.setlb(
+    #     m.fs.charge.salt_enthalpy_mass_min / m.factor)
+    # m.fs.hxd.tube.properties_in[:].enthalpy_mass.setub(
+    #     m.fs.charge.salt_enthalpy_mass_max * m.factor)
+    # m.fs.hxd.tube.properties_out[:].enthalpy_mass.setlb(
+    #     m.fs.charge.salt_enthalpy_mass_min / m.factor)
+    # m.fs.hxd.tube.properties_out[:].enthalpy_mass.setub(
+    #     m.fs.charge.salt_enthalpy_mass_max * m.factor)
+    m.fs.hxd.overall_heat_transfer_coefficient.setlb(0)
+    m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
+    m.fs.hxd.area.setlb(0)
+    m.fs.hxd.area.setub(8000)  # 5000
+    m.fs.hxd.costing.pressure_factor.setlb(0)  # no unit
+    m.fs.hxd.costing.pressure_factor.setub(1000)  # no unit
+    m.fs.hxd.costing.purchase_cost.setlb(0)  # no unit
+    m.fs.hxd.costing.purchase_cost.setub(1e7)  # no unit
+    m.fs.hxd.costing.base_cost_per_unit.setlb(0)
+    m.fs.hxd.costing.base_cost_per_unit.setub(1e6)
+    m.fs.hxd.costing.material_factor.setlb(0)
+    m.fs.hxd.costing.material_factor.setub(10)
+    # Testing for NS
+    m.fs.hxd.delta_temperature_in.setlb(10)
+    m.fs.hxd.delta_temperature_out.setlb(10)
+    m.fs.hxd.delta_temperature_in.setub(300)
+    m.fs.hxd.delta_temperature_out.setub(300)
 
     # Add bounds for the HX pump and Cooler
     for unit_k in [m.fs.hx_pump,
@@ -1361,6 +1487,18 @@ def add_bounds(m):
         split.split_fraction[0.0, "to_hxc"].setub(1)
         split.split_fraction[0.0, "to_turbine"].setlb(0)
         split.split_fraction[0.0, "to_turbine"].setub(1)
+        split.inlet.flow_mol[:].setlb(0)
+        split.inlet.flow_mol[:].setub(m.flow_max)
+
+    for split in [m.fs.ess_bfp_split]:
+        split.to_hxd.flow_mol[:].setlb(0)
+        split.to_hxd.flow_mol[:].setub(0.2 * m.flow_max)
+        # split.to_turbine.flow_mol[:].setlb(0)
+        # split.to_turbine.flow_mol[:].setub(m.flow_max)
+        split.split_fraction[0.0, "to_hxd"].setlb(0)
+        split.split_fraction[0.0, "to_hxd"].setub(1)
+        split.split_fraction[0.0, "to_recyclemix"].setlb(0)
+        split.split_fraction[0.0, "to_recyclemix"].setub(1)
         split.inlet.flow_mol[:].setlb(0)
         split.inlet.flow_mol[:].setub(m.flow_max)
 
@@ -1433,18 +1571,32 @@ def print_results(m, results):
     print('================================')
     print('')
     print('')
-    print("***************** Costing Results ******************")
+    print("***************** Optimization Results ******************")
+    print('Revenue ($/h): {:.6f}'.format(
+        value(m.fs.revenue)))
+    print('Storage Capital Cost ($/h): {:.6f}'.format(
+        value(m.fs.capital_cost)/(365*24)))
+    print('Fuel Cost ($/h): {:.6f}'.format(
+        value(m.fs.operating_cost)/(365*24)))
+    print('Previous Salt Inventory (kg): {:.6f}'.format(
+        value(m.fs.previous_salt_inventory[0])))
+    print('Salt Inventory (kg): {:.6f}'.format(
+        value(m.fs.salt_inventory[0])))
+    print('Salt Amount (kg): {:.6f}'.format(
+        value(m.fs.salt_amount)))
     print('')
-    print('Obj (M$/year): {:.6f}'.format(value(m.obj) * 1e-6))
+    print('')
+    print("***************** Costing Results ******************")
+    print('Obj (M$/year): {:.6f}'.format(value(m.obj)))
     print('Plant capital cost (M$/y): {:.6f}'.format(
         value(m.fs.plant_capital_cost) * 1e-6))
     print('Plant fixed operating costs (M$/y): {:.6f}'.format(
         value(m.fs.plant_fixed_operating_cost) * 1e-6))
     print('Plant variable operating costs (M$/y): {:.6f}'.format(
         value(m.fs.plant_variable_operating_cost) * 1e-6))
-    print('Charge capital cost ($/y): {:.6f}'.format(
+    print('Charge capital cost (M$/y): {:.6f}'.format(
         value(m.fs.capital_cost) * 1e-6))
-    print('Charge Operating costs ($/y): {:.6f}'.format(
+    print('Charge Operating costs (M$/y): {:.6f}'.format(
         value(m.fs.operating_cost) * 1e-6))
     print('Salt cost ($/y): {:.6f}'.format(
         value(m.fs.salt_purchase_cost)))
@@ -1543,17 +1695,17 @@ def print_reports(m):
                    m.fs.charge.hxc]:
         unit_k.display()
 
-    for k in pyo.RangeSet(11):
+    for k in RangeSet(11):
         m.fs.turbine[k].report()
-    for k in pyo.RangeSet(11):
+    for k in RangeSet(11):
         m.fs.turbine[k].display()
-    for j in pyo.RangeSet(9):
+    for j in RangeSet(9):
         m.fs.fwh[j].report()
     for j in m.set_fwh_mixer:
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver):
+def model_analysis(m, solver, cycle=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
@@ -1561,37 +1713,112 @@ def model_analysis(m, solver):
     # Fix variables in the flowsheet
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-    print('DOF before unfix = ', degrees_of_freedom(m))
 
-    m.fs.hxc.heat_duty.fix(150*1e6)  # in W
-    m.fs.hxd.heat_duty.fix(0.1*1e6)  # in W
-    m.fs.hxd.area.unfix()
+    m.fs.previous_salt_inventory = Var(
+        m.fs.time,
+        domain=NonNegativeReals,
+        initialize=1,
+        bounds=(0, None),
+        doc="Salt inventory at the beginning of the hour (or time period), kg"
+        )
+    m.fs.salt_inventory = Var(
+        m.fs.time,
+        domain=NonNegativeReals,
+        initialize=80,
+        bounds=(0, None),
+        doc="Salt inventory at the end of the hour (or time period), kg"
+        )
 
     # Unfix variables fixed in model input and during initialization
     m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
-    # m.fs.boiler.inlet.flow_mol.fix(m.main_flow)  # mol/s
 
-    m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+    if cycle == "charge":
+        # m.fs.if_charge.value = 1
+        m.fs.hxc.heat_duty.fix(150*1e6)  # in W
+        m.fs.hxd.heat_duty.fix(0.1*1e6)  # in W
+        m.fs.hxd.area.unfix()
+        # m.fs.hxd.area.fix(0.01)
+        print('DOF before unfix = ', degrees_of_freedom(m))
 
-    for salt_hxc in [m.fs.hxc]:
-        salt_hxc.inlet_1.unfix()
-        salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
-        salt_hxc.area.unfix()  # 1 DOF
+        m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+        m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.001)  # 0.1
+        m.fs.hxd.inlet_1.flow_mass.fix(1)
 
-    for unit in [m.fs.cooler]:
-        unit.inlet.unfix()
-    m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+        m.fs.previous_salt_inventory[0].fix(10)
+        for salt_hxc in [m.fs.hxc]:
+            salt_hxc.inlet_1.unfix()
+            salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
+            salt_hxc.area.unfix()  # 1 DOF
+
+        for unit in [m.fs.cooler]:
+            unit.inlet.unfix()
+        m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+
+    elif cycle == "discharge":
+        # DISCHARGE
+        # m.fs.if_charge.value = 0
+        m.fs.hxc.heat_duty.fix(0.01*1e6)  # in W
+        m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
+        m.fs.hxc.area.unfix()
+        print('DOF before unfix = ', degrees_of_freedom(m))
+
+        m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.001)  # 0.001
+        m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()  # 0.1
+        m.fs.hxc.inlet_2.flow_mass.fix(1)
+
+        m.fs.previous_salt_inventory[0].fix(6500000)
+
+        for salt_hxd in [m.fs.hxd]:
+            salt_hxd.inlet_2.unfix()
+            salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
+            salt_hxd.area.unfix()  # 1 DOF
+
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Inventory balance at the end of the time period")
+    def constraint_salt_inventory(b, t):
+        return (
+            b.salt_inventory[t] ==
+            b.previous_salt_inventory[t]
+            + 3600*b.hxc.inlet_2.flow_mass[t]
+            - 3600*b.hxd.inlet_1.flow_mass[t])
+
+    @m.fs.Constraint(m.fs.time,
+                      doc="Maximum salt inventory at any time")
+    def constraint_salt_max_inventory1(b, t):
+        return (
+            b.salt_inventory[t] <= b.salt_amount)
+
+    @m.fs.Constraint(m.fs.time,
+                      doc="Maximum previous salt inventory at any time")
+    def constraint_salt_max_inventory2(b, t):
+        return (
+            b.previous_salt_inventory[t] <= b.salt_amount)
+
+    m.fs.revenue = Expression(
+        expr=(m.fs.lmp[0] *
+              m.fs.plant_power_out[0]),
+        doc="Revenue function in $/h assuming 1 hr operation"
+    )
 
     # Objective function: total costs
     m.obj = Objective(
         expr=(
-            m.fs.capital_cost
-            + m.fs.operating_cost
-            + m.fs.plant_capital_cost
-            + m.fs.plant_fixed_operating_cost
-            + m.fs.plant_variable_operating_cost
-        )
+            m.fs.revenue
+            - (m.fs.capital_cost
+                - m.fs.operating_cost
+                - m.fs.plant_capital_cost
+                - m.fs.plant_fixed_operating_cost
+                - m.fs.plant_variable_operating_cost / (365 * 24))
+        ),
+        sense=maximize
     )
+    # m.obj = Objective(
+    #     expr=(
+    #         m.fs.hxd.heat_duty[0]
+    #     ),
+    #     sense=maximize
+    # )
 
     print('DOF before solve = ', degrees_of_freedom(m))
 
@@ -1624,6 +1851,14 @@ if __name__ == "__main__":
     # m = build_model(m_ready,
     #                 scenario=i)
     m_chg, solver = main(m_usc)
-
+    m_chg.fs.lmp = Var(
+        m_chg.fs.time,
+        domain=Reals,
+        initialize=80,
+        doc="Hourly LMP in $/MWh"
+        )
+    m_chg.fs.lmp[0].fix(120)  # 80
+    m_chg.cycle = 'discharge'
     m = model_analysis(m_chg,
-                       solver)
+                       solver,
+                       cycle=m_chg.cycle)
