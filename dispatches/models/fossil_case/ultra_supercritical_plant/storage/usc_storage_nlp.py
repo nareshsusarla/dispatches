@@ -819,16 +819,17 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     ###########################################################################
 
     #  Solar salt inventory
-    # m.fs.salt_amount = Expression(
-    #     expr=(m.fs.hxc.inlet_2.flow_mass[0] *
-    #           m.fs.hours_per_day * 3600),
-    #     doc="Total Solar salt inventory flow in kg per s"
-    # )
     m.fs.salt_amount = Expression(
-        expr=(m.fs.hxd.inlet_1.flow_mass[0] *
+        expr=(m.fs.hxc.inlet_2.flow_mass[0] *
               m.fs.hours_per_day * 3600),
         doc="Total Solar salt inventory flow in kg per s"
     )
+    # m.fs.salt_amount = Expression(
+    #     expr=(m.fs.hxd.inlet_1.flow_mass[0] *
+    #           m.fs.hours_per_day * 3600),
+    #     doc="Total Solar salt inventory flow in kg per s"
+    # )
+
     # m.fs.salt_amount = Expression(
     #     expr=(m.fs.salt_amount_hxc + m.fs.salt_amount_hxd),
     #     doc="Total Solar salt inventory flow in kg per s"
@@ -918,37 +919,37 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         initialize=m.data_salt_pump['nm'],
         doc='Motor Shaft Type Factor')
 
-    #  Solar salt-pump costing
-    m.fs.spump_Qgpm = Expression(
-        expr=(
-            (m.fs.hxd.side_1.properties_in[0].flow_mass) *
-            264.17 * 60 /
-            (m.fs.hxd.side_1.properties_in[0].density["Liq"])
-            ),
-        doc="Conversion of solar salt flow mass to vol flow [gal per min]"
-    )
-    m.fs.dens_lbft3 = Expression(
-        expr=(
-            (m.fs.hxd.side_1.properties_in[0].density["Liq"])
-            * 0.062428),
-        doc="pump size factor"
-    )  # density in lb per ft3
-
     # #  Solar salt-pump costing
     # m.fs.spump_Qgpm = Expression(
     #     expr=(
-    #         (m.fs.hxc.side_2.properties_in[0].flow_mass) *
+    #         (m.fs.hxd.side_1.properties_in[0].flow_mass) *
     #         264.17 * 60 /
-    #         (m.fs.hxc.side_2.properties_in[0].density["Liq"])
+    #         (m.fs.hxd.side_1.properties_in[0].density["Liq"])
     #         ),
     #     doc="Conversion of solar salt flow mass to vol flow [gal per min]"
     # )
     # m.fs.dens_lbft3 = Expression(
     #     expr=(
-    #         (m.fs.hxc.side_2.properties_in[0].density["Liq"])
+    #         (m.fs.hxd.side_1.properties_in[0].density["Liq"])
     #         * 0.062428),
     #     doc="pump size factor"
     # )  # density in lb per ft3
+
+    #  Solar salt-pump costing
+    m.fs.spump_Qgpm = Expression(
+        expr=(
+            (m.fs.hxc.side_2.properties_in[0].flow_mass) *
+            264.17 * 60 /
+            (m.fs.hxc.side_2.properties_in[0].density["Liq"])
+            ),
+        doc="Conversion of solar salt flow mass to vol flow [gal per min]"
+    )
+    m.fs.dens_lbft3 = Expression(
+        expr=(
+            (m.fs.hxc.side_2.properties_in[0].density["Liq"])
+            * 0.062428),
+        doc="pump size factor"
+    )  # density in lb per ft3
 
     # m.fs.spump_Qgpm = Expression(
     #     expr=(
@@ -1084,23 +1085,23 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.no_of_tanks.fix()
 
     # Computing tank volume - jfr: editing to include 20% margin
-    # def solar_tank_volume_rule(b):
-    #     return (
-    #         m.fs.tank_volume *
-    #         (m.fs.hxc.side_2.properties_in[0].density["Liq"]) ==
-    #         m.fs.salt_amount * 1.10
-    #     )
-    # m.fs.tank_volume_eq = Constraint(
-    #     rule=solar_tank_volume_rule)
-
     def solar_tank_volume_rule(b):
         return (
             m.fs.tank_volume *
-            (m.fs.hxd.side_1.properties_in[0].density["Liq"]) ==
+            (m.fs.hxc.side_2.properties_in[0].density["Liq"]) ==
             m.fs.salt_amount * 1.10
         )
     m.fs.tank_volume_eq = Constraint(
         rule=solar_tank_volume_rule)
+
+    # def solar_tank_volume_rule(b):
+    #     return (
+    #         m.fs.tank_volume *
+    #         (m.fs.hxd.side_1.properties_in[0].density["Liq"]) ==
+    #         m.fs.salt_amount * 1.10
+    #     )
+    # m.fs.tank_volume_eq = Constraint(
+    #     rule=solar_tank_volume_rule)
 
     # # Computing tank volume - jfr: editing to include 20% margin
     # def solar_tank_volume_rule(b):
@@ -1160,65 +1161,65 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # based on a number of tank (see the above for m.fs.no_of_tanks)
     # Costing for each vessel designed above
     # m.fs.charge.salt_tank = pyo.Block()
-    m.fs.costing = Block()
+    m.fs.solar_costing = Block()
 
-    m.fs.costing.material_cost = Param(
+    m.fs.solar_costing.material_cost = Param(
         initialize=m.data_cost['storage_tank_material'],
         doc='$/kg of SS316 material')
-    m.fs.costing.insulation_cost = Param(
+    m.fs.solar_costing.insulation_cost = Param(
         initialize=m.data_cost['storage_tank_insulation'],
         doc='$/m2')
-    m.fs.costing.foundation_cost = Param(
+    m.fs.solar_costing.foundation_cost = Param(
         initialize=m.data_cost['storage_tank_foundation'],
         doc='$/m2')
-    m.fs.costing.material_density = Param(
+    m.fs.solar_costing.material_density = Param(
         initialize=m.data_storage_tank['material_density'],
         doc='Kg/m3')
-    m.fs.costing.tank_material_cost = Var(
+    m.fs.solar_costing.tank_material_cost = Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
-    m.fs.costing.tank_insulation_cost = Var(
+    m.fs.solar_costing.tank_insulation_cost = Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
-    m.fs.costing.tank_foundation_cost = Var(
+    m.fs.solar_costing.tank_foundation_cost = Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
 
     def rule_tank_material_cost(b):
-        return m.fs.costing.tank_material_cost == (
-            m.fs.costing.material_cost *
-            m.fs.costing.material_density *
+        return m.fs.solar_costing.tank_material_cost == (
+            m.fs.solar_costing.material_cost *
+            m.fs.solar_costing.material_density *
             m.fs.tank_surf_area *
             m.fs.tank_thickness
         )
-    m.fs.costing.eq_tank_material_cost = \
+    m.fs.solar_costing.eq_tank_material_cost = \
         Constraint(rule=rule_tank_material_cost)
 
     def rule_tank_insulation_cost(b):
         return (
-            m.fs.costing.tank_insulation_cost == (
-                m.fs.costing.insulation_cost *
+            m.fs.solar_costing.tank_insulation_cost == (
+                m.fs.solar_costing.insulation_cost *
                 m.fs.tank_surf_area))
 
-    m.fs.costing.eq_tank_insulation_cost = \
+    m.fs.solar_costing.eq_tank_insulation_cost = \
         Constraint(rule=rule_tank_insulation_cost)
 
     def rule_tank_foundation_cost(b):
         return (
-            m.fs.costing.tank_foundation_cost == (
-                m.fs.costing.foundation_cost *
+            m.fs.solar_costing.tank_foundation_cost == (
+                m.fs.solar_costing.foundation_cost *
                 pi * m.fs.tank_diameter**2 / 4))
-    m.fs.costing.eq_tank_foundation_cost = \
+    m.fs.solar_costing.eq_tank_foundation_cost = \
         Constraint(rule=rule_tank_foundation_cost)
 
     # Expression to compute the total cost for the salt tank
-    m.fs.costing.total_tank_cost = Expression(
-        expr=m.fs.costing.tank_material_cost
-        + m.fs.costing.tank_foundation_cost
-        + m.fs.costing.tank_insulation_cost
+    m.fs.solar_costing.total_tank_cost = Expression(
+        expr=m.fs.solar_costing.tank_material_cost
+        + m.fs.solar_costing.tank_foundation_cost
+        + m.fs.solar_costing.tank_insulation_cost
     )
 
     # --------------------------------------------
@@ -1241,7 +1242,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
                 + m.fs.hxd.costing.purchase_cost
                 + m.fs.hx_pump.costing.purchase_cost
                 + m.fs.no_of_tanks *
-                m.fs.costing.total_tank_cost
+                m.fs.solar_costing.total_tank_cost
             )
             / m.fs.num_of_years
         )
@@ -1601,7 +1602,7 @@ def print_results(m, results):
     print('Salt cost ($/y): {:.6f}'.format(
         value(m.fs.salt_purchase_cost)))
     print('Tank cost ($/y): {:.6f}'.format(
-        value(m.fs.costing.total_tank_cost / 15)))
+        value(m.fs.solar_costing.total_tank_cost / 15)))
     print('Salt pump cost ($/y): {:.6f}'.format(
         value(m.fs.spump_purchase_cost)))
     print('')
@@ -1757,7 +1758,7 @@ def model_analysis(m, solver, cycle=None):
     elif cycle == "discharge":
         # DISCHARGE
         # m.fs.if_charge.value = 0
-        m.fs.hxc.heat_duty.fix(0.01*1e6)  # in W
+        m.fs.hxc.heat_duty.fix(0.1*1e6)  # in W
         m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
         m.fs.hxc.area.unfix()
         print('DOF before unfix = ', degrees_of_freedom(m))
@@ -1805,11 +1806,11 @@ def model_analysis(m, solver, cycle=None):
     m.obj = Objective(
         expr=(
             m.fs.revenue
-            - (m.fs.capital_cost
-                - m.fs.operating_cost
-                - m.fs.plant_capital_cost
-                - m.fs.plant_fixed_operating_cost
-                - m.fs.plant_variable_operating_cost / (365 * 24))
+            - ((m.fs.capital_cost
+                + m.fs.operating_cost
+                + m.fs.plant_capital_cost
+                + m.fs.plant_fixed_operating_cost
+                + m.fs.plant_variable_operating_cost) / (365 * 24))
         ),
         sense=maximize
     )
@@ -1857,8 +1858,8 @@ if __name__ == "__main__":
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(120)  # 80
-    m_chg.cycle = 'discharge'
+    m_chg.fs.lmp[0].fix(80)  # 80
+    m_chg.cycle = 'charge'
     m = model_analysis(m_chg,
                        solver,
                        cycle=m_chg.cycle)
