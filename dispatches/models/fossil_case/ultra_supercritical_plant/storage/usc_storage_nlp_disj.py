@@ -510,10 +510,12 @@ def add_disjunction(m):
 def charge_mode_disjunct_equations(disj):
     m = disj.model()
 
+    # Fix charge heat echanger heat duty
     m.fs.charge_mode_disjunct.hxc_heat_duty = Constraint(
         expr=m.fs.hxc.heat_duty[0] == 150*1e6
     )
 
+    # Fix discharge heat exchanger heat duty to a very small value
     m.fs.charge_mode_disjunct.hxd_heat_duty = Constraint(
         expr=m.fs.hxd.heat_duty[0] == 0.1*1e6
     )
@@ -522,14 +524,22 @@ def charge_mode_disjunct_equations(disj):
     #     expr=m.fs.hxc.area == 2500
     # )
 
+    # Almost zero flow to discharge system through ess_bfp splitter
     m.fs.charge_mode_disjunct.essbfp_split_fraction = Constraint(
         expr=m.fs.ess_bfp_split.split_fraction[0, "to_hxd"] == 0.001
     )
 
+    # Fix data for discharge heat exchanger since all data for both
+    # heat exchangers was unfixed in model_analysis
     m.fs.charge_mode_disjunct.hxd_inlet_dummy_flow = Constraint(
         expr=m.fs.hxd.inlet_1.flow_mass[0] == 1
     )
 
+    m.fs.charge_mode_disjunct.hxd_area_constraint = Constraint(
+        expr=m.fs.hxd.area == 2000
+    )
+
+    # Add an initial value for salt inventory
     m.fs.charge_mode_disjunct.prev_salt_inventory_constraint = Constraint(
         expr=m.fs.previous_salt_inventory[0] == 10
     )
@@ -581,6 +591,10 @@ def discharge_mode_disjunct_equations(disj):
 
     m.fs.discharge_mode_disjunct.prev_salt_inventory_constraint = Constraint(
         expr=m.fs.previous_salt_inventory[0] == 6500000
+    )
+
+    m.fs.discharge_mode_disjunct.hxc_area_constraint = Constraint(
+        expr=m.fs.hxc.area == 2500
     )
 
     # elif cycle == "discharge":
@@ -1543,6 +1557,8 @@ def add_bounds(m):
     m.fs.hxc.delta_temperature_out.setlb(10)
     m.fs.hxc.delta_temperature_in.setub(80.5)
     m.fs.hxc.delta_temperature_out.setub(81)
+    # m.fs.hxc.delta_temperature_in.setub(80.5)
+    # m.fs.hxc.delta_temperature_out.setub(81)
 
     # Discharge heat exchanger
     m.fs.hxd.inlet_2.flow_mol.setlb(0)
@@ -1871,6 +1887,7 @@ def model_analysis(m, solver, cycle=None):
     # Unfix variables fixed in model input and during initialization
     m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
 
+    #-------- modified by esrawli
     # Unfix all data
     m.fs.hxc.area.unfix()
     m.fs.hxd.area.unfix()
@@ -1890,13 +1907,12 @@ def model_analysis(m, solver, cycle=None):
         unit.inlet.unfix()
     m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
 
-    #-------- modified by esrawli
     if cycle == "charge":
         m.fs.charge_mode_disjunct.indicator_var.fix(True)
         m.fs.discharge_mode_disjunct.indicator_var.fix(False)
     elif cycle == "discharge":
-        m.fs.charge_mode_disjunct.indicator_var.fix(True)
-        m.fs.discharge_mode_disjunct.indicator_var.fix(False)
+        m.fs.charge_mode_disjunct.indicator_var.fix(False)
+        m.fs.discharge_mode_disjunct.indicator_var.fix(True)
     else:
         print('**^^** Unrecognized operation mode! Try charge or discharge')
 
