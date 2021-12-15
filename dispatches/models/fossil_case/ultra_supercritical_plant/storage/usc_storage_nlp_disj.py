@@ -43,7 +43,7 @@ import logging
 # import os
 from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
                            NonNegativeReals, TransformationFactory, Expression,
-                           maximize, RangeSet, value, log, exp, Var)
+                           maximize, RangeSet, value, log, exp, Var, SolverFactory)
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
@@ -510,7 +510,7 @@ def add_disjunction(m):
 def charge_mode_disjunct_equations(disj):
     m = disj.model()
 
-    # Fix charge heat echanger heat duty
+    # Fix charge heat exchanger heat duty
     m.fs.charge_mode_disjunct.hxc_heat_duty = Constraint(
         expr=m.fs.hxc.heat_duty[0] == 150*1e6
     )
@@ -535,9 +535,9 @@ def charge_mode_disjunct_equations(disj):
         expr=m.fs.hxd.inlet_1.flow_mass[0] == 1
     )
 
-    m.fs.charge_mode_disjunct.hxd_area_constraint = Constraint(
-        expr=m.fs.hxd.area == 2000
-    )
+    # m.fs.charge_mode_disjunct.hxd_area_constraint = Constraint(
+    #     expr=m.fs.hxd.area == 2000
+    # )
 
     # Add an initial value for salt inventory
     m.fs.charge_mode_disjunct.prev_salt_inventory_constraint = Constraint(
@@ -589,12 +589,12 @@ def discharge_mode_disjunct_equations(disj):
         expr=m.fs.hxc.inlet_2.flow_mass[0] == 1
     )
 
+    # m.fs.discharge_mode_disjunct.hxc_area_constraint = Constraint(
+    #     expr=m.fs.hxc.area == 2500
+    # )
+
     m.fs.discharge_mode_disjunct.prev_salt_inventory_constraint = Constraint(
         expr=m.fs.previous_salt_inventory[0] == 6500000
-    )
-
-    m.fs.discharge_mode_disjunct.hxc_area_constraint = Constraint(
-        expr=m.fs.hxc.area == 2500
     )
 
     # elif cycle == "discharge":
@@ -2001,15 +2001,44 @@ def model_analysis(m, solver, cycle=None):
     print('DOF before solve = ', degrees_of_freedom(m))
 
     # Solve the design optimization model
-    results = solver.solve(
+
+    opt = SolverFactory('gdpopt')
+    # opt.CONFIG.strategy = 'RIC'  # LOA is an option
+    opt.CONFIG.strategy = 'LOA'  # LOA is an option
+    opt.CONFIG.OA_penalty_factor = 1e4
+    opt.CONFIG.max_slack = 1e4
+    # opt.CONFIG.call_after_subproblem_solve = print_model
+    # opt.CONFIG.mip_solver = 'glpk'
+    # opt.CONFIG.mip_solver = 'cbc'
+    opt.CONFIG.mip_solver = 'gurobi_direct'
+    opt.CONFIG.nlp_solver = 'ipopt'
+    opt.CONFIG.tee = True
+    opt.CONFIG.init_strategy = "no_init"
+    opt.CONFIG.time_limit = "2400"
+
+    results = opt.solve(
         m,
         tee=True,
-        symbolic_solver_labels=True,
-        options={
-            "linear_solver": "ma27",
-            "max_iter": 150
-        }
+        nlp_solver_args=dict(
+            tee=True,
+            symbolic_solver_labels=True,
+            options={
+                "linear_solver": "ma27",
+                "tol": 1e-5,
+                "max_iter": 150
+            }
+        )
     )
+
+    # results = solver.solve(
+    #     m,
+    #     tee=True,
+    #     symbolic_solver_labels=True,
+    #     options={
+    #         "linear_solver": "ma27",
+    #         "max_iter": 150
+    #     }
+    # )
     m.fs.condenser_mix.makeup.display()
     print_results(m, results)
     # print_reports(m)
