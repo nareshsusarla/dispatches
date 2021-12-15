@@ -44,9 +44,9 @@ updated (08/12/2021)
 # 6. Corrected constraints:
 #    - op_cost_rule, without the -q_baseline
 #    - plant_cap_cost_rule, op_fixed_cap_cost_rule, op_variable_cap_cost_rule
-#      using plant_power_out instead of heat_duty
+#      using plant_power_out instead of heat_duty and multiply by (CE_index/575.4)
 # 7. Number of years was changed from 5 to 30
-# 8. Objective function only considers the cost of storage and cooler
+# 8. Objective function considers all costs
 
 __author__ = "Naresh Susarla and Soraya Rawlings"
 
@@ -2652,7 +2652,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
              (2688973 * m.fs.plant_power_out[0]  # in MW
              + 618968072) /
             m.fs.charge.num_of_years
-        ) * m.CE_index
+        ) * (m.CE_index / 575.4)
     m.fs.charge.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
 
     # Initialize capital cost of power plant
@@ -2669,7 +2669,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
              (16657.5 * m.fs.plant_power_out[0]  # in MW
              + 6109833.3) /
             m.fs.charge.num_of_years
-        ) * m.CE_index  # annualized, in $/y
+        ) * (m.CE_index / 575.4) # annualized, in $/y
     m.fs.charge.op_fixed_plant_cost_eq = pyo.Constraint(
         rule=op_fixed_plant_cost_rule)
 
@@ -2677,7 +2677,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         return m.fs.charge.plant_variable_operating_cost == (
             # 31754.7 * m.fs.plant_heat_duty[0]  # in MW
             31754.7 * m.fs.plant_power_out[0]  # in MW
-        )  # in $/yr
+        )  * (m.CE_index / 575.4) # in $/yr
     m.fs.charge.op_variable_plant_cost_eq = pyo.Constraint(
         rule=op_variable_plant_cost_rule)
 
@@ -3041,7 +3041,7 @@ def add_bounds(m):
         oil_hxc.overall_heat_transfer_coefficient.setub(1000)
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(8000)  # TODO: Check this value
-        oil_hxc.delta_temperature_in.setub(457)
+        oil_hxc.delta_temperature_in.setub(457.75)
         oil_hxc.delta_temperature_out.setub(222)
         oil_hxc.delta_temperature_in.setlb(10)
         oil_hxc.delta_temperature_out.setlb(9)
@@ -3598,19 +3598,12 @@ def model_analysis(m, solver, heat_duty=None):
         expr=(
             m.fs.charge.capital_cost
             + m.fs.charge.operating_cost
+            + m.fs.charge.plant_capital_cost
+            + m.fs.charge.plant_fixed_operating_cost
+            + m.fs.charge.plant_variable_operating_cost
             + m.fs.charge.cooler_capital_cost
         )
     )
-    # m.obj = Objective(
-    #     expr=(
-    #         m.fs.charge.capital_cost
-    #         + m.fs.charge.operating_cost
-    #         + m.fs.charge.plant_capital_cost
-    #         + m.fs.charge.plant_fixed_operating_cost
-    #         + m.fs.charge.plant_variable_operating_cost
-    #         + m.fs.charge.cooler_capital_cost
-    #     )
-    # )
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
@@ -3621,9 +3614,9 @@ def model_analysis(m, solver, heat_duty=None):
     #                    fluid="thermal_oil",
     #                    source="vhp")
 
-    # m.fs.charge.solar_salt_disjunct.indicator_var.fix(False)
-    # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(False)
-    # m.fs.charge.thermal_oil_disjunct.indicator_var.fix(True)
+    m.fs.charge.solar_salt_disjunct.indicator_var.fix(False)
+    m.fs.charge.hitec_salt_disjunct.indicator_var.fix(False)
+    m.fs.charge.thermal_oil_disjunct.indicator_var.fix(True)
     # m.fs.charge.cooler_disjunct.indicator_var.fix(False)
     # m.fs.charge.no_cooler_disjunct.indicator_var.fix(True)
 

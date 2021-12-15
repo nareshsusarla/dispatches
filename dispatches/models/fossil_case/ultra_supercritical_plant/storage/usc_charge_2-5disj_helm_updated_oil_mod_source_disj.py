@@ -2847,7 +2847,7 @@ def add_bounds(m):
         salt_hxc.costing.base_cost_per_unit.setub(1e6)
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(88.2)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(88.3)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(84)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(10)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.4)
@@ -2883,7 +2883,7 @@ def add_bounds(m):
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(8000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)
-        oil_hxc.delta_temperature_in.setub(553.264)
+        oil_hxc.delta_temperature_in.setub(553.2635)
         oil_hxc.delta_temperature_out.setlb(9)
         oil_hxc.delta_temperature_out.setub(222)
         #-------- modified by esrawli
