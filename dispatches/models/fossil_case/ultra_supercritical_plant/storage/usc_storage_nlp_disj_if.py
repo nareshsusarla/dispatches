@@ -47,6 +47,8 @@ from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                    log_close_to_bounds)
 
 # Import IDAES libraries
 from idaes.core import MaterialBalanceType
@@ -1107,7 +1109,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].flow_mass +
              (1 - m.fs.if_charge) *
-             m.fs.hxc.side_2.properties_in[0].flow_mass) *
+             m.fs.hxd.side_1.properties_in[0].flow_mass) *
             264.17 * 60 /
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].density["Liq"] +
@@ -1863,6 +1865,24 @@ def print_reports(m):
     for j in m.set_fwh_mixer:
         m.fs.fwh_mixer[j].display()
 
+def print_model(nlp_model, nlp_data):
+
+    print('       ___________________________________________')
+    if nlp_model.fs.charge_mode_disjunct.indicator_var.value == 1:
+        print('        Disjunction 1: Charge mode is selected')
+        nlp_model.fs.hxc.report()
+        nlp_model.fs.hxd.report()
+    elif nlp_model.fs.discharge_mode_disjunct.indicator_var.value == 1:
+        print('        Disjunction 1: Discharge mode is selected')
+        nlp_model.fs.hxc.report()
+        nlp_model.fs.hxd.report()
+    else:
+        print('        No other operation alternative!')
+    print('       ___________________________________________')
+
+    log_close_to_bounds(nlp_model)
+    log_infeasible_constraints(nlp_model)
+
 
 def model_analysis(m, solver, cycle=None):
     """Unfix variables for analysis. This section is deactived for the
@@ -2014,7 +2034,7 @@ def model_analysis(m, solver, cycle=None):
     opt.CONFIG.strategy = 'LOA'  # LOA is an option
     opt.CONFIG.OA_penalty_factor = 1e4
     opt.CONFIG.max_slack = 1e4
-    # opt.CONFIG.call_after_subproblem_solve = print_model
+    opt.CONFIG.call_after_subproblem_solve = print_model
     # opt.CONFIG.mip_solver = 'glpk'
     # opt.CONFIG.mip_solver = 'cbc'
     opt.CONFIG.mip_solver = 'gurobi_direct'
@@ -2052,7 +2072,7 @@ def model_analysis(m, solver, cycle=None):
 
 
 if __name__ == "__main__":
-
+       
     optarg = {
         "max_iter": 300,
         # "halt_on_ampl_error": "yes",
@@ -2065,14 +2085,22 @@ if __name__ == "__main__":
     # m = build_model(m_ready,
     #                 scenario=i)
     m_chg, solver = main(m_usc)
+
+
     m_chg.fs.lmp = Var(
         m_chg.fs.time,
         domain=Reals,
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(80)  # 80
-    m_chg.cycle = 'charge'
+
+    operation_mode = "discharge"
+    if operation_mode == "charge":
+        m_chg.fs.lmp[0].fix(80)
+    elif operation_mode == "discharge":
+        m_chg.fs.lmp[0].fix(140)
+    else:
+        print('**^^** Unrecognized operation mode! Try charge or discharge')
     m = model_analysis(m_chg,
                        solver,
-                       cycle=m_chg.cycle)
+                       cycle=operation_mode)
