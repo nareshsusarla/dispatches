@@ -47,6 +47,8 @@ from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                    log_close_to_bounds)
 
 # Import IDAES libraries
 from idaes.core import MaterialBalanceType
@@ -475,7 +477,7 @@ def create_charge_model(m):
         m.fs.time,
         domain=NonNegativeReals,
         initialize=80,
-        bounds=(0, None),
+        bounds=(0, 1e12),
         doc="Salt inventory at the end of the hour (or time period), kg"
         )
     m.fs.if_charge = Param(
@@ -515,6 +517,7 @@ def charge_mode_disjunct_equations(disj):
     m = disj.model()
 
     m.fs.if_charge.value = 1
+
     # Fix charge heat exchanger heat duty
     m.fs.charge_mode_disjunct.hxc_heat_duty = Constraint(
         expr=m.fs.hxc.heat_duty[0] == 150*1e6
@@ -575,6 +578,7 @@ def discharge_mode_disjunct_equations(disj):
     m = disj.model()
 
     m.fs.if_charge.value = 0
+
     m.fs.discharge_mode_disjunct.hxc_heat_duty = Constraint(
         expr=m.fs.hxc.heat_duty[0] == 0.1*1e6
     )
@@ -1105,7 +1109,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].flow_mass +
              (1 - m.fs.if_charge) *
-             m.fs.hxc.side_2.properties_in[0].flow_mass) *
+             m.fs.hxd.side_1.properties_in[0].flow_mass) *
             264.17 * 60 /
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].density["Liq"] +
@@ -1687,6 +1691,9 @@ def add_bounds(m):
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setlb(0)
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setub(m.flow_max)
 
+    m.fs.es_turbine.work.setlb(-1e10)
+    m.fs.es_turbine.work.setub(0)
+
     return m
 
 
@@ -1832,6 +1839,8 @@ def print_results(m, results):
         value(m.fs.hxd.delta_temperature_in[0])))
     print('HXD Delta temperature at outlet (K): {:.6f}'.format(
         value(m.fs.hxd.delta_temperature_out[0])))
+    print('ES Turbine work (MW): {:.6f}'.format(
+        value(m.fs.es_turbine.work[0]) * -1e-6))
     print('')
 
     print('')
@@ -1860,6 +1869,30 @@ def print_reports(m):
         m.fs.fwh[j].report()
     for j in m.set_fwh_mixer:
         m.fs.fwh_mixer[j].display()
+
+def print_model(nlp_model, nlp_data):
+
+    print('       ___________________________________________')
+    if nlp_model.fs.charge_mode_disjunct.indicator_var.value == 1:
+        print('        Disjunction 1: Charge mode is selected')
+        nlp_model.fs.hxc.report()
+        nlp_model.fs.hxd.report()
+        nlp_model.fs.es_turbine.display()
+        nlp_model.fs.cooler.display()
+        nlp_model.fs.hx_pump.display()
+    elif nlp_model.fs.discharge_mode_disjunct.indicator_var.value == 1:
+        print('        Disjunction 1: Discharge mode is selected')
+        nlp_model.fs.hxc.report()
+        nlp_model.fs.hxd.report()
+        nlp_model.fs.es_turbine.display()
+        nlp_model.fs.cooler.display()
+        nlp_model.fs.hx_pump.display()
+    else:
+        print('        No other operation alternative!')
+    print('       ___________________________________________')
+
+    log_close_to_bounds(nlp_model)
+    log_infeasible_constraints(nlp_model)
 
 
 def model_analysis(m, solver, cycle=None):
@@ -1966,6 +1999,8 @@ def model_analysis(m, solver, cycle=None):
             + 3600*b.hxc.inlet_2.flow_mass[t]
             - 3600*b.hxd.inlet_1.flow_mass[t])
 
+    #-------- modified by esrawli
+    # Add constraints to discharge mode
     # @m.fs.Constraint(m.fs.time,
     #                   doc="Maximum salt inventory at any time")
     # def constraint_salt_max_inventory1(b, t):
@@ -1977,6 +2012,17 @@ def model_analysis(m, solver, cycle=None):
     # def constraint_salt_max_inventory2(b, t):
     #     return (
     #         b.previous_salt_inventory[t] <= b.salt_amount)
+
+    # m.fs.discharge_mode_disjunct.constraint_salt_max_inventory1 = Constraint(
+    #     # expr=m.fs.salt_inventory[0] <= m.fs.salt_amount
+    #     expr=m.fs.salt_amount <= m.fs.salt_inventory[0]
+    # )
+
+    # m.fs.discharge_mode_disjunct.constraint_salt_max_inventory2 = Constraint(
+    #     # expr=m.fs.previous_salt_inventory[0] <= m.fs.salt_amount
+    #     expr=m.fs.salt_amount <= m.fs.previous_salt_inventory[0]
+    # )
+    #--------
 
     m.fs.revenue = Expression(
         expr=(m.fs.lmp[0] *
@@ -2012,7 +2058,7 @@ def model_analysis(m, solver, cycle=None):
     opt.CONFIG.strategy = 'LOA'  # LOA is an option
     opt.CONFIG.OA_penalty_factor = 1e4
     opt.CONFIG.max_slack = 1e4
-    # opt.CONFIG.call_after_subproblem_solve = print_model
+    opt.CONFIG.call_after_subproblem_solve = print_model
     # opt.CONFIG.mip_solver = 'glpk'
     # opt.CONFIG.mip_solver = 'cbc'
     opt.CONFIG.mip_solver = 'gurobi_direct'
@@ -2050,7 +2096,7 @@ def model_analysis(m, solver, cycle=None):
 
 
 if __name__ == "__main__":
-
+       
     optarg = {
         "max_iter": 300,
         # "halt_on_ampl_error": "yes",
@@ -2063,14 +2109,22 @@ if __name__ == "__main__":
     # m = build_model(m_ready,
     #                 scenario=i)
     m_chg, solver = main(m_usc)
+
+
     m_chg.fs.lmp = Var(
         m_chg.fs.time,
         domain=Reals,
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(120)  # 80
-    m_chg.cycle = 'discharge'
+
+    operation_mode = "discharge"
+    if operation_mode == "charge":
+        m_chg.fs.lmp[0].fix(80)
+    elif operation_mode == "discharge":
+        m_chg.fs.lmp[0].fix(140)
+    else:
+        print('**^^** Unrecognized operation mode! Try charge or discharge')
     m = model_analysis(m_chg,
                        solver,
-                       cycle=m_chg.cycle)
+                       cycle=operation_mode)
