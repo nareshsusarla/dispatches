@@ -477,7 +477,7 @@ def create_charge_model(m):
         m.fs.time,
         domain=NonNegativeReals,
         initialize=80,
-        bounds=(0, None),
+        bounds=(0, 1e12),
         doc="Salt inventory at the end of the hour (or time period), kg"
         )
     m.fs.if_charge = Param(
@@ -1691,6 +1691,9 @@ def add_bounds(m):
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setlb(0)
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setub(m.flow_max)
 
+    m.fs.es_turbine.work.setlb(-1e10)
+    m.fs.es_turbine.work.setub(0)
+
     return m
 
 
@@ -1836,6 +1839,8 @@ def print_results(m, results):
         value(m.fs.hxd.delta_temperature_in[0])))
     print('HXD Delta temperature at outlet (K): {:.6f}'.format(
         value(m.fs.hxd.delta_temperature_out[0])))
+    print('ES Turbine work (MW): {:.6f}'.format(
+        value(m.fs.es_turbine.work[0]) * -1e-6))
     print('')
 
     print('')
@@ -1872,10 +1877,16 @@ def print_model(nlp_model, nlp_data):
         print('        Disjunction 1: Charge mode is selected')
         nlp_model.fs.hxc.report()
         nlp_model.fs.hxd.report()
+        nlp_model.fs.es_turbine.display()
+        nlp_model.fs.cooler.display()
+        nlp_model.fs.hx_pump.display()
     elif nlp_model.fs.discharge_mode_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: Discharge mode is selected')
         nlp_model.fs.hxc.report()
         nlp_model.fs.hxd.report()
+        nlp_model.fs.es_turbine.display()
+        nlp_model.fs.cooler.display()
+        nlp_model.fs.hx_pump.display()
     else:
         print('        No other operation alternative!')
     print('       ___________________________________________')
@@ -1988,6 +1999,8 @@ def model_analysis(m, solver, cycle=None):
             + 3600*b.hxc.inlet_2.flow_mass[t]
             - 3600*b.hxd.inlet_1.flow_mass[t])
 
+    #-------- modified by esrawli
+    # Add constraints to discharge mode
     # @m.fs.Constraint(m.fs.time,
     #                   doc="Maximum salt inventory at any time")
     # def constraint_salt_max_inventory1(b, t):
@@ -1999,6 +2012,17 @@ def model_analysis(m, solver, cycle=None):
     # def constraint_salt_max_inventory2(b, t):
     #     return (
     #         b.previous_salt_inventory[t] <= b.salt_amount)
+
+    # m.fs.discharge_mode_disjunct.constraint_salt_max_inventory1 = Constraint(
+    #     # expr=m.fs.salt_inventory[0] <= m.fs.salt_amount
+    #     expr=m.fs.salt_amount <= m.fs.salt_inventory[0]
+    # )
+
+    # m.fs.discharge_mode_disjunct.constraint_salt_max_inventory2 = Constraint(
+    #     # expr=m.fs.previous_salt_inventory[0] <= m.fs.salt_amount
+    #     expr=m.fs.salt_amount <= m.fs.previous_salt_inventory[0]
+    # )
+    #--------
 
     m.fs.revenue = Expression(
         expr=(m.fs.lmp[0] *
