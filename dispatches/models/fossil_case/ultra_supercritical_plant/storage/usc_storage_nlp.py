@@ -958,7 +958,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].flow_mass +
              (1 - m.fs.if_charge) *
-             m.fs.hxc.side_2.properties_in[0].flow_mass) *
+             m.fs.hxd.side_1.properties_in[0].flow_mass) *
             264.17 * 60 /
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].density["Liq"] +
@@ -1754,19 +1754,17 @@ def model_analysis(m, solver, cycle=None):
             salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
             salt_hxc.area.unfix()  # 1 DOF
 
-        for unit in [m.fs.cooler]:
-            unit.inlet.unfix()
-        m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
-
     elif cycle == "discharge":
         # DISCHARGE
         m.fs.if_charge.value = 0
-        m.fs.hxc.heat_duty.fix(0.1*1e6)  # in W
-        m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
         m.fs.hxc.area.unfix()
+        m.fs.hxc.heat_duty.fix(0.5*1e6)  # in W
+        m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
+        # m.fs.hxc.area.fix(10)
         print('DOF before unfix = ', degrees_of_freedom(m))
 
         m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.001)  # 0.001
+        # m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()  # 0.001
         m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()  # 0.1
         m.fs.hxc.inlet_2.flow_mass.fix(1)
 
@@ -1776,6 +1774,10 @@ def model_analysis(m, solver, cycle=None):
             salt_hxd.inlet_2.unfix()
             salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
             salt_hxd.area.unfix()  # 1 DOF
+
+    for unit in [m.fs.cooler]:
+        unit.inlet.unfix()
+    m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
 
     @m.fs.Constraint(m.fs.time,
                      doc="Inventory balance at the end of the time period")
@@ -1860,8 +1862,8 @@ if __name__ == "__main__":
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(80)  # 80
-    m_chg.cycle = 'charge'
+    m_chg.fs.lmp[0].fix(120)  # 80
+    m_chg.cycle = 'discharge'
     m = model_analysis(m_chg,
                        solver,
                        cycle=m_chg.cycle)
