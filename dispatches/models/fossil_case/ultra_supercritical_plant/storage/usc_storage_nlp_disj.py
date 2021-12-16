@@ -1085,7 +1085,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         expr=(
             (m.fs.hxc.side_2.properties_in[0].flow_mass) *
             264.17 * 60 /
-            (m.fs.hxc.side_2.properties_in[0].density["Liq"])
+            (m.fs.hxd.side_1.properties_in[0].density["Liq"])
             ),
         doc="Conversion of solar salt flow mass to vol flow [gal per min]"
     )
@@ -1681,6 +1681,9 @@ def add_bounds(m):
         m.fs.turbine_splitter[k].outlet_1.flow_mol[:].setub(m.flow_max)
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setlb(0)
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setub(m.flow_max)
+
+    m.fs.es_turbine.work.setlb(-1e12)
+    m.fs.es_turbine.work.setub(0)
 
     return m
 
