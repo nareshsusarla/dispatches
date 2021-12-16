@@ -515,6 +515,7 @@ def charge_mode_disjunct_equations(disj):
     m = disj.model()
 
     m.fs.if_charge.value = 1
+
     # Fix charge heat exchanger heat duty
     m.fs.charge_mode_disjunct.hxc_heat_duty = Constraint(
         expr=m.fs.hxc.heat_duty[0] == 150*1e6
@@ -575,6 +576,7 @@ def discharge_mode_disjunct_equations(disj):
     m = disj.model()
 
     m.fs.if_charge.value = 0
+
     m.fs.discharge_mode_disjunct.hxc_heat_duty = Constraint(
         expr=m.fs.hxc.heat_duty[0] == 0.1*1e6
     )
@@ -2069,8 +2071,8 @@ if __name__ == "__main__":
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(120)  # 80
-    m_chg.cycle = 'discharge'
+    m_chg.fs.lmp[0].fix(80)  # 80
+    m_chg.cycle = 'charge'
     m = model_analysis(m_chg,
                        solver,
                        cycle=m_chg.cycle)
