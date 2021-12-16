@@ -580,7 +580,7 @@ def discharge_mode_disjunct_equations(disj):
     m.fs.if_charge.value = 0
 
     m.fs.discharge_mode_disjunct.hxc_heat_duty = Constraint(
-        expr=m.fs.hxc.heat_duty[0] == 0.1*1e6
+        expr=m.fs.hxc.heat_duty[0] == 0.5*1e6
     )
 
     m.fs.discharge_mode_disjunct.hxd_heat_duty = Constraint(
@@ -2122,7 +2122,7 @@ if __name__ == "__main__":
     if operation_mode == "charge":
         m_chg.fs.lmp[0].fix(80)
     elif operation_mode == "discharge":
-        m_chg.fs.lmp[0].fix(140)
+        m_chg.fs.lmp[0].fix(120)
     else:
         print('**^^** Unrecognized operation mode! Try charge or discharge')
     m = model_analysis(m_chg,
