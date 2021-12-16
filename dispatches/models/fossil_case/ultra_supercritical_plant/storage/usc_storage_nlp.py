@@ -958,7 +958,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].flow_mass +
              (1 - m.fs.if_charge) *
-             m.fs.hxc.side_2.properties_in[0].flow_mass) *
+             m.fs.hxd.side_1.properties_in[0].flow_mass) *
             264.17 * 60 /
             (m.fs.if_charge *
              m.fs.hxc.side_2.properties_in[0].density["Liq"] +
