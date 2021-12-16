@@ -43,7 +43,7 @@ import logging
 # import os
 from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
                            NonNegativeReals, TransformationFactory, Expression,
-                           maximize, RangeSet, value, log, exp, Var)
+                           maximize, RangeSet, value, log, exp, Var, SolverFactory)
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
@@ -57,6 +57,7 @@ from idaes.generic_models.unit_models import (HeatExchanger,
                                               MomentumMixingType,
                                               Heater)
 import idaes.core.util.unit_costing as icost
+from pyomo.gdp import Disjunct, Disjunction
 
 # Import IDAES Libraries
 from idaes.generic_models.unit_models import PressureChanger
@@ -458,6 +459,37 @@ def create_charge_model(m):
             "property_package": m.fs.prop_water,
         }
     )
+
+    ###########################################################################
+    # Add global variables
+    ###########################################################################
+
+    m.fs.previous_salt_inventory = Var(
+        m.fs.time,
+        domain=NonNegativeReals,
+        initialize=1,
+        bounds=(0, 1e12),
+        doc="Salt inventory at the beginning of the hour (or time period), kg"
+        )
+    m.fs.salt_inventory = Var(
+        m.fs.time,
+        domain=NonNegativeReals,
+        initialize=80,
+        bounds=(0, None),
+        doc="Salt inventory at the end of the hour (or time period), kg"
+        )
+    m.fs.if_charge = Param(
+        initialize=1,
+        mutable=True,
+        doc='parameter indicating cycle, 1 for charge and 0 or discharge')
+
+    ###########################################################################
+    # Add disjunction
+    ###########################################################################
+
+    m.fs.charge_mode_disjunct = Disjunct(rule=charge_mode_disjunct_equations)
+    m.fs.discharge_mode_disjunct = Disjunct(rule=discharge_mode_disjunct_equations)
+
     ###########################################################################
     #  Create the stream Arcs and return the model                            #
     ###########################################################################
@@ -465,6 +497,125 @@ def create_charge_model(m):
     _create_arcs(m)
     TransformationFactory("network.expand_arcs").apply_to(m)
     return m
+
+
+def add_disjunction(m):
+    """Add storage fluid selection and steam source disjunctions to the
+    model
+    """
+
+    m.fs.operation_mode_disjunction = Disjunction(
+        expr=[m.fs.charge_mode_disjunct,
+              m.fs.discharge_mode_disjunct])
+
+    return m
+
+
+def charge_mode_disjunct_equations(disj):
+    m = disj.model()
+
+    m.fs.if_charge.value = 1
+    # Fix charge heat exchanger heat duty
+    m.fs.charge_mode_disjunct.hxc_heat_duty = Constraint(
+        expr=m.fs.hxc.heat_duty[0] == 150*1e6
+    )
+
+    # Fix discharge heat exchanger heat duty to a very small value
+    m.fs.charge_mode_disjunct.hxd_heat_duty = Constraint(
+        expr=m.fs.hxd.heat_duty[0] == 0.1*1e6
+    )
+
+    # m.fs.charge_mode_disjunct.hxc_area_constraint = Constraint(
+    #     expr=m.fs.hxc.area == 2500
+    # )
+
+    # Almost zero flow to discharge system through ess_bfp splitter
+    m.fs.charge_mode_disjunct.essbfp_split_fraction = Constraint(
+        expr=m.fs.ess_bfp_split.split_fraction[0, "to_hxd"] == 0.001
+    )
+
+    # Fix data for discharge heat exchanger since all data for both
+    # heat exchangers was unfixed in model_analysis
+    m.fs.charge_mode_disjunct.hxd_inlet_dummy_flow = Constraint(
+        expr=m.fs.hxd.inlet_1.flow_mass[0] == 1
+    )
+
+    # m.fs.charge_mode_disjunct.hxd_area_constraint = Constraint(
+    #     expr=m.fs.hxd.area == 2000
+    # )
+
+    # Add an initial value for salt inventory
+    m.fs.charge_mode_disjunct.prev_salt_inventory_constraint = Constraint(
+        expr=m.fs.previous_salt_inventory[0] == 10
+    )
+
+    # if cycle == "charge":
+    #     # m.fs.if_charge.value = 1
+    #     m.fs.hxc.heat_duty.fix(150*1e6)  # in W
+    #     m.fs.hxd.heat_duty.fix(0.1*1e6)  # in W
+    #     # m.fs.hxd.area.fix(0.01)
+    #     print('DOF before unfix = ', degrees_of_freedom(m))
+
+    #     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+    #     m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.001)  # 0.1
+    #     m.fs.hxd.inlet_1.flow_mass.fix(1)
+
+    #     m.fs.previous_salt_inventory[0].fix(10)
+    #     for salt_hxc in [m.fs.hxc]:
+    #         salt_hxc.inlet_1.unfix()
+    #         salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
+    #         salt_hxc.area.unfix()  # 1 DOF
+
+    #     for unit in [m.fs.cooler]:
+    #         unit.inlet.unfix()
+    #     m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+
+
+def discharge_mode_disjunct_equations(disj):
+    m = disj.model()
+
+    m.fs.if_charge.value = 0
+    m.fs.discharge_mode_disjunct.hxc_heat_duty = Constraint(
+        expr=m.fs.hxc.heat_duty[0] == 0.1*1e6
+    )
+
+    m.fs.discharge_mode_disjunct.hxd_heat_duty = Constraint(
+        expr=m.fs.hxd.heat_duty[0] == 148.5*1e6
+    )
+
+    # m.fs.charge_mode_disjunct.hxd_area_constraint = Constraint(
+    #     expr=m.fs.hxd.area == 2000
+    # )
+
+    m.fs.discharge_mode_disjunct.esshp_split_fraction = Constraint(
+        expr=m.fs.ess_hp_split.split_fraction[0, "to_hxc"] == 0.001
+    )
+
+    m.fs.discharge_mode_disjunct.hxc_inlet_dummy_flow = Constraint(
+        expr=m.fs.hxc.inlet_2.flow_mass[0] == 1
+    )
+
+    # m.fs.discharge_mode_disjunct.hxc_area_constraint = Constraint(
+    #     expr=m.fs.hxc.area == 2500
+    # )
+
+    m.fs.discharge_mode_disjunct.prev_salt_inventory_constraint = Constraint(
+        expr=m.fs.previous_salt_inventory[0] == 6500000
+    )
+
+    # elif cycle == "discharge":
+    #     # DISCHARGE
+    #     # m.fs.if_charge.value = 0
+    #     m.fs.hxc.heat_duty.fix(0.1*1e6)  # in W
+    #     m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
+    #     m.fs.hxc.area.unfix()
+    #     print('DOF before unfix = ', degrees_of_freedom(m))
+
+    #     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.001)  # 0.001
+    #     m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()  # 0.1
+    #     m.fs.hxc.inlet_2.flow_mass.fix(1)
+
+    #     m.fs.previous_salt_inventory[0].fix(6500000)
 
 
 def _make_constraints(m):
@@ -810,10 +961,6 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         initialize=m.number_of_years,
         doc='Number of years for capital cost annualization')
 
-    m.fs.if_charge = Param(
-        initialize=1,
-        mutable=True,
-        doc='parameter indicating cycle, 1 for charge and 0 or discharge')
     ###########################################################################
     #  Capital cost                                                           #
     ###########################################################################
@@ -1415,6 +1562,8 @@ def add_bounds(m):
     m.fs.hxc.delta_temperature_out.setlb(10)
     m.fs.hxc.delta_temperature_in.setub(80.5)
     m.fs.hxc.delta_temperature_out.setub(81)
+    # m.fs.hxc.delta_temperature_in.setub(80.5)
+    # m.fs.hxc.delta_temperature_out.setub(81)
 
     # Discharge heat exchanger
     m.fs.hxd.inlet_2.flow_mol.setlb(0)
@@ -1453,7 +1602,7 @@ def add_bounds(m):
     m.fs.hxd.overall_heat_transfer_coefficient.setlb(0)
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxd.area.setlb(0)
-    m.fs.hxd.area.setub(6000)  # 5000
+    m.fs.hxd.area.setub(8000)  # 5000
     m.fs.hxd.costing.pressure_factor.setlb(0)  # no unit
     m.fs.hxd.costing.pressure_factor.setub(1000)  # no unit
     m.fs.hxd.costing.purchase_cost.setlb(0)  # no unit
@@ -1565,6 +1714,10 @@ def main(m_usc):
 
     # Add bounds
     add_bounds(m)
+
+    # Add disjunctions
+    add_disjunction(m)
+
     print('DOF after bounds: ', degrees_of_freedom(m))
 
     return m, solver
@@ -1718,64 +1871,91 @@ def model_analysis(m, solver, cycle=None):
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
-    m.fs.previous_salt_inventory = Var(
-        m.fs.time,
-        domain=NonNegativeReals,
-        initialize=1,
-        bounds=(0, None),
-        doc="Salt inventory at the beginning of the hour (or time period), kg"
-        )
-    m.fs.salt_inventory = Var(
-        m.fs.time,
-        domain=NonNegativeReals,
-        initialize=80,
-        bounds=(0, None),
-        doc="Salt inventory at the end of the hour (or time period), kg"
-        )
+    # -------- modified by esrawli
+    # Place them before declaring the disjuncts
+    # m.fs.previous_salt_inventory = Var(
+    #     m.fs.time,
+    #     domain=NonNegativeReals,
+    #     initialize=1,
+    #     bounds=(0, None),
+    #     doc="Salt inventory at the beginning of the hour (or time period),kg"
+    #     )
+    # m.fs.salt_inventory = Var(
+    #     m.fs.time,
+    #     domain=NonNegativeReals,
+    #     initialize=80,
+    #     bounds=(0, None),
+    #     doc="Salt inventory at the end of the hour (or time period), kg"
+    #     )
+    # --------
 
     # Unfix variables fixed in model input and during initialization
     m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
 
+    # -------- modified by esrawli
+    # Unfix all data
+    m.fs.hxc.area.unfix()
+    m.fs.hxd.area.unfix()
+    m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+    m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()
+    for salt_hxc in [m.fs.hxc]:
+        salt_hxc.inlet_1.unfix()
+        salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
+        salt_hxc.area.unfix()  # 1 DOF
+
+    for salt_hxd in [m.fs.hxd]:
+        salt_hxd.inlet_2.unfix()
+        salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
+        salt_hxd.area.unfix()  # 1 DOF
+
+    for unit in [m.fs.cooler]:
+        unit.inlet.unfix()
+    m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+
     if cycle == "charge":
-        m.fs.if_charge.value = 1
-        m.fs.hxc.heat_duty.fix(150*1e6)  # in W
-        m.fs.hxd.heat_duty.fix(0.1*1e6)  # in W
-        m.fs.hxd.area.unfix()
-        # m.fs.hxd.area.fix(0.01)
-        print('DOF before unfix = ', degrees_of_freedom(m))
-
-        m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
-        m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.001)  # 0.1
-        m.fs.hxd.inlet_1.flow_mass.fix(1)
-
-        m.fs.previous_salt_inventory[0].fix(10)
-        for salt_hxc in [m.fs.hxc]:
-            salt_hxc.inlet_1.unfix()
-            salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
-            salt_hxc.area.unfix()  # 1 DOF
-
-        for unit in [m.fs.cooler]:
-            unit.inlet.unfix()
-        m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
-
+        m.fs.charge_mode_disjunct.indicator_var.fix(True)
+        m.fs.discharge_mode_disjunct.indicator_var.fix(False)
     elif cycle == "discharge":
-        # DISCHARGE
-        m.fs.if_charge.value = 0
-        m.fs.hxc.heat_duty.fix(0.1*1e6)  # in W
-        m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
-        m.fs.hxc.area.unfix()
-        print('DOF before unfix = ', degrees_of_freedom(m))
+        m.fs.charge_mode_disjunct.indicator_var.fix(False)
+        m.fs.discharge_mode_disjunct.indicator_var.fix(True)
+    else:
+        print('**^^** Unrecognized operation mode! Try charge or discharge')
 
-        m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.001)  # 0.001
-        m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()  # 0.1
-        m.fs.hxc.inlet_2.flow_mass.fix(1)
+    # if cycle == "charge":
+    #     # m.fs.if_charge.value = 1
+    #     m.fs.hxc.heat_duty.fix(150*1e6)  # in W
+    #     m.fs.hxd.heat_duty.fix(0.1*1e6)  # in W
+    #     # m.fs.hxd.area.fix(0.01)
+    #     print('DOF before unfix = ', degrees_of_freedom(m))
 
-        m.fs.previous_salt_inventory[0].fix(6500000)
+    #     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+    #     m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.001)  # 0.1
+    #     m.fs.hxd.inlet_1.flow_mass.fix(1)
 
-        for salt_hxd in [m.fs.hxd]:
-            salt_hxd.inlet_2.unfix()
-            salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
-            salt_hxd.area.unfix()  # 1 DOF
+    #     m.fs.previous_salt_inventory[0].fix(10)
+    #     for salt_hxc in [m.fs.hxc]:
+    #         salt_hxc.inlet_1.unfix()
+    #         salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
+    #         salt_hxc.area.unfix()  # 1 DOF
+
+    #     for unit in [m.fs.cooler]:
+    #         unit.inlet.unfix()
+    #     m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+
+    # elif cycle == "discharge":
+    #     # DISCHARGE
+    #     # m.fs.if_charge.value = 0
+    #     m.fs.hxc.heat_duty.fix(0.1*1e6)  # in W
+    #     m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
+    #     m.fs.hxc.area.unfix()
+    #     print('DOF before unfix = ', degrees_of_freedom(m))
+
+    #     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.001)  # 0.001
+    #     m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()  # 0.1
+    #     m.fs.hxc.inlet_2.flow_mass.fix(1)
+
+    #     m.fs.previous_salt_inventory[0].fix(6500000)
+    # --------
 
     @m.fs.Constraint(m.fs.time,
                      doc="Inventory balance at the end of the time period")
@@ -1826,15 +2006,44 @@ def model_analysis(m, solver, cycle=None):
     print('DOF before solve = ', degrees_of_freedom(m))
 
     # Solve the design optimization model
-    results = solver.solve(
+
+    opt = SolverFactory('gdpopt')
+    # opt.CONFIG.strategy = 'RIC'  # LOA is an option
+    opt.CONFIG.strategy = 'LOA'  # LOA is an option
+    opt.CONFIG.OA_penalty_factor = 1e4
+    opt.CONFIG.max_slack = 1e4
+    # opt.CONFIG.call_after_subproblem_solve = print_model
+    # opt.CONFIG.mip_solver = 'glpk'
+    # opt.CONFIG.mip_solver = 'cbc'
+    opt.CONFIG.mip_solver = 'gurobi_direct'
+    opt.CONFIG.nlp_solver = 'ipopt'
+    opt.CONFIG.tee = True
+    opt.CONFIG.init_strategy = "no_init"
+    opt.CONFIG.time_limit = "2400"
+
+    results = opt.solve(
         m,
         tee=True,
-        symbolic_solver_labels=True,
-        options={
-            "linear_solver": "ma27",
-            "max_iter": 150
-        }
+        nlp_solver_args=dict(
+            tee=True,
+            symbolic_solver_labels=True,
+            options={
+                "linear_solver": "ma27",
+                "tol": 1e-5,
+                "max_iter": 150
+            }
+        )
     )
+
+    # results = solver.solve(
+    #     m,
+    #     tee=True,
+    #     symbolic_solver_labels=True,
+    #     options={
+    #         "linear_solver": "ma27",
+    #         "max_iter": 150
+    #     }
+    # )
     m.fs.condenser_mix.makeup.display()
     print_results(m, results)
     # print_reports(m)
@@ -1860,8 +2069,8 @@ if __name__ == "__main__":
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(80)  # 80
-    m_chg.cycle = 'charge'
+    m_chg.fs.lmp[0].fix(120)  # 80
+    m_chg.cycle = 'discharge'
     m = model_analysis(m_chg,
                        solver,
                        cycle=m_chg.cycle)
