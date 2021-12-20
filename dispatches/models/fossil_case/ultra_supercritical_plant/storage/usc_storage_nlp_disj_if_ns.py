@@ -478,10 +478,30 @@ def create_charge_model(m):
         bounds=(0, 1e12),
         doc="Salt inventory at the end of the hour (or time period), kg"
         )
-    m.fs.if_charge = Param(
+    # Define as Vars
+    m.fs.if_charge = Var(
+        domain=NonNegativeReals,
         initialize=1,
-        mutable=True,
+        bounds=(0, 1),
+        # mutable=True,
         doc='parameter indicating cycle, 1 for charge and 0 or discharge')
+    m.fs.if_charge.fix(1)
+    # m.fs.if_discharge = Var(
+    #     domain=NonNegativeReals,
+    #     initialize=0,
+    #     bounds=(0, 1),
+    #     # mutable=True,
+    #     doc='parameter indicating cycle, 1 for charge and 0 or discharge')
+    # m.fs.if_discharge.fix(0)
+    # #  Define as Params
+    # m.fs.if_charge = Param(
+    #     initialize=1,
+    #     mutable=True,
+    #     doc='parameter indicating cycle, 1 for charge and 0 or discharge')
+    # m.fs.if_discharge = Param(
+    #     initialize=0,
+    #     mutable=True,
+    #     doc='parameter indicating cycle, 1 for charge and 0 or discharge')
 
     ###########################################################################
     # Add disjunction
@@ -519,7 +539,13 @@ def add_disjunction(m):
 def charge_mode_disjunct_equations(disj):
     m = disj.model()
 
-    m.fs.if_charge.value = 1
+    # m.fs.if_charge.fix(1)
+    # m.fs.if_discharge.fix(0)
+    # m.fs.if_charge.value = 1
+    # m.fs.if_discharge.value = 0
+    m.fs.charge_mode_disjunct.if_charge_cons = Constraint(
+        expr=m.fs.if_charge == 1
+    )
 
     # Fix charge heat exchanger heat duty
     m.fs.charge_mode_disjunct.hxc_heat_duty = Constraint(
@@ -580,7 +606,13 @@ def charge_mode_disjunct_equations(disj):
 def nostorage_mode_disjunct_equations(disj):
     m = disj.model()
 
-    m.fs.if_charge.value = 0
+    m.fs.nostorage_mode_disjunct.if_charge_cons = Constraint(
+        expr=m.fs.if_charge == 1
+    )
+    # m.fs.if_charge.fix(0)
+    # m.fs.if_discharge.fix(0)
+    # m.fs.if_charge.value = 1
+    # m.fs.if_discharge.value = 0
 
     # Fix charge heat exchanger heat duty
     m.fs.nostorage_mode_disjunct.hxc_heat_duty = Constraint(
@@ -592,17 +624,20 @@ def nostorage_mode_disjunct_equations(disj):
         expr=m.fs.hxd.heat_duty[0] == 0.1*1e6
     )
 
-    # m.fs.charge_mode_disjunct.hxc_area_constraint = Constraint(
-    #     expr=m.fs.hxc.area == 2500
+    # m.fs.nostorage_mode_disjunct.hxc_area_constraint = Constraint(
+    #     expr=m.fs.hxc.area == 1
+    # )
+    # m.fs.nostorage_mode_disjunct.hxd_area_constraint = Constraint(
+    #     expr=m.fs.hxd.area == 1
     # )
 
-    # Almost zero flow to discharge system through ess_bfp splitter
-    m.fs.nostorage_mode_disjunct.essbfp_split_fraction = Constraint(
-        expr=m.fs.ess_bfp_split.split_fraction[0, "to_hxd"] == 0.001
-    )
-    m.fs.nostorage_mode_disjunct.esshp_split_fraction = Constraint(
-        expr=m.fs.ess_hp_split.split_fraction[0, "to_hxc"] == 0.001
-    )
+    # # Almost zero flow to discharge system through ess_bfp splitter
+    # m.fs.nostorage_mode_disjunct.essbfp_split_fraction = Constraint(
+    #     expr=m.fs.ess_bfp_split.split_fraction[0, "to_hxd"] == 0.001
+    # )
+    # m.fs.nostorage_mode_disjunct.esshp_split_fraction = Constraint(
+    #     expr=m.fs.ess_hp_split.split_fraction[0, "to_hxc"] == 0.001
+    # )
 
     # Fix data for discharge heat exchanger since all data for both
     # heat exchangers was unfixed in model_analysis
@@ -614,22 +649,33 @@ def nostorage_mode_disjunct_equations(disj):
     )
 
     m.fs.nostorage_mode_disjunct.fix_cooler_out_enthalpy = Constraint(
-        expr=m.fs.cooler.heat_duty[0] <= -1
+        expr=m.fs.cooler.heat_duty[0] == 0
     )
+    # m.fs.nostorage_mode_disjunct.fix_cooler_out_enthalpy = Constraint(
+    #     expr=m.fs.cooler.outlet.enth_mol[0] == 10000
+    # )
+
     # m.fs.charge_mode_disjunct.hxd_area_constraint = Constraint(
     #     expr=m.fs.hxd.area == 2000
     # )
 
     # Add an initial value for salt inventory
     m.fs.nostorage_mode_disjunct.prev_salt_inventory_constraint = Constraint(
-        expr=m.fs.previous_salt_inventory[0] == 6500000
+        expr=m.fs.previous_salt_inventory[0] == 10000
     )
 
 
 def discharge_mode_disjunct_equations(disj):
     m = disj.model()
 
-    m.fs.if_charge.value = 0
+    # m.fs.if_charge.fix(0)
+    # m.fs.if_discharge.fix(1)
+    # m.fs.if_charge.value = 1
+    # m.fs.if_discharge.value = 0
+
+    m.fs.discharge_mode_disjunct.if_charge_cons = Constraint(
+        expr=m.fs.if_charge == 0
+    )
 
     m.fs.discharge_mode_disjunct.hxc_heat_duty = Constraint(
         expr=m.fs.hxc.heat_duty[0] == 0.5*1e6
@@ -789,6 +835,9 @@ def set_model_input(m):
     # conceptual design optimization, area is unfixed and optimized
     m.fs.hxc.area.fix(2500)  # m2
     m.fs.hxd.area.fix(2000)  # m2
+
+    # m.fs.if_charge.value = 1
+    # m.fs.if_discharge.value = 0
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
@@ -1221,7 +1270,12 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         bounds=(0, 1e7),
         doc="Salt pump and motor purchase cost in $"
     )
-
+    print('if_charge', value(m.fs.if_charge))
+    # print('if_discharge', value(m.fs.if_discharge))
+    print('density', value(m.fs.dens_lbft3))
+    print('Qgpm', value(m.fs.spump_Qgpm))
+    # print('motor_pc', value(m.fs.motor_pc))
+    # raise Exception()
     def solar_spump_purchase_cost_rule(b):
         return (
             m.fs.spump_purchase_cost *
@@ -1742,11 +1796,17 @@ def main(m_usc):
 
     # Create a flowsheet, add properties, unit models, and arcs
     m = create_charge_model(m_usc)
-
+    print('if_charge1', value(m.fs.if_charge))
+    # print('if_discharge1', value(m.fs.if_discharge))
+    # m.fs.if_charge.fix(1)
+    # m.fs.if_discharge.fix(0)
+    # m.fs.if_charge.display()
     # Give all the required inputs to the model
     set_model_input(m)
     print('DOF after build: ', degrees_of_freedom(m))
     # Add scaling factor
+    print('if_charge2', value(m.fs.if_charge))
+    # print('if_discharge2', value(m.fs.if_discharge))
     set_scaling_factors(m)
 
     # Initialize the model with a sequential initialization and custom
@@ -1755,6 +1815,8 @@ def main(m_usc):
     initialize(m)
     print('DOF after initialization: ', degrees_of_freedom(m))
 
+    print('if_charge3', value(m.fs.if_charge))
+    # print('if_discharge3', value(m.fs.if_discharge))
     # Add cost correlations
     build_costing(m, solver=solver)
     print('DOF after costing: ', degrees_of_freedom(m))
@@ -1976,6 +2038,8 @@ def model_analysis(m, solver, cycle=None):
 
     # -------- modified by esrawli
     # Unfix all data
+    m.fs.if_charge.unfix()
+    # m.fs.if_discharge.unfix()
     m.fs.hxc.area.unfix()
     m.fs.hxd.area.unfix()
     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
