@@ -928,12 +928,12 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     #     initialize=m.data_salt_pump['nm'],
     #     doc='Motor Shaft Type Factor')
 
-    # m.fs.hxc_salt_design_flow = Param(
-    #     initialize=312,
-    #     doc='Design flow of salt through hxc')
-    # m.fs.hxc_salt_design_density = Param(
-    #     initialize=1937.36,
-    #     doc='Design desnity of salt through hxc')
+    m.fs.hxc_salt_design_flow = Param(
+        initialize=312,
+        doc='Design flow of salt through hxc')
+    m.fs.hxc_salt_design_density = Param(
+        initialize=1937.36,
+        doc='Design density of salt through hxc')
 
     # #  Solar salt-pump costing
     # m.fs.cold_spump_Qgpm = Expression(
@@ -1045,12 +1045,12 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     #     initialize=m.data_salt_pump['nm'],
     #     doc='Motor Shaft Type Factor')
 
-    # m.fs.hxd_salt_design_flow = Param(
-    #     initialize=362.2,
-    #     doc='Design flow of salt through hxd')
-    # m.fs.hxd_salt_design_density = Param(
-    #     initialize=1721.12,
-    #     doc='Design desnity of salt through hxd')
+    m.fs.hxd_salt_design_flow = Param(
+        initialize=362.2,
+        doc='Design flow of salt through hxd')
+    m.fs.hxd_salt_design_density = Param(
+        initialize=1721.12,
+        doc='Design density of salt through hxd')
 
     # #  Solar salt-pump costing
     # m.fs.hot_spump_Qgpm = Expression(
@@ -1495,7 +1495,7 @@ def add_bounds(m):
     # m.fs.hxc.costing.material_factor.setlb(0)
     # m.fs.hxc.costing.material_factor.setub(10)
     # Testing for NS
-    m.fs.hxc.delta_temperature_in.setlb(10)
+    m.fs.hxc.delta_temperature_in.setlb(9)
     m.fs.hxc.delta_temperature_out.setlb(10)
     m.fs.hxc.delta_temperature_in.setub(80.5)
     m.fs.hxc.delta_temperature_out.setub(81)
@@ -1547,7 +1547,7 @@ def add_bounds(m):
     # m.fs.hxd.costing.material_factor.setlb(0)
     # m.fs.hxd.costing.material_factor.setub(10)
     # Testing for NS
-    m.fs.hxd.delta_temperature_in.setlb(10)
+    m.fs.hxd.delta_temperature_in.setlb(9)
     m.fs.hxd.delta_temperature_out.setlb(10)
     m.fs.hxd.delta_temperature_in.setub(300)
     m.fs.hxd.delta_temperature_out.setub(300)
@@ -1666,10 +1666,14 @@ def print_results(m, results):
         value(m.fs.capital_cost)/(365*24)))
     print('Fuel Cost ($/h): {:.6f}'.format(
         value(m.fs.operating_cost)/(365*24)))
-    print('Previous Salt Inventory (kg): {:.6f}'.format(
-        value(m.fs.previous_salt_inventory[0])))
-    print('Salt Inventory (kg): {:.6f}'.format(
-        value(m.fs.salt_inventory[0])))
+    print('Hot Previous Salt Inventory (kg): {:.6f}'.format(
+        value(m.fs.previous_salt_inventory_hot[0])))
+    print('Hot Salt Inventory (kg): {:.6f}'.format(
+        value(m.fs.salt_inventory_hot[0])))
+    print('Cold Previous Salt Inventory (kg): {:.6f}'.format(
+        value(m.fs.previous_salt_inventory_cold[0])))
+    print('Cold Salt Inventory (kg): {:.6f}'.format(
+        value(m.fs.salt_inventory_cold[0])))
     print('Salt Amount (kg): {:.6f}'.format(
         value(m.fs.salt_amount)))
     print('')
@@ -1804,20 +1808,89 @@ def model_analysis(m, solver):
     m.fs.plant_power_out.fix(400)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
-    m.fs.previous_salt_inventory = Var(
+    m.fs.previous_salt_inventory_hot = Var(
         m.fs.time,
         domain=NonNegativeReals,
         initialize=1,
         bounds=(0, None),
-        doc="Salt inventory at the beginning of the hour (or time period), kg"
+        doc="Hot salt inventory at the beginning of the hour (or time period), kg"
         )
-    m.fs.salt_inventory = Var(
+    m.fs.salt_inventory_hot = Var(
         m.fs.time,
         domain=NonNegativeReals,
         initialize=80,
         bounds=(0, None),
-        doc="Salt inventory at the end of the hour (or time period), kg"
+        doc="Hot salt inventory at the end of the hour (or time period), kg"
         )
+    m.fs.previous_salt_inventory_cold = Var(
+        m.fs.time,
+        domain=NonNegativeReals,
+        initialize=1,
+        bounds=(0, None),
+        doc="Cold salt inventory at the beginning of the hour (or time period), kg"
+        )
+    m.fs.salt_inventory_cold = Var(
+        m.fs.time,
+        domain=NonNegativeReals,
+        initialize=80,
+        bounds=(0, None),
+        doc="Cold salt inventory at the end of the hour (or time period), kg"
+        )
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Inventory balance at the end of the time period")
+    def constraint_salt_inventory_hot(b, t):
+        return (
+            b.salt_inventory_hot[t] ==
+            b.previous_salt_inventory_hot[t]
+            + 3600*b.hxc.inlet_2.flow_mass[t]
+            - 3600*b.hxd.inlet_1.flow_mass[t])
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Inventory balance at the end of the time period")
+    def constraint_salt_inventory_cold(b, t):
+        return (
+            b.salt_inventory_cold[t] ==
+            b.previous_salt_inventory_cold[t]
+            - 3600*b.hxc.inlet_2.flow_mass[t]
+            + 3600*b.hxd.inlet_1.flow_mass[t])
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Maximum salt inventory at any time")
+    def constraint_salt_max_inventory_hot(b, t):
+        return (
+            b.salt_inventory_hot[t] <= b.salt_amount)
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Maximum previous salt inventory at any time")
+    def constraint_salt_max_previous_inventory_hot(b, t):
+        return (
+            b.previous_salt_inventory_hot[t] <= b.salt_amount)
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Maximum salt inventory at any time")
+    def constraint_salt_max_inventory_cold(b, t):
+        return (
+            b.salt_inventory_cold[t] <= b.salt_amount)
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Maximum previous salt inventory at any time")
+    def constraint_salt_max_previous_inventory_cold(b, t):
+        return (
+            b.previous_salt_inventory_cold[t] <= b.salt_amount)
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Maximum salt inventory at any time")
+    def constraint_salt_inventory(b, t):
+        return (
+            b.salt_inventory_hot[t] + b.salt_inventory_cold[t] <= b.salt_amount)
+
+    @m.fs.Constraint(m.fs.time,
+                     doc="Maximum previous salt inventory at any time")
+    def constraint_salt_previous_inventory(b, t):
+        return (
+            b.previous_salt_inventory_hot[t] + b.previous_salt_inventory_cold[t] <= b.salt_amount)
+
 
     # Unfix variables fixed in model input and during initialization
     m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
@@ -1900,27 +1973,6 @@ def model_analysis(m, solver):
     m.fs.boiler_flow_ub = Constraint(
         expr=m.fs.boiler.inlet.flow_mol[0] <= m.flow_max)
     # --------
-
-    @m.fs.Constraint(m.fs.time,
-                     doc="Inventory balance at the end of the time period")
-    def constraint_salt_inventory(b, t):
-        return (
-            b.salt_inventory[t] ==
-            b.previous_salt_inventory[t]
-            + 3600*b.hxc.inlet_2.flow_mass[t]
-            - 3600*b.hxd.inlet_1.flow_mass[t])
-
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum salt inventory at any time")
-    def constraint_salt_max_inventory1(b, t):
-        return (
-            b.salt_inventory[t] <= b.salt_amount)
-
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum previous salt inventory at any time")
-    def constraint_salt_max_inventory2(b, t):
-        return (
-            b.previous_salt_inventory[t] <= b.salt_amount)
 
     m.fs.revenue = Expression(
         expr=(m.fs.lmp[0] *
