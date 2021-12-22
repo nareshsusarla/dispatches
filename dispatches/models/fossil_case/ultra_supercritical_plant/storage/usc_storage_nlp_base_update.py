@@ -843,485 +843,492 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     )
     m.fs.salt_amount.fix()
 
-    m.fs.salt_purchase_cost = Var(
-        initialize=100000,
-        bounds=(0, 1e7),
-        doc="Solar salt purchase cost in $"
-    )
+    # m.fs.salt_purchase_cost = Var(
+    #     initialize=100000,
+    #     bounds=(0, 1e7),
+    #     doc="Solar salt purchase cost in $"
+    # )
 
-    def solar_salt_purchase_cost_rule(b):
-        return (
-            m.fs.salt_purchase_cost *
-            m.fs.num_of_years == (
-                m.fs.salt_amount *
-                m.fs.solar_salt_price
-            )
-        )
-    m.fs.salt_purchase_cost_eq = Constraint(
-        rule=solar_salt_purchase_cost_rule)
+    # def solar_salt_purchase_cost_rule(b):
+    #     return (
+    #         m.fs.salt_purchase_cost *
+    #         m.fs.num_of_years == (
+    #             m.fs.salt_amount *
+    #             m.fs.solar_salt_price
+    #         )
+    #     )
+    # m.fs.salt_purchase_cost_eq = Constraint(
+    #     rule=solar_salt_purchase_cost_rule)
 
-    # Initialize Solar and Hitec cost correlation
-    calculate_variable_from_constraint(
-        m.fs.salt_purchase_cost,
-        m.fs.salt_purchase_cost_eq)
+    # # Initialize Solar and Hitec cost correlation
+    # calculate_variable_from_constraint(
+    #     m.fs.salt_purchase_cost,
+    #     m.fs.salt_purchase_cost_eq)
 
-    # --------------------------------------------
-    #  Solar salt charge heat exchangers costing
-    # --------------------------------------------
-    # The charge heat exchanger cost is estimated using the IDAES
-    # costing method with default options, i.e. a U-tube heat
-    # exchanger, stainless steel material, and a tube length of
-    # 12ft. Refer to costing documentation to change any of the
-    # default options Purchase cost of heat exchanger has to be
-    # annualized when used
-    for salt_hxc in [m.fs.hxc,
-                     m.fs.hxd]:
-        salt_hxc.get_costing()
-        salt_hxc.costing.CE_index = m.CE_index
-        # Initialize Solar and Hitec charge heat exchanger costing
-        # correlations
-        icost.initialize(salt_hxc.costing)
+    # # --------------------------------------------
+    # #  Solar salt charge heat exchangers costing
+    # # --------------------------------------------
+    # # The charge heat exchanger cost is estimated using the IDAES
+    # # costing method with default options, i.e. a U-tube heat
+    # # exchanger, stainless steel material, and a tube length of
+    # # 12ft. Refer to costing documentation to change any of the
+    # # default options Purchase cost of heat exchanger has to be
+    # # annualized when used
+    # for salt_hxc in [m.fs.hxc,
+    #                  m.fs.hxd]:
+    #     salt_hxc.get_costing()
+    #     salt_hxc.costing.CE_index = m.CE_index
+    #     # Initialize Solar and Hitec charge heat exchanger costing
+    #     # correlations
+    #     icost.initialize(salt_hxc.costing)
 
-    # --------------------------------------------
-    #  Water pump
-    # --------------------------------------------
-    # The water pump is added as hx_pump before sending the feed water
-    # to the discharge heat exchanger in order to increase its
-    # pressure.  The outlet pressure of hx_pump is set based on its
-    # return point in the flowsheet Purchase cost of hx_pump has to be
-    # annualized when used
-    m.fs.hx_pump.get_costing(
-        Mat_factor="stain_steel",
-        mover_type="compressor",
-        compressor_type="centrifugal",
-        driver_mover_type="electrical_motor",
-        pump_type="centrifugal",
-        pump_type_factor='1.4',
-        pump_motor_type_factor='open'
-        )
-    m.fs.hx_pump.costing.CE_index = m.CE_index
+    # # --------------------------------------------
+    # #  Water pump
+    # # --------------------------------------------
+    # # The water pump is added as hx_pump before sending the feed water
+    # # to the discharge heat exchanger in order to increase its
+    # # pressure.  The outlet pressure of hx_pump is set based on its
+    # # return point in the flowsheet Purchase cost of hx_pump has to be
+    # # annualized when used
+    # m.fs.hx_pump.get_costing(
+    #     Mat_factor="stain_steel",
+    #     mover_type="compressor",
+    #     compressor_type="centrifugal",
+    #     driver_mover_type="electrical_motor",
+    #     pump_type="centrifugal",
+    #     pump_type_factor='1.4',
+    #     pump_motor_type_factor='open'
+    #     )
+    # m.fs.hx_pump.costing.CE_index = m.CE_index
 
-    # Initialize HX pump cost correlation
-    icost.initialize(m.fs.hx_pump.costing)
+    # # Initialize HX pump cost correlation
+    # icost.initialize(m.fs.hx_pump.costing)
 
-    # --------------------------------------------
-    #  cold Salt-pump costing
-    # --------------------------------------------
-    # The salt pump is not explicitly modeled. Thus, the IDAES cost
-    # method is not used for this equipment at this time.  The primary
-    # purpose of the salt pump is to move molten salt and not to
-    # change the pressure. Thus the pressure head is computed assuming
-    # that the salt is moved on an average of 5m linear distance.
-    m.fs.cold_spump_FT = Param(
-        initialize=m.data_salt_pump['FT'],
-        doc='Pump Type Factor for vertical split case')
-    m.fs.cold_spump_FM = Param(
-        initialize=m.data_salt_pump['FM'],
-        doc='Pump Material Factor Stainless Steel')
-    m.fs.cold_spump_head = Param(
-        initialize=m.data_salt_pump['head'],
-        doc='Pump Head 5m in Ft.')
-    m.fs.cold_spump_motorFT = Param(
-        initialize=m.data_salt_pump['motor_FT'],
-        doc='Motor Shaft Type Factor')
-    m.fs.cold_spump_nm = Param(
-        initialize=m.data_salt_pump['nm'],
-        doc='Motor Shaft Type Factor')
+    # # --------------------------------------------
+    # #  cold Salt-pump costing
+    # # --------------------------------------------
+    # # The salt pump is not explicitly modeled. Thus, the IDAES cost
+    # # method is not used for this equipment at this time.  The primary
+    # # purpose of the salt pump is to move molten salt and not to
+    # # change the pressure. Thus the pressure head is computed assuming
+    # # that the salt is moved on an average of 5m linear distance.
+    # m.fs.cold_spump_FT = Param(
+    #     initialize=m.data_salt_pump['FT'],
+    #     doc='Pump Type Factor for vertical split case')
+    # m.fs.cold_spump_FM = Param(
+    #     initialize=m.data_salt_pump['FM'],
+    #     doc='Pump Material Factor Stainless Steel')
+    # m.fs.cold_spump_head = Param(
+    #     initialize=m.data_salt_pump['head'],
+    #     doc='Pump Head 5m in Ft.')
+    # m.fs.cold_spump_motorFT = Param(
+    #     initialize=m.data_salt_pump['motor_FT'],
+    #     doc='Motor Shaft Type Factor')
+    # m.fs.cold_spump_nm = Param(
+    #     initialize=m.data_salt_pump['nm'],
+    #     doc='Motor Shaft Type Factor')
 
-    m.fs.hxc_salt_design_flow = Param(
-        initialize=312,
-        doc='Design flow of salt through hxc')
-    m.fs.hxc_salt_design_density = Param(
-        initialize=1937.36,
-        doc='Design desnity of salt through hxc')
+    # m.fs.hxc_salt_design_flow = Param(
+    #     initialize=312,
+    #     doc='Design flow of salt through hxc')
+    # m.fs.hxc_salt_design_density = Param(
+    #     initialize=1937.36,
+    #     doc='Design desnity of salt through hxc')
 
-    #  Solar salt-pump costing
-    m.fs.cold_spump_Qgpm = Expression(
-        expr=(
-            (m.fs.hxc_salt_design_flow) *
-            264.17 * 60 /
-            (m.fs.hxc_salt_design_density)
-            ),
-        doc="Conversion of solar salt flow mass to vol flow [gal per min]"
-    )
-    m.fs.cold_dens_lbft3 = Expression(
-        expr=(
-            (m.fs.hxc_salt_design_density)
-            * 0.062428),
-        doc="pump size factor"
-    )  # density in lb per ft3
-    m.fs.cold_spump_sf = Expression(
-        expr=(m.fs.cold_spump_Qgpm
-              * (m.fs.cold_spump_head ** 0.5)),
-        doc="Pump size factor"
-    )
-    m.fs.cold_pump_CP = Expression(
-        expr=(
-            m.fs.cold_spump_FT * m.fs.cold_spump_FM *
-            exp(
-                9.2951
-                - 0.6019 * log(m.fs.cold_spump_sf)
-                + 0.0519 * ((log(m.fs.cold_spump_sf))**2)
-            )
-        ),
-        doc="Salt pump base (purchase) cost in $"
-    )
-    # Costing motor
-    m.fs.cold_spump_np = Expression(
-        expr=(
-            -0.316
-            + 0.24015 * log(m.fs.cold_spump_Qgpm)
-            - 0.01199 * ((log(m.fs.cold_spump_Qgpm))**2)
-        ),
-        doc="Fractional efficiency of the pump horse power"
-    )
-    m.fs.cold_motor_pc = Expression(
-        expr=(
-            (m.fs.cold_spump_Qgpm *
-             m.fs.cold_spump_head *
-             m.fs.cold_dens_lbft3) /
-            (33000 * m.fs.cold_spump_np *
-             m.fs.cold_spump_nm)
-        ),
-        doc="Motor power consumption in horsepower"
-    )
-    # Motor purchase cost
-    cold_log_motor_pc = log(m.fs.cold_motor_pc)
-    m.fs.cold_motor_CP = Expression(
-        expr=(
-            m.fs.cold_spump_motorFT *
-            exp(
-                5.4866
-                + 0.13141 * cold_log_motor_pc
-                + 0.053255 * (cold_log_motor_pc**2)
-                + 0.028628 * (cold_log_motor_pc**3)
-                - 0.0035549 * (cold_log_motor_pc**4)
-            )
-        ),
-        doc="Salt Pump's Motor Base Cost in $"
-    )
-    # Pump and motor purchase cost pump
-    m.fs.cold_spump_purchase_cost = Var(
-        initialize=100000,
-        bounds=(0, 1e7),
-        doc="Salt pump and motor purchase cost in $"
-    )
+    # #  Solar salt-pump costing
+    # m.fs.cold_spump_Qgpm = Expression(
+    #     expr=(
+    #         (m.fs.hxc_salt_design_flow) *
+    #         264.17 * 60 /
+    #         (m.fs.hxc_salt_design_density)
+    #         ),
+    #     doc="Conversion of solar salt flow mass to vol flow [gal per min]"
+    # )
+    # m.fs.cold_dens_lbft3 = Expression(
+    #     expr=(
+    #         (m.fs.hxc_salt_design_density)
+    #         * 0.062428),
+    #     doc="pump size factor"
+    # )  # density in lb per ft3
+    # m.fs.cold_spump_sf = Expression(
+    #     expr=(m.fs.cold_spump_Qgpm
+    #           * (m.fs.cold_spump_head ** 0.5)),
+    #     doc="Pump size factor"
+    # )
+    # m.fs.cold_pump_CP = Expression(
+    #     expr=(
+    #         m.fs.cold_spump_FT * m.fs.cold_spump_FM *
+    #         exp(
+    #             9.2951
+    #             - 0.6019 * log(m.fs.cold_spump_sf)
+    #             + 0.0519 * ((log(m.fs.cold_spump_sf))**2)
+    #         )
+    #     ),
+    #     doc="Salt pump base (purchase) cost in $"
+    # )
+    # # Costing motor
+    # m.fs.cold_spump_np = Expression(
+    #     expr=(
+    #         -0.316
+    #         + 0.24015 * log(m.fs.cold_spump_Qgpm)
+    #         - 0.01199 * ((log(m.fs.cold_spump_Qgpm))**2)
+    #     ),
+    #     doc="Fractional efficiency of the pump horse power"
+    # )
+    # m.fs.cold_motor_pc = Expression(
+    #     expr=(
+    #         (m.fs.cold_spump_Qgpm *
+    #          m.fs.cold_spump_head *
+    #          m.fs.cold_dens_lbft3) /
+    #         (33000 * m.fs.cold_spump_np *
+    #          m.fs.cold_spump_nm)
+    #     ),
+    #     doc="Motor power consumption in horsepower"
+    # )
+    # # Motor purchase cost
+    # cold_log_motor_pc = log(m.fs.cold_motor_pc)
+    # m.fs.cold_motor_CP = Expression(
+    #     expr=(
+    #         m.fs.cold_spump_motorFT *
+    #         exp(
+    #             5.4866
+    #             + 0.13141 * cold_log_motor_pc
+    #             + 0.053255 * (cold_log_motor_pc**2)
+    #             + 0.028628 * (cold_log_motor_pc**3)
+    #             - 0.0035549 * (cold_log_motor_pc**4)
+    #         )
+    #     ),
+    #     doc="Salt Pump's Motor Base Cost in $"
+    # )
+    # # Pump and motor purchase cost pump
+    # m.fs.cold_spump_purchase_cost = Var(
+    #     initialize=100000,
+    #     bounds=(0, 1e7),
+    #     doc="Salt pump and motor purchase cost in $"
+    # )
 
-    def solar_cold_spump_purchase_cost_rule(b):
-        return (
-            m.fs.cold_spump_purchase_cost *
-            m.fs.num_of_years == (m.fs.cold_pump_CP + m.fs.cold_motor_CP) *
-            2 * (m.CE_index / 394)  # multiplied by 2 to include discharge
-        )
-    m.fs.cold_spump_purchase_cost_eq = Constraint(
-        rule=solar_cold_spump_purchase_cost_rule)
+    # def solar_cold_spump_purchase_cost_rule(b):
+    #     return (
+    #         m.fs.cold_spump_purchase_cost *
+    #         m.fs.num_of_years == (m.fs.cold_pump_CP + m.fs.cold_motor_CP) *
+    #         2 * (m.CE_index / 394)  # multiplied by 2 to include discharge
+    #     )
+    # m.fs.cold_spump_purchase_cost_eq = Constraint(
+    #     rule=solar_cold_spump_purchase_cost_rule)
 
-    # Initialize cost correlation
-    calculate_variable_from_constraint(
-        m.fs.cold_spump_purchase_cost,
-        m.fs.cold_spump_purchase_cost_eq)
+    # # Initialize cost correlation
+    # calculate_variable_from_constraint(
+    #     m.fs.cold_spump_purchase_cost,
+    #     m.fs.cold_spump_purchase_cost_eq)
 
-    # --------------------------------------------
-    #  hot Salt-pump costing
-    # --------------------------------------------
-    # The salt pump is not explicitly modeled. Thus, the IDAES cost
-    # method is not used for this equipment at this time.  The primary
-    # purpose of the salt pump is to move molten salt and not to
-    # change the pressure. Thus the pressure head is computed assuming
-    # that the salt is moved on an average of 5m linear distance.
-    m.fs.hot_spump_FT = Param(
-        initialize=m.data_salt_pump['FT'],
-        doc='Pump Type Factor for vertical split case')
-    m.fs.hot_spump_FM = Param(
-        initialize=m.data_salt_pump['FM'],
-        doc='Pump Material Factor Stainless Steel')
-    m.fs.hot_spump_head = Param(
-        initialize=m.data_salt_pump['head'],
-        doc='Pump Head 5m in Ft.')
-    m.fs.hot_spump_motorFT = Param(
-        initialize=m.data_salt_pump['motor_FT'],
-        doc='Motor Shaft Type Factor')
-    m.fs.hot_spump_nm = Param(
-        initialize=m.data_salt_pump['nm'],
-        doc='Motor Shaft Type Factor')
+    # # --------------------------------------------
+    # #  hot Salt-pump costing
+    # # --------------------------------------------
+    # # The salt pump is not explicitly modeled. Thus, the IDAES cost
+    # # method is not used for this equipment at this time.  The primary
+    # # purpose of the salt pump is to move molten salt and not to
+    # # change the pressure. Thus the pressure head is computed assuming
+    # # that the salt is moved on an average of 5m linear distance.
+    # m.fs.hot_spump_FT = Param(
+    #     initialize=m.data_salt_pump['FT'],
+    #     doc='Pump Type Factor for vertical split case')
+    # m.fs.hot_spump_FM = Param(
+    #     initialize=m.data_salt_pump['FM'],
+    #     doc='Pump Material Factor Stainless Steel')
+    # m.fs.hot_spump_head = Param(
+    #     initialize=m.data_salt_pump['head'],
+    #     doc='Pump Head 5m in Ft.')
+    # m.fs.hot_spump_motorFT = Param(
+    #     initialize=m.data_salt_pump['motor_FT'],
+    #     doc='Motor Shaft Type Factor')
+    # m.fs.hot_spump_nm = Param(
+    #     initialize=m.data_salt_pump['nm'],
+    #     doc='Motor Shaft Type Factor')
 
-    m.fs.hxd_salt_design_flow = Param(
-        initialize=362.2,
-        doc='Design flow of salt through hxd')
-    m.fs.hxd_salt_design_density = Param(
-        initialize=1721.12,
-        doc='Design desnity of salt through hxd')
+    # m.fs.hxd_salt_design_flow = Param(
+    #     initialize=362.2,
+    #     doc='Design flow of salt through hxd')
+    # m.fs.hxd_salt_design_density = Param(
+    #     initialize=1721.12,
+    #     doc='Design desnity of salt through hxd')
 
-    #  Solar salt-pump costing
-    m.fs.hot_spump_Qgpm = Expression(
-        expr=(
-            (m.fs.hxd_salt_design_flow) *
-            264.17 * 60 /
-            (m.fs.hxd_salt_design_density)
-            ),
-        doc="Conversion of solar salt flow mass to vol flow [gal per min]"
-    )
-    m.fs.hot_dens_lbft3 = Expression(
-        expr=(
-            (m.fs.hxd_salt_design_density)
-            * 0.062428),
-        doc="pump size factor"
-    )  # density in lb per ft3
-    m.fs.hot_spump_sf = Expression(
-        expr=(m.fs.hot_spump_Qgpm
-              * (m.fs.hot_spump_head ** 0.5)),
-        doc="Pump size factor"
-    )
-    m.fs.hot_pump_CP = Expression(
-        expr=(
-            m.fs.hot_spump_FT * m.fs.hot_spump_FM *
-            exp(
-                9.2951
-                - 0.6019 * log(m.fs.hot_spump_sf)
-                + 0.0519 * ((log(m.fs.hot_spump_sf))**2)
-            )
-        ),
-        doc="Salt pump base (purchase) cost in $"
-    )
-    # Costing motor
-    m.fs.hot_spump_np = Expression(
-        expr=(
-            -0.316
-            + 0.24015 * log(m.fs.hot_spump_Qgpm)
-            - 0.01199 * ((log(m.fs.hot_spump_Qgpm))**2)
-        ),
-        doc="Fractional efficiency of the pump horse power"
-    )
-    m.fs.hot_motor_pc = Expression(
-        expr=(
-            (m.fs.hot_spump_Qgpm *
-             m.fs.hot_spump_head *
-             m.fs.hot_dens_lbft3) /
-            (33000 * m.fs.hot_spump_np *
-             m.fs.hot_spump_nm)
-        ),
-        doc="Motor power consumption in horsepower"
-    )
-    # Motor purchase cost
-    hot_log_motor_pc = log(m.fs.hot_motor_pc)
-    m.fs.hot_motor_CP = Expression(
-        expr=(
-            m.fs.hot_spump_motorFT *
-            exp(
-                5.4866
-                + 0.13141 * hot_log_motor_pc
-                + 0.053255 * (hot_log_motor_pc**2)
-                + 0.028628 * (hot_log_motor_pc**3)
-                - 0.0035549 * (hot_log_motor_pc**4)
-            )
-        ),
-        doc="Salt Pump's Motor Base Cost in $"
-    )
-    # Pump and motor purchase cost pump
-    m.fs.hot_spump_purchase_cost = Var(
-        initialize=100000,
-        bounds=(0, 1e7),
-        doc="Salt pump and motor purchase cost in $"
-    )
+    # #  Solar salt-pump costing
+    # m.fs.hot_spump_Qgpm = Expression(
+    #     expr=(
+    #         (m.fs.hxd_salt_design_flow) *
+    #         264.17 * 60 /
+    #         (m.fs.hxd_salt_design_density)
+    #         ),
+    #     doc="Conversion of solar salt flow mass to vol flow [gal per min]"
+    # )
+    # m.fs.hot_dens_lbft3 = Expression(
+    #     expr=(
+    #         (m.fs.hxd_salt_design_density)
+    #         * 0.062428),
+    #     doc="pump size factor"
+    # )  # density in lb per ft3
+    # m.fs.hot_spump_sf = Expression(
+    #     expr=(m.fs.hot_spump_Qgpm
+    #           * (m.fs.hot_spump_head ** 0.5)),
+    #     doc="Pump size factor"
+    # )
+    # m.fs.hot_pump_CP = Expression(
+    #     expr=(
+    #         m.fs.hot_spump_FT * m.fs.hot_spump_FM *
+    #         exp(
+    #             9.2951
+    #             - 0.6019 * log(m.fs.hot_spump_sf)
+    #             + 0.0519 * ((log(m.fs.hot_spump_sf))**2)
+    #         )
+    #     ),
+    #     doc="Salt pump base (purchase) cost in $"
+    # )
+    # # Costing motor
+    # m.fs.hot_spump_np = Expression(
+    #     expr=(
+    #         -0.316
+    #         + 0.24015 * log(m.fs.hot_spump_Qgpm)
+    #         - 0.01199 * ((log(m.fs.hot_spump_Qgpm))**2)
+    #     ),
+    #     doc="Fractional efficiency of the pump horse power"
+    # )
+    # m.fs.hot_motor_pc = Expression(
+    #     expr=(
+    #         (m.fs.hot_spump_Qgpm *
+    #          m.fs.hot_spump_head *
+    #          m.fs.hot_dens_lbft3) /
+    #         (33000 * m.fs.hot_spump_np *
+    #          m.fs.hot_spump_nm)
+    #     ),
+    #     doc="Motor power consumption in horsepower"
+    # )
+    # # Motor purchase cost
+    # hot_log_motor_pc = log(m.fs.hot_motor_pc)
+    # m.fs.hot_motor_CP = Expression(
+    #     expr=(
+    #         m.fs.hot_spump_motorFT *
+    #         exp(
+    #             5.4866
+    #             + 0.13141 * hot_log_motor_pc
+    #             + 0.053255 * (hot_log_motor_pc**2)
+    #             + 0.028628 * (hot_log_motor_pc**3)
+    #             - 0.0035549 * (hot_log_motor_pc**4)
+    #         )
+    #     ),
+    #     doc="Salt Pump's Motor Base Cost in $"
+    # )
+    # # Pump and motor purchase cost pump
+    # m.fs.hot_spump_purchase_cost = Var(
+    #     initialize=100000,
+    #     bounds=(0, 1e7),
+    #     doc="Salt pump and motor purchase cost in $"
+    # )
 
-    def solar_hot_spump_purchase_cost_rule(b):
-        return (
-            m.fs.hot_spump_purchase_cost *
-            m.fs.num_of_years == (m.fs.hot_pump_CP + m.fs.hot_motor_CP) *
-            2 * (m.CE_index / 394)  # multiplied by 2 to include discharge
-        )
-    m.fs.hot_spump_purchase_cost_eq = Constraint(
-        rule=solar_hot_spump_purchase_cost_rule)
+    # def solar_hot_spump_purchase_cost_rule(b):
+    #     return (
+    #         m.fs.hot_spump_purchase_cost *
+    #         m.fs.num_of_years == (m.fs.hot_pump_CP + m.fs.hot_motor_CP) *
+    #         2 * (m.CE_index / 394)  # multiplied by 2 to include discharge
+    #     )
+    # m.fs.hot_spump_purchase_cost_eq = Constraint(
+    #     rule=solar_hot_spump_purchase_cost_rule)
 
-    # Initialize cost correlation
-    calculate_variable_from_constraint(
-        m.fs.hot_spump_purchase_cost,
-        m.fs.hot_spump_purchase_cost_eq)
+    # # Initialize cost correlation
+    # calculate_variable_from_constraint(
+    #     m.fs.hot_spump_purchase_cost,
+    #     m.fs.hot_spump_purchase_cost_eq)
 
-    # --------------------------------------------
-    #  Solar salt storage tank costing: vertical vessel
-    # --------------------------------------------
-    m.fs.l_by_d = Param(
-        initialize=m.data_storage_tank['LbyD'],
-        doc='L by D assumption for computing storage tank dimensions')
-    m.fs.tank_thickness = Param(
-        initialize=m.data_storage_tank['tank_thickness'],
-        doc='Storage tank thickness assumed based on reference'
-    )
-    # Tank size and dimension computation
-    m.fs.tank_volume = Var(
-        initialize=1000,
-        bounds=(1, 5000),
-        units=pyunits.m**3,
-        doc="Volume of the Salt Tank w/20% excess capacity")
-    m.fs.tank_surf_area = Var(
-        initialize=1000,
-        bounds=(1, 6000),
-        units=pyunits.m**2,
-        doc="surface area of the Salt Tank")
-    m.fs.tank_diameter = Var(
-        initialize=1.0,
-        bounds=(0.5, 40),
-        units=pyunits.m,
-        doc="Diameter of the Salt Tank ")
-    m.fs.tank_height = Var(
-        initialize=1.0,
-        bounds=(0.5, 13),
-        units=pyunits.m,
-        doc="Length of the salt tank [m]")
-    m.fs.no_of_tanks = Var(
-        initialize=1,
-        bounds=(1, 3),
-        doc='No of Tank units to use cost correlations')
+    # # --------------------------------------------
+    # #  Solar salt storage tank costing: vertical vessel
+    # # --------------------------------------------
+    # m.fs.l_by_d = Param(
+    #     initialize=m.data_storage_tank['LbyD'],
+    #     doc='L by D assumption for computing storage tank dimensions')
+    # m.fs.tank_thickness = Param(
+    #     initialize=m.data_storage_tank['tank_thickness'],
+    #     doc='Storage tank thickness assumed based on reference'
+    # )
+    # # Tank size and dimension computation
+    # m.fs.tank_volume = Var(
+    #     initialize=1000,
+    #     bounds=(1, 5000),
+    #     units=pyunits.m**3,
+    #     doc="Volume of the Salt Tank w/20% excess capacity")
+    # m.fs.tank_surf_area = Var(
+    #     initialize=1000,
+    #     bounds=(1, 6000),
+    #     units=pyunits.m**2,
+    #     doc="surface area of the Salt Tank")
+    # m.fs.tank_diameter = Var(
+    #     initialize=1.0,
+    #     bounds=(0.5, 40),
+    #     units=pyunits.m,
+    #     doc="Diameter of the Salt Tank ")
+    # m.fs.tank_height = Var(
+    #     initialize=1.0,
+    #     bounds=(0.5, 13),
+    #     units=pyunits.m,
+    #     doc="Length of the salt tank [m]")
+    # m.fs.no_of_tanks = Var(
+    #     initialize=1,
+    #     bounds=(1, 3),
+    #     doc='No of Tank units to use cost correlations')
 
-    # Number of tanks change
-    m.fs.no_of_tanks.fix()
+    # # Number of tanks change
+    # m.fs.no_of_tanks.fix()
 
-    # Computing tank volume - jfr: editing to include 20% margin
-    def solar_tank_volume_rule(b):
-        return (
-            m.fs.tank_volume *
-            m.fs.hxc_salt_design_density ==
-            m.fs.salt_amount * 1.10
-        )
-    m.fs.tank_volume_eq = Constraint(
-        rule=solar_tank_volume_rule)
+    # # Computing tank volume - jfr: editing to include 20% margin
+    # def solar_tank_volume_rule(b):
+    #     return (
+    #         m.fs.tank_volume *
+    #         m.fs.hxc_salt_design_density ==
+    #         m.fs.salt_amount * 1.10
+    #     )
+    # m.fs.tank_volume_eq = Constraint(
+    #     rule=solar_tank_volume_rule)
 
-    # Compute surface area of tank: surf area of sides + top surf area
-    # base area is accounted in foundation costs
-    def solar_tank_surf_area_rule(b):
-        return (
-            m.fs.tank_surf_area == (
-                pi * m.fs.tank_diameter *
-                m.fs.tank_height)
-            + (pi * m.fs.tank_diameter**2) / 4
-        )
-    m.fs.tank_surf_area_eq = Constraint(
-        rule=solar_tank_surf_area_rule)
+    # # Compute surface area of tank: surf area of sides + top surf area
+    # # base area is accounted in foundation costs
+    # def solar_tank_surf_area_rule(b):
+    #     return (
+    #         m.fs.tank_surf_area == (
+    #             pi * m.fs.tank_diameter *
+    #             m.fs.tank_height)
+    #         + (pi * m.fs.tank_diameter**2) / 4
+    #     )
+    # m.fs.tank_surf_area_eq = Constraint(
+    #     rule=solar_tank_surf_area_rule)
 
-    # Computing diameter for an assumed L by D
-    def solar_tank_diameter_rule(b):
-        return (
-            m.fs.tank_diameter == (
-                (4 * (m.fs.tank_volume /
-                      m.fs.no_of_tanks) /
-                 (m.fs.l_by_d * pi)) ** (1 / 3))
-        )
-    m.fs.tank_diameter_eq = Constraint(
-        rule=solar_tank_diameter_rule)
+    # # Computing diameter for an assumed L by D
+    # def solar_tank_diameter_rule(b):
+    #     return (
+    #         m.fs.tank_diameter == (
+    #             (4 * (m.fs.tank_volume /
+    #                   m.fs.no_of_tanks) /
+    #              (m.fs.l_by_d * pi)) ** (1 / 3))
+    #     )
+    # m.fs.tank_diameter_eq = Constraint(
+    #     rule=solar_tank_diameter_rule)
 
-    # Computing height of tank
-    def solar_tank_height_rule(b):
-        return m.fs.tank_height == (
-            m.fs.l_by_d * m.fs.tank_diameter)
-    m.fs.tank_height_eq = Constraint(
-        rule=solar_tank_height_rule)
+    # # Computing height of tank
+    # def solar_tank_height_rule(b):
+    #     return m.fs.tank_height == (
+    #         m.fs.l_by_d * m.fs.tank_diameter)
+    # m.fs.tank_height_eq = Constraint(
+    #     rule=solar_tank_height_rule)
 
-    # Initialize tanks design correlations
-    calculate_variable_from_constraint(
-        m.fs.tank_volume,
-        m.fs.tank_volume_eq)
-    calculate_variable_from_constraint(
-        m.fs.tank_diameter,
-        m.fs.tank_diameter_eq)
-    calculate_variable_from_constraint(
-        m.fs.tank_height,
-        m.fs.tank_height_eq)
+    # # Initialize tanks design correlations
+    # calculate_variable_from_constraint(
+    #     m.fs.tank_volume,
+    #     m.fs.tank_volume_eq)
+    # calculate_variable_from_constraint(
+    #     m.fs.tank_diameter,
+    #     m.fs.tank_diameter_eq)
+    # calculate_variable_from_constraint(
+    #     m.fs.tank_height,
+    #     m.fs.tank_height_eq)
 
-    # A dummy pyomo block for salt storage tank is declared for costing
-    # The diameter and length for this tank is assumed
-    # based on a number of tank (see the above for m.fs.no_of_tanks)
-    # Costing for each vessel designed above
-    # m.fs.charge.salt_tank = pyo.Block()
-    m.fs.solar_costing = Block()
+    # # A dummy pyomo block for salt storage tank is declared for costing
+    # # The diameter and length for this tank is assumed
+    # # based on a number of tank (see the above for m.fs.no_of_tanks)
+    # # Costing for each vessel designed above
+    # # m.fs.charge.salt_tank = pyo.Block()
+    # m.fs.solar_costing = Block()
 
-    m.fs.solar_costing.material_cost = Param(
-        initialize=m.data_cost['storage_tank_material'],
-        doc='$/kg of SS316 material')
-    m.fs.solar_costing.insulation_cost = Param(
-        initialize=m.data_cost['storage_tank_insulation'],
-        doc='$/m2')
-    m.fs.solar_costing.foundation_cost = Param(
-        initialize=m.data_cost['storage_tank_foundation'],
-        doc='$/m2')
-    m.fs.solar_costing.material_density = Param(
-        initialize=m.data_storage_tank['material_density'],
-        doc='Kg/m3')
-    m.fs.solar_costing.tank_material_cost = Var(
-        initialize=5000,
-        bounds=(1000, 1e7)
-    )
-    m.fs.solar_costing.tank_insulation_cost = Var(
-        initialize=5000,
-        bounds=(1000, 1e7)
-    )
-    m.fs.solar_costing.tank_foundation_cost = Var(
-        initialize=5000,
-        bounds=(1000, 1e7)
-    )
+    # m.fs.solar_costing.material_cost = Param(
+    #     initialize=m.data_cost['storage_tank_material'],
+    #     doc='$/kg of SS316 material')
+    # m.fs.solar_costing.insulation_cost = Param(
+    #     initialize=m.data_cost['storage_tank_insulation'],
+    #     doc='$/m2')
+    # m.fs.solar_costing.foundation_cost = Param(
+    #     initialize=m.data_cost['storage_tank_foundation'],
+    #     doc='$/m2')
+    # m.fs.solar_costing.material_density = Param(
+    #     initialize=m.data_storage_tank['material_density'],
+    #     doc='Kg/m3')
+    # m.fs.solar_costing.tank_material_cost = Var(
+    #     initialize=5000,
+    #     bounds=(1000, 1e7)
+    # )
+    # m.fs.solar_costing.tank_insulation_cost = Var(
+    #     initialize=5000,
+    #     bounds=(1000, 1e7)
+    # )
+    # m.fs.solar_costing.tank_foundation_cost = Var(
+    #     initialize=5000,
+    #     bounds=(1000, 1e7)
+    # )
 
-    def rule_tank_material_cost(b):
-        return m.fs.solar_costing.tank_material_cost == (
-            m.fs.solar_costing.material_cost *
-            m.fs.solar_costing.material_density *
-            m.fs.tank_surf_area *
-            m.fs.tank_thickness
-        )
-    m.fs.solar_costing.eq_tank_material_cost = \
-        Constraint(rule=rule_tank_material_cost)
+    # def rule_tank_material_cost(b):
+    #     return m.fs.solar_costing.tank_material_cost == (
+    #         m.fs.solar_costing.material_cost *
+    #         m.fs.solar_costing.material_density *
+    #         m.fs.tank_surf_area *
+    #         m.fs.tank_thickness
+    #     )
+    # m.fs.solar_costing.eq_tank_material_cost = \
+    #     Constraint(rule=rule_tank_material_cost)
 
-    def rule_tank_insulation_cost(b):
-        return (
-            m.fs.solar_costing.tank_insulation_cost == (
-                m.fs.solar_costing.insulation_cost *
-                m.fs.tank_surf_area))
+    # def rule_tank_insulation_cost(b):
+    #     return (
+    #         m.fs.solar_costing.tank_insulation_cost == (
+    #             m.fs.solar_costing.insulation_cost *
+    #             m.fs.tank_surf_area))
 
-    m.fs.solar_costing.eq_tank_insulation_cost = \
-        Constraint(rule=rule_tank_insulation_cost)
+    # m.fs.solar_costing.eq_tank_insulation_cost = \
+    #     Constraint(rule=rule_tank_insulation_cost)
 
-    def rule_tank_foundation_cost(b):
-        return (
-            m.fs.solar_costing.tank_foundation_cost == (
-                m.fs.solar_costing.foundation_cost *
-                pi * m.fs.tank_diameter**2 / 4))
-    m.fs.solar_costing.eq_tank_foundation_cost = \
-        Constraint(rule=rule_tank_foundation_cost)
+    # def rule_tank_foundation_cost(b):
+    #     return (
+    #         m.fs.solar_costing.tank_foundation_cost == (
+    #             m.fs.solar_costing.foundation_cost *
+    #             pi * m.fs.tank_diameter**2 / 4))
+    # m.fs.solar_costing.eq_tank_foundation_cost = \
+    #     Constraint(rule=rule_tank_foundation_cost)
 
-    # Expression to compute the total cost for 2 identical salt tanks
-    #  for cold and hot salt storage
-    m.fs.solar_costing.total_tank_cost = Expression(
-        expr=2 * (m.fs.solar_costing.tank_material_cost
-                  + m.fs.solar_costing.tank_foundation_cost
-                  + m.fs.solar_costing.tank_insulation_cost)
-    )
+    # # Expression to compute the total cost for 2 identical salt tanks
+    # #  for cold and hot salt storage
+    # m.fs.solar_costing.total_tank_cost = Expression(
+    #     expr=2 * (m.fs.solar_costing.tank_material_cost
+    #               + m.fs.solar_costing.tank_foundation_cost
+    #               + m.fs.solar_costing.tank_insulation_cost)
+    # )
 
     # --------------------------------------------
     # Total annualized capital cost for solar salt
     # --------------------------------------------
     # Capital cost var at flowsheet level to handle the salt capital
     # cost depending on the salt selected.
-    m.fs.capital_cost = Var(
-        initialize=1000000,
-        bounds=(0, 1e9),
-        doc="Annualized capital cost for solar salt")
+    # m.fs.capital_cost = Var(
+    #     initialize=1000000,
+    #     bounds=(0, 1e9),
+    #     doc="Annualized capital cost for solar salt")
 
-    # Annualize capital cost for the solar salt
-    def solar_cap_cost_rule(b):
-        return m.fs.capital_cost == (
-            m.fs.salt_purchase_cost
-            + m.fs.hot_spump_purchase_cost
-            + m.fs.cold_spump_purchase_cost
-            + (
-                m.fs.hxc.costing.purchase_cost
-                + m.fs.hxd.costing.purchase_cost
-                + m.fs.hx_pump.costing.purchase_cost
-                + m.fs.no_of_tanks *
-                m.fs.solar_costing.total_tank_cost
-            )
-            / m.fs.num_of_years
-        )
-    m.fs.cap_cost_eq = Constraint(
-        rule=solar_cap_cost_rule)
+    #--------
+    # Fixed for now
+    m.fs.capital_cost = Param(
+        initialize=0.407655e6,
+        doc="Annualized capital cost for solar salt in $/yr")
+    #--------
+
+    # # Annualize capital cost for the solar salt
+    # def solar_cap_cost_rule(b):
+    #     return m.fs.capital_cost == (
+    #         m.fs.salt_purchase_cost
+    #         + m.fs.hot_spump_purchase_cost
+    #         + m.fs.cold_spump_purchase_cost
+    #         + (
+    #             m.fs.hxc.costing.purchase_cost
+    #             + m.fs.hxd.costing.purchase_cost
+    #             + m.fs.hx_pump.costing.purchase_cost
+    #             + m.fs.no_of_tanks *
+    #             m.fs.solar_costing.total_tank_cost
+    #         )
+    #         / m.fs.num_of_years
+    #     )
+    # m.fs.cap_cost_eq = Constraint(
+    #     rule=solar_cap_cost_rule)
 
     ###########################################################################
     #  Annual operating cost
@@ -1479,14 +1486,14 @@ def add_bounds(m):
     m.fs.hxc.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxc.area.setlb(0)
     m.fs.hxc.area.setub(6000)  # 5000
-    m.fs.hxc.costing.pressure_factor.setlb(0)  # no unit
-    m.fs.hxc.costing.pressure_factor.setub(1000)  # no unit
-    m.fs.hxc.costing.purchase_cost.setlb(0)  # no unit
-    m.fs.hxc.costing.purchase_cost.setub(1e7)  # no unit
-    m.fs.hxc.costing.base_cost_per_unit.setlb(0)
-    m.fs.hxc.costing.base_cost_per_unit.setub(1e6)
-    m.fs.hxc.costing.material_factor.setlb(0)
-    m.fs.hxc.costing.material_factor.setub(10)
+    # m.fs.hxc.costing.pressure_factor.setlb(0)  # no unit
+    # m.fs.hxc.costing.pressure_factor.setub(1000)  # no unit
+    # m.fs.hxc.costing.purchase_cost.setlb(0)  # no unit
+    # m.fs.hxc.costing.purchase_cost.setub(1e7)  # no unit
+    # m.fs.hxc.costing.base_cost_per_unit.setlb(0)
+    # m.fs.hxc.costing.base_cost_per_unit.setub(1e6)
+    # m.fs.hxc.costing.material_factor.setlb(0)
+    # m.fs.hxc.costing.material_factor.setub(10)
     # Testing for NS
     m.fs.hxc.delta_temperature_in.setlb(10)
     m.fs.hxc.delta_temperature_out.setlb(10)
@@ -1531,14 +1538,14 @@ def add_bounds(m):
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxd.area.setlb(0)
     m.fs.hxd.area.setub(6000)  # 5000
-    m.fs.hxd.costing.pressure_factor.setlb(0)  # no unit
-    m.fs.hxd.costing.pressure_factor.setub(1000)  # no unit
-    m.fs.hxd.costing.purchase_cost.setlb(0)  # no unit
-    m.fs.hxd.costing.purchase_cost.setub(1e7)  # no unit
-    m.fs.hxd.costing.base_cost_per_unit.setlb(0)
-    m.fs.hxd.costing.base_cost_per_unit.setub(1e6)
-    m.fs.hxd.costing.material_factor.setlb(0)
-    m.fs.hxd.costing.material_factor.setub(10)
+    # m.fs.hxd.costing.pressure_factor.setlb(0)  # no unit
+    # m.fs.hxd.costing.pressure_factor.setub(1000)  # no unit
+    # m.fs.hxd.costing.purchase_cost.setlb(0)  # no unit
+    # m.fs.hxd.costing.purchase_cost.setub(1e7)  # no unit
+    # m.fs.hxd.costing.base_cost_per_unit.setlb(0)
+    # m.fs.hxd.costing.base_cost_per_unit.setub(1e6)
+    # m.fs.hxd.costing.material_factor.setlb(0)
+    # m.fs.hxd.costing.material_factor.setub(10)
     # Testing for NS
     m.fs.hxd.delta_temperature_in.setlb(10)
     m.fs.hxd.delta_temperature_out.setlb(10)
@@ -1554,9 +1561,9 @@ def add_bounds(m):
         unit_k.outlet.flow_mol.setub(0.2*m.flow_max)
     m.fs.cooler.heat_duty.setub(0)
 
-    # Add bounds to cost-related terms
-    m.fs.hx_pump.costing.purchase_cost.setlb(0)
-    m.fs.hx_pump.costing.purchase_cost.setub(1e7)
+    # # Add bounds to cost-related terms
+    # m.fs.hx_pump.costing.purchase_cost.setlb(0)
+    # m.fs.hx_pump.costing.purchase_cost.setub(1e7)
 
     # Add bounds needed HP splitter
     for split in [m.fs.ess_hp_split]:
@@ -1679,14 +1686,14 @@ def print_results(m, results):
         value(m.fs.capital_cost) * 1e-6))
     print('Charge Operating costs (M$/y): {:.6f}'.format(
         value(m.fs.operating_cost) * 1e-6))
-    print('Salt cost ($/y): {:.6f}'.format(
-        value(m.fs.salt_purchase_cost)))
-    print('Tank cost ($/y): {:.6f}'.format(
-        value(m.fs.solar_costing.total_tank_cost / 15)))
-    print('Hot_Salt pump cost ($/y): {:.6f}'.format(
-        value(m.fs.hot_spump_purchase_cost)))
-    print('Cold_Salt pump cost ($/y): {:.6f}'.format(
-        value(m.fs.cold_spump_purchase_cost)))
+    # print('Salt cost ($/y): {:.6f}'.format(
+    #     value(m.fs.salt_purchase_cost)))
+    # print('Tank cost ($/y): {:.6f}'.format(
+    #     value(m.fs.solar_costing.total_tank_cost / 15)))
+    # print('Hot_Salt pump cost ($/y): {:.6f}'.format(
+    #     value(m.fs.hot_spump_purchase_cost)))
+    # print('Cold_Salt pump cost ($/y): {:.6f}'.format(
+    #     value(m.fs.cold_spump_purchase_cost)))
     print('')
     print('')
     print("***************** Power Plant Operation ******************")
@@ -1702,8 +1709,8 @@ def print_results(m, results):
               * 1e-6)))
     print('Cooling duty (MW_th): {:.6f}'.format(
         value(m.fs.cooler.heat_duty[0]) * -1e-6))
-    print('Salt storage tank volume in m3: {:.6f}'.format(
-        value(m.fs.tank_volume)))
+    # print('Salt storage tank volume in m3: {:.6f}'.format(
+    #     value(m.fs.tank_volume)))
     print('HXC heat duty: {:.6f}'.format(
         value(m.fs.hxc.heat_duty[0]) / 1e6))
     print('HXD heat duty: {:.6f}'.format(
@@ -1716,8 +1723,8 @@ def print_results(m, results):
     print('')
     print('HXC area (m2): {:.6f}'.format(
         value(m.fs.hxc.area)))
-    print('HXC cost ($/y): {:.6f}'.format(
-        value(m.fs.hxc.costing.purchase_cost / 15)))
+    # print('HXC cost ($/y): {:.6f}'.format(
+    #     value(m.fs.hxc.costing.purchase_cost / 15)))
     print('HXC Salt flow (kg/s): {:.6f}'.format(
         value(m.fs.hxc.inlet_2.flow_mass[0])))
     print('HXC Salt temperature in (K): {:.6f}'.format(
@@ -1740,8 +1747,8 @@ def print_results(m, results):
     print('')
     print('HXD area (m2): {:.6f}'.format(
         value(m.fs.hxd.area)))
-    print('HXD cost ($/y): {:.6f}'.format(
-        value(m.fs.hxd.costing.purchase_cost / 15)))
+    # print('HXD cost ($/y): {:.6f}'.format(
+    #     value(m.fs.hxd.costing.purchase_cost / 15)))
     print('HXD Salt flow (kg/s): {:.6f}'.format(
         value(m.fs.hxd.inlet_1.flow_mass[0])))
     print('HXD Salt temperature in (K): {:.6f}'.format(
@@ -1925,11 +1932,11 @@ def model_analysis(m, solver):
     m.obj = Objective(
         expr=(
             m.fs.revenue
-            - ((m.fs.capital_cost
-                + m.fs.operating_cost
-                + m.fs.plant_capital_cost
+            - ((m.fs.operating_cost
                 + m.fs.plant_fixed_operating_cost
                 + m.fs.plant_variable_operating_cost) / (365 * 24))
+            - ((m.fs.capital_cost
+                + m.fs.plant_capital_cost) / (365 * 24))
         ),
         sense=maximize
     )
