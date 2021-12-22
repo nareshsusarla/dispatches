@@ -495,13 +495,14 @@ def _make_constraints(m):
         return b.from_bfw_out_state[t].pressure == b.mixed_state[t].pressure
 
     m.fs.production_cons.deactivate()
-
     @m.fs.Constraint(m.fs.time)
     def production_cons_with_storage(b, t):
         return (
             (-1 * sum(m.fs.turbine[p].work_mechanical[t]
                       for p in m.set_turbine)
-             - m.fs.hx_pump.control_volume.work[0]) ==
+             - m.fs.hx_pump.control_volume.work[0]
+             # + ((-1) * b.es_turbine.work_mechanical[0]) # add es turbine work
+            ) ==
             m.fs.plant_power_out[t] * 1e6 * (pyunits.W/pyunits.MW)
         )
 
@@ -1496,7 +1497,8 @@ def add_bounds(m):
     # m.fs.hxc.costing.material_factor.setub(10)
     # Testing for NS
     m.fs.hxc.delta_temperature_in.setlb(9)
-    m.fs.hxc.delta_temperature_out.setlb(10)
+    # m.fs.hxc.delta_temperature_out.setlb(10)
+    m.fs.hxc.delta_temperature_out.setlb(5)
     m.fs.hxc.delta_temperature_in.setub(80.5)
     m.fs.hxc.delta_temperature_out.setub(81)
 
@@ -1547,7 +1549,8 @@ def add_bounds(m):
     # m.fs.hxd.costing.material_factor.setlb(0)
     # m.fs.hxd.costing.material_factor.setub(10)
     # Testing for NS
-    m.fs.hxd.delta_temperature_in.setlb(9)
+    # m.fs.hxd.delta_temperature_in.setlb(9)
+    m.fs.hxd.delta_temperature_in.setlb(5)
     m.fs.hxd.delta_temperature_out.setlb(10)
     m.fs.hxd.delta_temperature_in.setub(300)
     m.fs.hxd.delta_temperature_out.setub(300)
@@ -1715,10 +1718,10 @@ def print_results(m, results):
         value(m.fs.cooler.heat_duty[0]) * -1e-6))
     # print('Salt storage tank volume in m3: {:.6f}'.format(
     #     value(m.fs.tank_volume)))
-    print('HXC heat duty: {:.6f}'.format(
-        value(m.fs.hxc.heat_duty[0]) / 1e6))
-    print('HXD heat duty: {:.6f}'.format(
-        value(m.fs.hxd.heat_duty[0]) / 1e6))
+    print('HXC heat duty (MW): {:.6f}'.format(
+        value(m.fs.hxc.heat_duty[0]) * 1e-6))
+    print('HXD heat duty (MW): {:.6f}'.format(
+        value(m.fs.hxd.heat_duty[0]) * 1e-6))
     print('Makeup water flow: {:.6f}'.format(
         value(m.fs.condenser_mix.makeup.flow_mol[0])))
     print('')
@@ -1799,15 +1802,46 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver):
+def model_analysis(m, solver, power=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
 
-    # Fix variables in the flowsheet
-    m.fs.plant_power_out.fix(400)
-    m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
+    m.fs.plant_power_out.fix(power)
+    # m.fs.power_demand_constraint = Constraint(
+    #     expr=m.fs.plant_power_out[0] >= power
+    # )
 
+    # Fix variables in the flowsheet
+    m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
+    m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
+
+    # Unfix all data
+    m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+    m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()
+    for salt_hxc in [m.fs.hxc]:
+        salt_hxc.inlet_1.unfix()
+        salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
+        salt_hxc.area.unfix()  # 1 DOF
+
+    for salt_hxd in [m.fs.hxd]:
+        salt_hxd.inlet_2.unfix()
+        salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
+        salt_hxd.area.unfix()  # 1 DOF
+
+    for unit in [m.fs.cooler]:
+        unit.inlet.unfix()
+    m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+
+    # Fix storage heat exchangers area and salt temperatures
+    m.fs.salt_hot_temperature = 831
+    m.fs.hxc.area.fix(1904)
+    m.fs.hxd.area.fix(1095)
+    m.fs.hxc.outlet_2.temperature.fix(m.fs.salt_hot_temperature)
+    m.fs.hxd.inlet_1.temperature.fix(m.fs.salt_hot_temperature)
+    m.fs.hxd.outlet_1.temperature.fix(513.15)
+
+    # Add salt inventory mass balances
     m.fs.previous_salt_inventory_hot = Var(
         m.fs.time,
         domain=NonNegativeReals,
@@ -1855,125 +1889,30 @@ def model_analysis(m, solver):
             - 3600*b.hxc.inlet_2.flow_mass[t]
             + 3600*b.hxd.inlet_1.flow_mass[t])
 
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum salt inventory at any time")
-    def constraint_salt_max_inventory_hot(b, t):
-        return (
-            b.salt_inventory_hot[t] <= b.salt_amount)
-
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum previous salt inventory at any time")
-    def constraint_salt_max_previous_inventory_hot(b, t):
-        return (
-            b.previous_salt_inventory_hot[t] <= b.salt_amount)
-
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum salt inventory at any time")
-    def constraint_salt_max_inventory_cold(b, t):
-        return (
-            b.salt_inventory_cold[t] <= b.salt_amount)
-
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum previous salt inventory at any time")
-    def constraint_salt_max_previous_inventory_cold(b, t):
-        return (
-            b.previous_salt_inventory_cold[t] <= b.salt_amount)
-
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum salt inventory at any time")
-    def constraint_salt_inventory(b, t):
-        return (
-            b.salt_inventory_hot[t] + b.salt_inventory_cold[t] <= b.salt_amount)
+    # @m.fs.Constraint(m.fs.time,
+    #                  doc="Maximum salt inventory at any time")
+    # def constraint_salt_inventory(b, t):
+    #     return (
+    #         b.salt_inventory_hot[t] + b.salt_inventory_cold[t] <= b.salt_amount)
 
     @m.fs.Constraint(m.fs.time,
                      doc="Maximum previous salt inventory at any time")
     def constraint_salt_previous_inventory(b, t):
         return (
-            b.previous_salt_inventory_hot[t] + b.previous_salt_inventory_cold[t] <= b.salt_amount)
+            b.previous_salt_inventory_hot[t] + b.previous_salt_inventory_cold[t] == b.salt_amount)
 
+    
+    # Fix the previous salt inventory
+    m.fs.previous_salt_inventory_hot[0].fix(1)
+    # m.fs.previous_salt_inventory_cold[0].fix(0)
 
-    # Unfix variables fixed in model input and during initialization
-    m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
-
-    # if cycle == "charge":
-    #     m.fs.if_charge.value = 1
-    #     m.fs.hxc.heat_duty.fix(150*1e6)  # in W
-    #     m.fs.hxd.heat_duty.fix(0.1*1e6)  # in W
-    #     m.fs.hxd.area.unfix()
-    #     # m.fs.hxd.area.fix(0.01)
-    #     print('DOF before unfix = ', degrees_of_freedom(m))
-
-    #     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
-    #     m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.001)  # 0.1
-    #     m.fs.hxd.inlet_1.flow_mass.fix(1)
-
-    #     m.fs.previous_salt_inventory[0].fix(10)
-    #     for salt_hxc in [m.fs.hxc]:
-    #         salt_hxc.inlet_1.unfix()
-    #         salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
-    #         salt_hxc.area.unfix()  # 1 DOF
-
-    # elif cycle == "discharge":
-    #     # DISCHARGE
-    #     m.fs.if_charge.value = 0
-    #     m.fs.hxc.area.unfix()
-    #     m.fs.hxc.heat_duty.fix(0.5*1e6)  # in W
-    #     m.fs.hxd.heat_duty.fix(148.5*1e6)  # in W
-    #     # m.fs.hxc.area.fix(10)
-    #     print('DOF before unfix = ', degrees_of_freedom(m))
-
-    #     m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.001)  # 0.001
-    #     # m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()  # 0.001
-    #     m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()  # 0.1
-    #     m.fs.hxc.inlet_2.flow_mass.fix(1)
-
-    #     m.fs.previous_salt_inventory[0].fix(6500000)
-
-    #     for salt_hxd in [m.fs.hxd]:
-    #         salt_hxd.inlet_2.unfix()
-    #         salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
-    #         salt_hxd.area.unfix()  # 1 DOF
-
-    # for unit in [m.fs.cooler]:
-    #     unit.inlet.unfix()
-    # m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
-
-    # -------- modified by esrawli
-    # Unfix all data
-    # m.fs.if_charge.unfix()
-    # m.fs.if_discharge.unfix()
-    m.fs.hxc.area.unfix()
-    m.fs.hxd.area.unfix()
-    m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
-    m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()
-    for salt_hxc in [m.fs.hxc]:
-        salt_hxc.inlet_1.unfix()
-        salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
-        salt_hxc.area.unfix()  # 1 DOF
-
-    for salt_hxd in [m.fs.hxd]:
-        salt_hxd.inlet_2.unfix()
-        salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
-        salt_hxd.area.unfix()  # 1 DOF
-
-    for unit in [m.fs.cooler]:
-        unit.inlet.unfix()
-    m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
-
-    m.fs.hxc.area.fix(1904)
-    m.fs.hxd.area.fix(1095)
-
-    m.fs.hxc.outlet_2.temperature.fix(831)
-    m.fs.hxd.inlet_1.temperature.fix(831)
-    m.fs.hxd.outlet_1.temperature.fix(513.15)
-
-    # Add new calculated flow bounds to boiler
+    # Add new flow bounds to boiler
     m.fs.boiler_flow_lb = Constraint(
         expr=m.fs.boiler.inlet.flow_mol[0] >= m.flow_min)
     m.fs.boiler_flow_ub = Constraint(
         expr=m.fs.boiler.inlet.flow_mol[0] <= m.flow_max)
-    # --------
 
+    # Calculate revenue
     m.fs.revenue = Expression(
         expr=(m.fs.lmp[0] *
               m.fs.plant_power_out[0]),
@@ -1992,12 +1931,6 @@ def model_analysis(m, solver):
         ),
         sense=maximize
     )
-    # m.obj = Objective(
-    #     expr=(
-    #         m.fs.hxd.heat_duty[0]
-    #     ),
-    #     sense=maximize
-    # )
 
     print('DOF before solve = ', degrees_of_freedom(m))
 
@@ -2014,6 +1947,9 @@ def model_analysis(m, solver):
     m.fs.condenser_mix.makeup.display()
     print_results(m, results)
     # print_reports(m)
+
+    log_close_to_bounds(m)
+    log_infeasible_constraints(m)
 
 
 if __name__ == "__main__":
@@ -2041,5 +1977,8 @@ if __name__ == "__main__":
     # m = model_analysis(m_chg,
     #                    solver,
     #                    cycle=m_chg.cycle)
+
+    power_demand = 400
     m = model_analysis(m_chg,
-                       solver)
+                       solver,
+                       power=power_demand)
