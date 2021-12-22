@@ -1609,8 +1609,13 @@ def add_bounds(m):
     # Pa, flow in mol/s, massic flow in kg/s, and heat and heat duty
     # in W
 
+    # Maximum flow/heat is calculated solving no storage case with power
+    # max = 436. Minimum flow/heat is calculated solving no storage mode
+    # with min power = 283 (0.65*p_max)
     m.flow_max = m.main_flow  # in mol/s
+    m.flow_min = 11804  # in mol/s
     m.boiler_heat_max = 918e6  # in W
+    m.boiler_heat_min = 586e6  # in W
     m.salt_flow_max = 500  # in kg/s
     m.fs.heat_duty_max = 200e6  # in MW
     m.factor = 2
@@ -1905,6 +1910,8 @@ def print_results(m, results):
     print('')
     print("***************** Charge Heat Exchanger (HXC) ******************")
     print('')
+    print('HXC OHTC: {:.6f}'.format(
+        value(m.fs.hxc.overall_heat_transfer_coefficient[0])))
     print('HXC area (m2): {:.6f}'.format(
         value(m.fs.hxc.area)))
     print('HXC cost ($/y): {:.6f}'.format(
@@ -1929,6 +1936,8 @@ def print_results(m, results):
     print('')
     print("*************** Discharge Heat Exchanger (HXD) ****************")
     print('')
+    print('HXD OHTC: {:.6f}'.format(
+        value(m.fs.hxd.overall_heat_transfer_coefficient[0])))
     print('HXD area (m2): {:.6f}'.format(
         value(m.fs.hxd.area)))
     print('HXD cost ($/y): {:.6f}'.format(
@@ -1986,6 +1995,8 @@ def print_model(nlp_model, nlp_data):
     print('       ___________________________________________')
     if nlp_model.fs.charge_mode_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: Charge mode is selected')
+        nlp_model.fs.ess_hp_split.display()
+        nlp_model.fs.ess_bfp_split.display()
         nlp_model.fs.hxc.report()
         nlp_model.fs.hxd.report()
         nlp_model.fs.es_turbine.display()
@@ -1993,6 +2004,8 @@ def print_model(nlp_model, nlp_data):
         nlp_model.fs.hx_pump.display()
     elif nlp_model.fs.discharge_mode_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: Discharge mode is selected')
+        nlp_model.fs.ess_hp_split.display()
+        nlp_model.fs.ess_bfp_split.display()
         nlp_model.fs.hxc.report()
         nlp_model.fs.hxd.report()
         nlp_model.fs.es_turbine.display()
@@ -2000,6 +2013,8 @@ def print_model(nlp_model, nlp_data):
         nlp_model.fs.hx_pump.display()
     elif nlp_model.fs.nostorage_mode_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: No storage mode is selected')
+        nlp_model.fs.ess_hp_split.display()
+        nlp_model.fs.ess_bfp_split.display()
         nlp_model.fs.hxc.report()
         nlp_model.fs.hxd.report()
         nlp_model.fs.es_turbine.display()
@@ -2089,8 +2104,12 @@ def model_analysis(m, solver, cycle=None):
     m.fs.hxd.outlet_1.temperature.fix(513.15)
 
 
+    #-------- added by esrawli
 
-
+    # Add new calculated flow bounds to boiler
+    m.fs.boiler_flow_lb = Constraint(expr=m.fs.boiler.inlet.flow_mol[0] >= m.flow_min)
+    m.fs.boiler_flow_ub = Constraint(expr=m.fs.boiler.inlet.flow_mol[0] <= m.flow_max)
+    #--------
 
 
     # if cycle == "charge":
