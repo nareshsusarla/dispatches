@@ -31,14 +31,17 @@ def create_ss_rankine_model():
     m = pyo.ConcreteModel()
     m.rankine = usc.main()
     # set bounds for net cycle power output
+    m.rankine.fs.plant_power_out[0].unfix()
     m.rankine.fs.eq_min_power = pyo.Constraint(
-        expr=m.rankine.fs.plant_power_out[0] >= p_lower_bound*1e6)
+        expr=m.rankine.fs.plant_power_out[0] >= p_lower_bound)
 
     m.rankine.fs.eq_max_power = pyo.Constraint(
-        expr=m.rankine.fs.plant_power_out[0] <= p_upper_bound*1e6)
+        expr=m.rankine.fs.plant_power_out[0] <= p_upper_bound)
 
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()  # normally fixed
-    m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)  # 0 causes numerical issues
+    # m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)  # 0 causes numerical issues
+    m.rankine.fs.boiler.inlet.flow_mol[0].setlb(11804)
+    m.rankine.fs.boiler.inlet.flow_mol[0].setub(17854)
 
     # Unfix all data
     m.rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
@@ -55,7 +58,7 @@ def create_ss_rankine_model():
 
     for unit in [m.rankine.fs.cooler]:
         unit.inlet.unfix()
-    m.rankine.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+    # m.rankine.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
 
     # Fix storage heat exchangers area and salt temperatures
     # m.rankine.fs.salt_hot_temperature = 831
@@ -183,7 +186,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
              b2.rankine.previous_salt_inventory_hot)]
 
 
-n_time_points = 1*24  # hours in a week
+n_time_points = 1*5  # hours in a week
 
 # create the multiperiod model object
 mp_rankine = MultiPeriodModel(
@@ -236,7 +239,7 @@ for week in range(n_weeks):
         blk.lmp_signal = weekly_prices[week][i]
     opt.solve(m, tee=True)
     tank_level.append(
-        [pyo.value(blks[i].rankine.fs.salt_inventory_hot)
+        [pyo.value(blks[i].rankine.salt_inventory_hot)
          for i in range(n_time_points)])
     net_power.append(
         [pyo.value(blks[i].rankine.fs.plant_power_out[0])
