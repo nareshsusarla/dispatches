@@ -27,6 +27,8 @@ plt.rc('axes', titlesize=24)
 def create_ss_rankine_model():
     p_lower_bound = 100  # MW
     p_upper_bound = 450  # MW
+    boiler_heat_max = 918e6  # in W
+    boiler_heat_min = 826e6  # 586e6  # in W
 
     m = pyo.ConcreteModel()
     m.rankine = usc.main()
@@ -42,6 +44,9 @@ def create_ss_rankine_model():
     # m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)
     m.rankine.fs.boiler.inlet.flow_mol[0].setlb(11804)
     m.rankine.fs.boiler.inlet.flow_mol[0].setub(17854)
+
+    # m.rankine.fs.boiler.heat_duty[0].setlb(boiler_heat_min)
+    # m.rankine.fs.boiler.heat_duty[0].setub(boiler_heat_max)
 
     # Unfix all data
     m.rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
@@ -106,6 +111,15 @@ def create_mp_rankine_block():
     #  DOF = 1
     print('DOFs within mp create 1 =', degrees_of_freedom(m))
     # Add coupling variable (next_power_output)
+    b1.previous_power = Var(
+        # b1.fs.time,
+        domain=NonNegativeReals,
+        initialize=400,
+        bounds=(100, 450),
+        # bounds=(0, 6739292),
+        doc="Previous period power (MW)"
+        )
+
     b1.previous_salt_inventory_hot = Var(
         # b1.fs.time,
         domain=NonNegativeReals,
@@ -139,6 +153,18 @@ def create_mp_rankine_block():
         doc="Cold salt inventory at the end of the hour (or time period), kg"
         )
 
+    @b1.fs.Constraint(doc="Plant ramping down constraint")
+    def constraint_ramp_down(b):
+        return (
+            b1.previous_power - 40 >=
+            b1.fs.plant_power_out[0])
+
+    @b1.fs.Constraint(doc="Plant ramping up constraint")
+    def constraint_ramp_up(b):
+        return (
+            b1.previous_power + 40 <=
+            b1.fs.plant_power_out[0])
+
     @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
     def constraint_salt_inventory_hot(b):
         return (
@@ -154,6 +180,13 @@ def create_mp_rankine_block():
             b1.previous_salt_inventory_cold
             - 3600*b1.fs.hxc.inlet_2.flow_mass[0]
             + 3600*b1.fs.hxd.inlet_1.flow_mass[0])
+
+    # @b1.fs.Constraint(doc="Maximum salt inventory at any time")
+    # def constraint_salt_inventory(b):
+    #     return (
+    #         b1.salt_inventory_hot +
+    #         b1.salt_inventory_cold == b1.fs.salt_amount)
+    # print('DOFs after mp create =', degrees_of_freedom(m))
 
     @b1.fs.Constraint(doc="Maximum previous salt inventory at any time")
     def constraint_salt_previous_inventory(b):
@@ -215,8 +248,8 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-power = [325, 325, 410, 410]
-lmp = [22.4929, 21.8439, 23.4379, 23.4379]
+power = [350, 325, 410, 410] # , 350, 325, 410, 410]
+lmp = [22.4929, 21.8439, 23.4379, 23.4379] # , 22.4929, 21.8439, 23.4379, 23.4379]
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
 
 count = 0
@@ -246,7 +279,7 @@ for blk in blks:
     count += 1
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
-blks[0].rankine.previous_salt_inventory_hot.fix(1)
+blks[0].rankine.previous_salt_inventory_hot.fix(3369646)
 
 n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
@@ -268,11 +301,20 @@ c = 0
 for blk in blks:
     print()
     print('Block {}'.format(c))
-    print('Previous salt inventory', value(blks[c].rankine.previous_salt_inventory_hot))
-    print('Salt from HXC (kg)', value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600)
-    print('Salt from HXD (kg)', value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600)
-    print('ESS HP split', value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
-    print('ESS BFP split', value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
+    print('Previous salt inventory',
+          value(blks[c].rankine.previous_salt_inventory_hot))
+    print('Salt from HXC (kg)',
+          value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600)
+    print('Salt from HXD (kg)',
+          value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600)
+    print('HXC Duty (MW)',
+          value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6)
+    print('HXD Duty (MW)',
+          value(blks[c].rankine.fs.hxd.heat_duty[0]) * 1e-6)
+    print('Split fraction to HXC',
+          value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
+    print('Split fraction to HXD',
+          value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
     c += 1
 
 n_weeks_to_plot = 1
