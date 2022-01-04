@@ -82,7 +82,6 @@ def create_ss_rankine_model():
 # plt.bar(x, (prices_used))
 # plt.xlabel("Hour")
 # plt.ylabel("LMP $/MWh")
-# plt.savefig("lmp_vs_hour.pdf")
 
 # weekly_prices = prices_used.reshape(52, 168)
 # plt.figure(figsize=(12, 8))
@@ -91,7 +90,6 @@ def create_ss_rankine_model():
 # plt.title("6 Representative Weeks")
 # plt.xlabel("Hour")
 # plt.ylabel("LMP $/MWh")
-# plt.savefig("lmp_vs_hour_6week.pdf")
 
 # plt.figure(figsize=(12, 8))
 # for week in range(0, 52):
@@ -99,7 +97,6 @@ def create_ss_rankine_model():
 # plt.title("52 Representative Weeks")
 # plt.xlabel("Hour")
 # plt.ylabel("LMP $/MWh")
-# plt.savefig("lmp_vs_hour_52week.pdf")
 
 # turbine_ramp_rate = 100
 # battery_ramp_rate = 50
@@ -296,7 +293,6 @@ color = 'tab:blue'
 ax2.set_ylabel('LMP [$/MWh]', color=color)
 ax2.plot(hours, lmp_array, color=color)
 ax2.tick_params(axis='y', labelcolor=color)
-plt.savefig("salt_level_lmp_vs_hour.pdf")
 plt.show()
 
 # n_weeks_to_plot = 1
