@@ -58,7 +58,7 @@ def create_ss_rankine_model():
 
     for unit in [m.rankine.fs.cooler]:
         unit.inlet.unfix()
-    # m.rankine.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+    m.rankine.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
 
     # Fix storage heat exchangers area and salt temperatures
     # m.rankine.fs.salt_hot_temperature = 831
@@ -82,6 +82,7 @@ def create_ss_rankine_model():
 # plt.bar(x, (prices_used))
 # plt.xlabel("Hour")
 # plt.ylabel("LMP $/MWh")
+# plt.savefig("lmp_vs_hour.pdf")
 
 # weekly_prices = prices_used.reshape(52, 168)
 # plt.figure(figsize=(12, 8))
@@ -90,6 +91,7 @@ def create_ss_rankine_model():
 # plt.title("6 Representative Weeks")
 # plt.xlabel("Hour")
 # plt.ylabel("LMP $/MWh")
+# plt.savefig("lmp_vs_hour_6week.pdf")
 
 # plt.figure(figsize=(12, 8))
 # for week in range(0, 52):
@@ -97,11 +99,10 @@ def create_ss_rankine_model():
 # plt.title("52 Representative Weeks")
 # plt.xlabel("Hour")
 # plt.ylabel("LMP $/MWh")
+# plt.savefig("lmp_vs_hour_52week.pdf")
 
 # turbine_ramp_rate = 100
 # battery_ramp_rate = 50
-
-
 def create_mp_rankine_block():
     m = create_ss_rankine_model()
     b1 = m.rankine
@@ -217,10 +218,10 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-power = [325, 325, 410, 410, 400, 400, 400]
-lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
+power = [325, 325, 410, 410]
+lmp = [22.4929, 21.8439, 23.4379, 23.4379]
+# lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
 
-# lmp = [50, 100, 80, 120, 90, 110, 70]
 count = 0
 # add market data for each block
 for blk in blks:
@@ -234,9 +235,17 @@ for blk in blks:
          + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24)))
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     blk.fix_power = pyo.Constraint(
-        expr=(blk.rankine.fs.plant_power_out[0] +
-              ((-1) * blk.rankine.fs.es_turbine.work_mechanical[0]) ==
-              power[count]))
+        expr=power[count] == (
+            blk.rankine.fs.plant_power_out[0]
+            + (-1e-6) * blk.rankine.fs.es_turbine.work_mechanical[0]
+        )
+    )
+    # blk.fix_power = pyo.Constraint(
+    #     expr=blk.dispatch == (
+    #         blk.rankine.fs.plant_power_out[0]
+    #         + (-1e-6) * blk.rankine.fs.es_turbine.work_mechanical[0]
+    #     )
+    # )
     count += 1
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
@@ -258,6 +267,16 @@ for week in range(n_weeks):
     net_power.append(
         [pyo.value(blks[i].rankine.fs.plant_power_out[0])
          for i in range(n_time_points)])
+c = 0
+for blk in blks:
+    print()
+    print('Block {}'.format(c))
+    print('Previous salt inventory', value(blks[c].rankine.previous_salt_inventory_hot))
+    print('Salt from HXC (kg)', value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600)
+    print('Salt from HXD (kg)', value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600)
+    print('ESS HP split', value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
+    print('ESS BFP split', value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
+    c += 1
 
 n_weeks_to_plot = 1
 hours = np.arange(n_time_points*n_weeks_to_plot)
@@ -277,6 +296,8 @@ color = 'tab:blue'
 ax2.set_ylabel('LMP [$/MWh]', color=color)
 ax2.plot(hours, lmp_array, color=color)
 ax2.tick_params(axis='y', labelcolor=color)
+plt.savefig("salt_level_lmp_vs_hour.pdf")
+plt.show()
 
 # n_weeks_to_plot = 1
 # hours = np.arange(n_time_points*n_weeks_to_plot)
