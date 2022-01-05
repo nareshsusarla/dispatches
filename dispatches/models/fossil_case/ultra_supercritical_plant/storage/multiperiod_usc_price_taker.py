@@ -9,6 +9,8 @@ import pyomo.environ as pyo
 from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
                            NonNegativeReals, TransformationFactory, Expression,
                            maximize, RangeSet, value, log, exp, Var)
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                   log_close_to_bounds)
 import numpy as np
 import copy
 # from random import random
@@ -25,20 +27,20 @@ plt.rc('axes', titlesize=24)
 
 
 def create_ss_rankine_model():
-    p_lower_bound = 100  # MW
+    p_lower_bound = 350  # MW
     p_upper_bound = 450  # MW
     boiler_heat_max = 918e6  # in W
-    boiler_heat_min = 586e6  # 586e6  # in W
+    boiler_heat_min = 626e6  # 586e6  # in W
 
     m = pyo.ConcreteModel()
     m.rankine = usc.main()
     # set bounds for net cycle power output
     m.rankine.fs.plant_power_out[0].unfix()
-    m.rankine.fs.eq_min_power = pyo.Constraint(
-        expr=m.rankine.fs.plant_power_out[0] >= p_lower_bound)
+    # m.rankine.fs.eq_min_power = pyo.Constraint(
+    #     expr=m.rankine.fs.plant_power_out[0] >= p_lower_bound)
 
-    m.rankine.fs.eq_max_power = pyo.Constraint(
-        expr=m.rankine.fs.plant_power_out[0] <= p_upper_bound)
+    # m.rankine.fs.eq_max_power = pyo.Constraint(
+    #     expr=m.rankine.fs.plant_power_out[0] <= p_upper_bound)
 
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()  # normally fixed
     # m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)
@@ -67,8 +69,8 @@ def create_ss_rankine_model():
 
     # Fix storage heat exchangers area and salt temperatures
     # m.rankine.fs.salt_hot_temperature = 831
-    m.rankine.fs.hxc.area.fix(1904)
-    m.rankine.fs.hxd.area.fix(1095)
+    m.rankine.fs.hxc.area.fix(1904)  # 1904
+    m.rankine.fs.hxd.area.fix(1095)  # 1095
     m.rankine.fs.hxc.outlet_2.temperature[0].fix(831)
     m.rankine.fs.hxd.inlet_1.temperature[0].fix(831)
     m.rankine.fs.hxd.outlet_1.temperature[0].fix(513.15)
@@ -219,8 +221,9 @@ def get_rankine_periodic_variable_pairs(b1, b2):
         b1: final time block
         b2: first time block
     """
+    # return
     return [(b1.rankine.salt_inventory_hot,
-             b2.rankine.previous_salt_inventory_hot)]#,
+              b2.rankine.previous_salt_inventory_hot)]#,
             # (b1.rankine.fs.plant_power_out[0],
             #  b2.rankine.previous_power)]
 
@@ -232,7 +235,8 @@ mp_rankine = MultiPeriodModel(
     n_time_points=n_time_points,
     process_model_func=create_mp_rankine_block,
     linking_variable_func=get_rankine_link_variable_pairs,
-    periodic_variable_func=get_rankine_periodic_variable_pairs)
+    periodic_variable_func=get_rankine_periodic_variable_pairs
+    )
 
 # you can pass arguments to your `process_model_func`
 # for each time period using a dict of dicts as shown here.
@@ -252,8 +256,10 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-power = [310, 325, 420, 400] # , 300, 325, 420, 400]
-lmp = [22.4929, 21.8439, 23.4379, 23.4379] # , 22.4929, 21.8439, 23.4379, 23.4379]
+power = [310, 325, 420, 400]  # , 310, 325, 420, 400]
+lmp = [21, 22, 50, 100]  # , 22.4929, 21.8439, 23.4379, 23.4379]
+# power = [400, 420, 325, 310]  # , 310, 325, 420, 400]
+# lmp = [100, 50, 22, 21]  # , 22.4929, 21.8439, 23.4379, 23.4379]
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
 
 count = 0
@@ -289,6 +295,7 @@ for blk in blks:
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
 blks[0].rankine.previous_salt_inventory_hot.fix(1)
+# blks[0].rankine.previous_salt_inventory_cold.fix(1)
 # blks[0].rankine.previous_power.fix(400)
 
 n_weeks = 1
@@ -307,13 +314,23 @@ for week in range(n_weeks):
     net_power.append(
         [pyo.value(blks[i].rankine.fs.plant_power_out[0])
          for i in range(n_time_points)])
+log_close_to_bounds(m)
+log_infeasible_constraints(m)
+
 c = 0
 for blk in blks:
     print()
     print('Block {}'.format(c))
-    print(' Boiler heat duty', value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6)
-    print(' Boiler flow mol (mol/s)', value(blks[c].rankine.fs.boiler.outlet.flow_mol[0]))
-    print(' Cycle efficiency (%)', value(blks[c].cycle_efficiency))
+    print(' Boiler heat duty',
+          value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6)
+    print(' Boiler flow mol (mol/s)',
+          value(blks[c].rankine.fs.boiler.outlet.flow_mol[0]))
+    print(' Cycle efficiency (%)',
+          value(blks[c].cycle_efficiency))
+    print(' Plant Power Out',
+          value(blks[c].rankine.fs.plant_power_out[0]))
+    print(' ES Turbine Power',
+          value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6))
     print(' Previous salt inventory',
           value(blks[c].rankine.previous_salt_inventory_hot))
     print(' Salt from HXC (kg)',
@@ -328,6 +345,22 @@ for blk in blks:
           value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
     print(' Split fraction to HXD',
           value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
+    print(' Salt flow HXC (kg)',
+          value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]))
+    print(' Salt flow HXD (kg)',
+          value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]))
+    print(' Steam flow HXC (kg)',
+          value(blks[c].rankine.fs.hxc.outlet_1.flow_mol[0]))
+    print(' Steam flow HXD (kg)',
+          value(blks[c].rankine.fs.hxd.outlet_2.flow_mol[0]))
+    print(' Delta T in HXC (kg)',
+          value(blks[c].rankine.fs.hxc.delta_temperature_in[0]))
+    print(' Delta T out HXC (kg)',
+          value(blks[c].rankine.fs.hxc.delta_temperature_out[0]))
+    print(' Delta T in HXD (kg)',
+          value(blks[c].rankine.fs.hxd.delta_temperature_in[0]))
+    print(' Delta T out HXD (kg)',
+          value(blks[c].rankine.fs.hxd.delta_temperature_out[0]))
     c += 1
 
 n_weeks_to_plot = 1
