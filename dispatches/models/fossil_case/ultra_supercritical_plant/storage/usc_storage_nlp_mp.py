@@ -624,7 +624,7 @@ def set_model_input(m):
     # m.main_steam_pressure * 1.1231)
 
     m.fs.es_turbine.ratioP.fix(0.0286)
-    m.fs.es_turbine.efficiency_isentropic.fix(0.8)
+    m.fs.es_turbine.efficiency_isentropic.fix(0.5)
     ###########################################################################
     #  ESS VHP and HP splitters                                               #
     ###########################################################################
