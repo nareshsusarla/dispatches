@@ -223,7 +223,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     """
     # return
     return [(b1.rankine.salt_inventory_hot,
-              b2.rankine.previous_salt_inventory_hot)]#,
+             b2.rankine.previous_salt_inventory_hot)]#,
             # (b1.rankine.fs.plant_power_out[0],
             #  b2.rankine.previous_power)]
 
@@ -257,7 +257,7 @@ m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
 power = [310, 325, 420, 400]  # , 310, 325, 420, 400]
-lmp = [21, 22, 50, 100]  # , 22.4929, 21.8439, 23.4379, 23.4379]
+lmp = [20, 22, 50, 100]  # , 22.4929, 21.8439, 23.4379, 23.4379]
 # power = [400, 420, 325, 310]  # , 310, 325, 420, 400]
 # lmp = [100, 50, 22, 21]  # , 22.4929, 21.8439, 23.4379, 23.4379]
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
@@ -300,7 +300,7 @@ blks[0].rankine.previous_salt_inventory_hot.fix(1)
 
 n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
-tank_level = []
+hot_tank_level = []
 net_power = []
 
 for week in range(n_weeks):
@@ -308,11 +308,12 @@ for week in range(n_weeks):
     # for (i, blk) in enumerate(blks):
     #     blk.lmp_signal = weekly_prices[week][i]
     opt.solve(m, tee=True)
-    tank_level.append(
+    hot_tank_level.append(
         [pyo.value(blks[i].rankine.salt_inventory_hot)
          for i in range(n_time_points)])
     net_power.append(
-        [pyo.value(blks[i].rankine.fs.plant_power_out[0])
+        # [pyo.value(blks[i].rankine.fs.plant_power_out[0])
+        [pyo.value(blks[i].net_power)
          for i in range(n_time_points)])
 log_close_to_bounds(m)
 log_infeasible_constraints(m)
@@ -333,10 +334,12 @@ for blk in blks:
           value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6))
     print(' Previous salt inventory',
           value(blks[c].rankine.previous_salt_inventory_hot))
-    print(' Salt from HXC (kg)',
-          value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600)
-    print(' Salt from HXD (kg)',
-          value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600)
+    print(' Salt from HXC (kg) [kg/s]: {} [{}]'.format(
+        value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600,
+        value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0])))
+    print(' Salt from HXD (kg) [kg/s]: {} [{}]'.format(
+        value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600,
+        value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0])))
     print(' HXC Duty (MW)',
           value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6)
     print(' HXD Duty (MW)',
@@ -345,21 +348,17 @@ for blk in blks:
           value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
     print(' Split fraction to HXD',
           value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
-    print(' Salt flow HXC (kg)',
-          value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]))
-    print(' Salt flow HXD (kg)',
-          value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]))
-    print(' Steam flow HXC (kg)',
+    print(' Steam flow HXC (mol/s)',
           value(blks[c].rankine.fs.hxc.outlet_1.flow_mol[0]))
-    print(' Steam flow HXD (kg)',
+    print(' Steam flow HXD (mol/s)',
           value(blks[c].rankine.fs.hxd.outlet_2.flow_mol[0]))
-    print(' Delta T in HXC (kg)',
+    print(' Delta T in HXC (K)',
           value(blks[c].rankine.fs.hxc.delta_temperature_in[0]))
-    print(' Delta T out HXC (kg)',
+    print(' Delta T out HXC (K)',
           value(blks[c].rankine.fs.hxc.delta_temperature_out[0]))
-    print(' Delta T in HXD (kg)',
+    print(' Delta T in HXD (K)',
           value(blks[c].rankine.fs.hxd.delta_temperature_in[0]))
-    print(' Delta T out HXD (kg)',
+    print(' Delta T out HXD (K)',
           value(blks[c].rankine.fs.hxd.delta_temperature_out[0]))
     c += 1
 
@@ -367,37 +366,55 @@ n_weeks_to_plot = 1
 hours = np.arange(n_time_points*n_weeks_to_plot)
 # lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
 lmp_array = np.asarray(lmp)
-tank_array = np.asarray(tank_level[0:n_weeks_to_plot]).flatten()
-fig, ax1 = plt.subplots(figsize=(12, 8))
+hot_tank_array = np.asarray(hot_tank_level[0:n_weeks_to_plot]).flatten()
+net_power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
 
-color = 'tab:green'
-ax1.set_xlabel('Hour')
-ax1.set_ylabel('Hot Tank Level [kg]', color=color)
-ax1.step(hours, tank_array, color=color)
-ax1.tick_params(axis='y', labelcolor=color)
+color = ['tab:green', 'b', 'r']
+plt.rcParams['lines.linewidth'] = 2
+font = {'size':16}
+plt.rc('font', **font)
+
+fig1, ax1 = plt.subplots(figsize=(10, 5))
+ax1.spines["top"].set_visible(False)
+ax1.spines["right"].set_visible(False)
+ax1.grid(linestyle=':', which='both',
+         color='#696969', alpha=0.20)
+ax1.set_xlabel('Time Period (hr)')
+ax1.set_ylabel('Hot Tank Level [kg]', color=color[2])
+ax1.step([x + 1 for x in hours], hot_tank_array,
+         marker='.', ms=10,
+         ls='-', lw=1,
+         color=color[2])
+ax1.tick_params(axis='y', labelcolor=color[2])
+ax1.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
 
 ax2 = ax1.twinx()
-color = 'tab:blue'
-ax2.set_ylabel('LMP [$/MWh]', color=color)
-ax2.plot(hours, lmp_array, color=color)
-ax2.tick_params(axis='y', labelcolor=color)
+ax2.set_ylabel('LMP [$/MWh]',
+               color=color[1])
+ax2.plot([x + 1 for x in hours], lmp_array,
+         marker='o', ls='-', lw=1,
+         color=color[1])
+ax2.tick_params(axis='y', labelcolor=color[1])
+
+fig2, ax3 = plt.subplots(figsize=(10, 5))
+ax3.spines["top"].set_visible(False)
+ax3.spines["right"].set_visible(False)
+ax3.grid(linestyle=':', which='both',
+         color='#696969', alpha=0.20)
+ax3.set_xlabel('Time Period (hr)')
+ax3.set_ylabel('Net Power [MW]', color=color[0])
+ax3.plot([x + 1 for x in hours], net_power_array,
+         marker='.', ms=10,
+         ls='-', lw=1,
+         color=color[0])
+ax3.tick_params(axis='y', labelcolor=color[0])
+ax3.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
+
+ax4 = ax3.twinx()
+ax4.set_ylabel('LMP [$/MWh]',
+               color=color[1])
+ax4.plot([x + 1 for x in hours], lmp_array,
+         marker='o', ls='-', lw=1,
+         color=color[1])
+ax4.tick_params(axis='y', labelcolor=color[1])
 plt.show()
-
-# n_weeks_to_plot = 1
-# hours = np.arange(n_time_points*n_weeks_to_plot)
-# lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
-# power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
-
-# fig, ax1 = plt.subplots(figsize=(12, 8))
-
-# color = 'tab:red'
-# ax1.set_xlabel('Hour')
-# ax1.set_ylabel('Power Output [MW]', color=color)
-# ax1.step(hours, power_array, color=color)
-# ax1.tick_params(axis='y', labelcolor=color)
-
-# ax2 = ax1.twinx()
-# color = 'tab:blue'
-# ax2.set_ylabel('LMP [$/MWh]', color=color)
-# ax2.plot(hours, lmp_array, color=color)
-# ax2.tick_params(axis='y', labelcolor=color)
