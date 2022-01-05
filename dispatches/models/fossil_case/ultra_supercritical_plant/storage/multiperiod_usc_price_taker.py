@@ -252,7 +252,7 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-power = [300, 325, 420, 400] # , 300, 325, 420, 400]
+power = [310, 325, 420, 400] # , 300, 325, 420, 400]
 lmp = [22.4929, 21.8439, 23.4379, 23.4379] # , 22.4929, 21.8439, 23.4379, 23.4379]
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
 
@@ -273,6 +273,11 @@ for blk in blks:
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     blk.fix_power = pyo.Constraint(
         expr=power[count] == blk.net_power
+    )
+    # Cycle efficiency
+    blk.cycle_efficiency = Expression(
+        expr=blk.net_power / \
+        blk.rankine.fs.plant_heat_duty[0] * 100
     )
     # blk.fix_power = pyo.Constraint(
     #     expr=blk.dispatch == (
@@ -306,19 +311,22 @@ c = 0
 for blk in blks:
     print()
     print('Block {}'.format(c))
-    print('Previous salt inventory',
+    print(' Boiler heat duty', value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6)
+    print(' Boiler flow mol (mol/s)', value(blks[c].rankine.fs.boiler.outlet.flow_mol[0]))
+    print(' Cycle efficiency (%)', value(blks[c].cycle_efficiency))
+    print(' Previous salt inventory',
           value(blks[c].rankine.previous_salt_inventory_hot))
-    print('Salt from HXC (kg)',
+    print(' Salt from HXC (kg)',
           value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600)
-    print('Salt from HXD (kg)',
+    print(' Salt from HXD (kg)',
           value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600)
-    print('HXC Duty (MW)',
+    print(' HXC Duty (MW)',
           value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6)
-    print('HXD Duty (MW)',
+    print(' HXD Duty (MW)',
           value(blks[c].rankine.fs.hxd.heat_duty[0]) * 1e-6)
-    print('Split fraction to HXC',
+    print(' Split fraction to HXC',
           value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
-    print('Split fraction to HXD',
+    print(' Split fraction to HXD',
           value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
     c += 1
 
