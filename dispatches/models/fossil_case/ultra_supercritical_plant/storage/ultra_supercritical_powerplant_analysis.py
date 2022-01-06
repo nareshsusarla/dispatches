@@ -83,7 +83,7 @@ matplotlib.rc('font', size=24)
 plt.rc('axes', titlesize=24)
 
 
-def usc_without_boiler_efficiency(m, solver):
+def usc_without_boiler_efficiency(m):
 
     #   Solving the flowsheet and check result
     # unfix boiler flow and remove bounds
@@ -305,7 +305,7 @@ def build_plant_model(method=None):
     if method == "with_efficiency":
         m = usc_with_boiler_efficiency(m)
     else:
-        m = usc_with_boiler_efficiency(m)
+        m = usc_without_boiler_efficiency(m)
 
     return m
 
@@ -357,7 +357,7 @@ if __name__ == "__main__":
     solver = get_solver("ipopt", optarg)
 
     # Build ultra supercriticla power plant model for analysis
-    method = "with_efficiency"
-    m = build_plant_model(method="with_efficiency")
+    method = "without_efficiency"
+    m = build_plant_model(method=method)
 
     model_analysis(m)
