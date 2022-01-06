@@ -36,16 +36,14 @@ def create_ss_rankine_model():
     m.rankine = usc.main()
     # set bounds for net cycle power output
     m.rankine.fs.plant_power_out[0].unfix()
-    # m.rankine.fs.eq_min_power = pyo.Constraint(
-    #     expr=m.rankine.fs.plant_power_out[0] >= p_lower_bound)
-
-    # m.rankine.fs.eq_max_power = pyo.Constraint(
-    #     expr=m.rankine.fs.plant_power_out[0] <= p_upper_bound)
 
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()  # normally fixed
     # m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)
-    m.rankine.fs.boiler.inlet.flow_mol[0].setlb(11804)
-    m.rankine.fs.boiler.inlet.flow_mol[0].setub(17854)
+    # m.rankine.fs.boiler.inlet.flow_mol[0].setlb(11804)
+    # m.rankine.fs.boiler.inlet.flow_mol[0].setub(17854)
+
+    m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)
+    m.rankine.fs.boiler.inlet.flow_mol[0].setub(None)
 
     m.rankine.fs.boiler.heat_duty[0].setlb(boiler_heat_min)
     m.rankine.fs.boiler.heat_duty[0].setub(boiler_heat_max)
@@ -277,6 +275,13 @@ for blk in blks:
     blk.net_power = Expression(expr=(
         blk.rankine.fs.plant_power_out[0]
         + (-1e-6) * blk.rankine.fs.es_turbine.work_mechanical[0]))
+
+    blk.eq_min_power = pyo.Constraint(
+        expr=blk.net_power >= 100)
+
+    blk.eq_max_power = pyo.Constraint(
+        expr=blk.net_power <= 450)
+
     blk.revenue = lmp[count]*blk.net_power
     # blk.revenue = blk.lmp_signal*blk_rankine.fs.plant_power_out[0]
     blk.operating_cost = pyo.Expression(expr=(
@@ -301,7 +306,7 @@ for blk in blks:
     count += 1
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
-blks[0].rankine.previous_salt_inventory_hot.fix(1)
+blks[0].rankine.previous_salt_inventory_cold.fix(1)
 # blks[0].rankine.previous_salt_inventory_cold.fix(1)
 # blks[0].rankine.previous_power.fix(400)
 
