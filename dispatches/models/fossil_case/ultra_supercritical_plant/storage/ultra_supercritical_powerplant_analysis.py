@@ -182,7 +182,7 @@ def usc_without_boiler_efficiency(m, solver):
     return m
 
 
-def usc_with_boiler_efficiency(m, solver):
+def usc_with_boiler_efficiency(m):
 
     #   Solving the flowsheet and check result
     # unfix boiler flow and remove bounds
