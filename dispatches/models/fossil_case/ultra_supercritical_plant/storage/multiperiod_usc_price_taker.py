@@ -265,6 +265,7 @@ lmp = [20, 22, 50, 100]  # , 22.4929, 21.8439, 23.4379, 23.4379]
 count = 0
 # add market data for each block
 for blk in blks:
+    # dummy_water_cost = 1.5e-2 # $/mol
     blk_rankine = blk.rankine
     blk.lmp_signal = pyo.Param(default=0, mutable=True)
     blk.net_power = Expression(expr=(
@@ -272,10 +273,14 @@ for blk in blks:
         + (-1e-6) * blk.rankine.fs.es_turbine.work_mechanical[0]))
     blk.revenue = lmp[count]*blk.net_power
     # blk.revenue = blk.lmp_signal*blk_rankine.fs.plant_power_out[0]
-    blk.operating_cost = pyo.Expression(expr=(
-        (blk_rankine.fs.operating_cost
-         + blk_rankine.fs.plant_fixed_operating_cost
-         + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24)))
+    blk.operating_cost = pyo.Expression(
+        expr=(
+            (blk_rankine.fs.operating_cost
+             + blk_rankine.fs.plant_fixed_operating_cost
+             + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24)
+            # + blk_rankine.fs.condenser_mix.makeup.flow_mol[0] * dummy_water_cost * 3600
+        )
+    )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     blk.fix_power = pyo.Constraint(
         expr=power[count] == blk.net_power
@@ -321,45 +326,49 @@ log_infeasible_constraints(m)
 c = 0
 for blk in blks:
     print()
-    print('Block {}'.format(c))
-    print(' Boiler heat duty',
-          value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6)
-    print(' Boiler flow mol (mol/s)',
-          value(blks[c].rankine.fs.boiler.outlet.flow_mol[0]))
-    print(' Cycle efficiency (%)',
-          value(blks[c].cycle_efficiency))
-    print(' Plant Power Out',
-          value(blks[c].rankine.fs.plant_power_out[0]))
-    print(' ES Turbine Power',
-          value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6))
-    print(' Previous salt inventory',
-          value(blks[c].rankine.previous_salt_inventory_hot))
-    print(' Salt from HXC (kg) [kg/s]: {} [{}]'.format(
+    print('Period {}'.format(c+1))
+    print(' Previous hot salt inventory: {:.4f}'.format(
+        value(blks[c].rankine.previous_salt_inventory_hot)))
+    print(' Hot salt inventory: {:.4f}'.format(
+        value(blks[c].rankine.salt_inventory_hot)))
+    print(' Boiler heat duty: {:.4f}'.format(
+        value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6))
+    print(' Boiler flow mol (mol/s): {:.4f}'.format(
+        value(blks[c].rankine.fs.boiler.outlet.flow_mol[0])))
+    print(' Cycle efficiency (%): {:.4f}'.format(
+        value(blks[c].cycle_efficiency)))
+    print(' Net power (MW): {} (Plant Power Out: {:.4f}, ES Turbine: {:.4f})'.format(
+        value(blks[c].net_power),
+        value(blks[c].rankine.fs.plant_power_out[0]),
+        value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6)))
+    print(' Salt from HXC (kg) [kg/s]: {:.4f} [{:.4f}]'.format(
         value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600,
         value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0])))
-    print(' Salt from HXD (kg) [kg/s]: {} [{}]'.format(
+    print(' Salt from HXD (kg) [kg/s]: {:.4f} [{:.4f}]'.format(
         value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600,
         value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0])))
-    print(' HXC Duty (MW)',
-          value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6)
-    print(' HXD Duty (MW)',
-          value(blks[c].rankine.fs.hxd.heat_duty[0]) * 1e-6)
-    print(' Split fraction to HXC',
-          value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
-    print(' Split fraction to HXD',
-          value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
-    print(' Steam flow HXC (mol/s)',
-          value(blks[c].rankine.fs.hxc.outlet_1.flow_mol[0]))
-    print(' Steam flow HXD (mol/s)',
-          value(blks[c].rankine.fs.hxd.outlet_2.flow_mol[0]))
-    print(' Delta T in HXC (K)',
-          value(blks[c].rankine.fs.hxc.delta_temperature_in[0]))
-    print(' Delta T out HXC (K)',
-          value(blks[c].rankine.fs.hxc.delta_temperature_out[0]))
-    print(' Delta T in HXD (K)',
-          value(blks[c].rankine.fs.hxd.delta_temperature_in[0]))
-    print(' Delta T out HXD (K)',
-          value(blks[c].rankine.fs.hxd.delta_temperature_out[0]))
+    print(' HXC Duty (MW): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6))
+    print(' HXD Duty (MW): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.heat_duty[0]) * 1e-6))
+    print(' Split fraction to HXC: {:.4f}'.format(
+        value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"])))
+    print(' Split fraction to HXD: {:.4f}'.format(
+        value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"])))
+    print(' Steam flow HXC (mol/s): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.outlet_1.flow_mol[0])))
+    print(' Steam flow HXD (mol/s): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.outlet_2.flow_mol[0])))
+    print(' Makeup water flow: {:.6f}'.format(
+        value(blks[c].rankine.fs.condenser_mix.makeup.flow_mol[0])))
+    print(' Delta T in HXC (K): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.delta_temperature_in[0])))
+    print(' Delta T out HXC (K): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.delta_temperature_out[0])))
+    print(' Delta T in HXD (K): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.delta_temperature_in[0])))
+    print(' Delta T out HXD (K): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.delta_temperature_out[0])))
     c += 1
 
 n_weeks_to_plot = 1
@@ -395,6 +404,7 @@ ax2.plot([x + 1 for x in hours], lmp_array,
          marker='o', ls='-', lw=1,
          color=color[1])
 ax2.tick_params(axis='y', labelcolor=color[1])
+# plt.savefig('hot_tank_lmp_vs_hours.png')
 
 fig2, ax3 = plt.subplots(figsize=(10, 5))
 ax3.spines["top"].set_visible(False)
@@ -417,4 +427,5 @@ ax4.plot([x + 1 for x in hours], lmp_array,
          marker='o', ls='-', lw=1,
          color=color[1])
 ax4.tick_params(axis='y', labelcolor=color[1])
+# plt.savefig('net_power_lmp_vs_hours.png')
 plt.show()
