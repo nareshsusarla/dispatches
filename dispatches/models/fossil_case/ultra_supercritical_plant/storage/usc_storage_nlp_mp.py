@@ -521,8 +521,8 @@ def _make_constraints(m, method=None):
         doc="Boiler efficiency in fraction"
     )
     m.fs.coal_heat_duty = Var(
-        initialize=1000000,
-        bounds=(0, 1e15),
+        initialize=1000,
+        bounds=(0, 1e5),
         doc="Coal heat duty supplied to boiler (MW)")
 
     if method == "with_efficiency":
@@ -830,14 +830,19 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     ###########################################################################
     #  Operating hours                                                        #
     ###########################################################################
-    m.number_hours_per_day = 6
+    m.number_hours_per_day = 24
     m.number_of_years = 30
 
     m.fs.hours_per_day = Var(
         initialize=m.number_hours_per_day,
-        bounds=(0, 12),
+        bounds=(0, 24),
         doc='Estimated number of hours of charging per day'
     )
+    # m.fs.hours_per_day = Param(
+    #     initialize=24,
+    #     # bounds=(0, 25),
+    #     doc='Estimated number of hours of charging per day'
+    # )
 
     # Fix number of hours of discharging to 6
     m.fs.hours_per_day.fix(m.number_hours_per_day)
@@ -1475,7 +1480,7 @@ if __name__ == "__main__":
     # m = build_model(m_ready,
     #                 scenario=i)
     # m_chg, solver = main()
-    method = "without_efficiency"
+    method = "with_efficiency"
     m_chg = main(method=method)
     m_chg.fs.lmp = Var(
         m_chg.fs.time,
