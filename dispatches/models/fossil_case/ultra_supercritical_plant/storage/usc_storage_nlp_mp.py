@@ -1489,7 +1489,7 @@ if __name__ == "__main__":
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(120)  # 80
+    m_chg.fs.lmp[0].fix(80)  # 80
     # m_chg.cycle = 'discharge'
     # m = model_analysis(m_chg,
     #                    solver,
