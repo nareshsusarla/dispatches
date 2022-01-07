@@ -25,6 +25,7 @@ import matplotlib
 matplotlib.rc('font', size=24)
 plt.rc('axes', titlesize=24)
 
+method = "with_efficiency" # options: with_efficiency and without_efficiency
 
 def create_ss_rankine_model():
     power_max = 436 # in MW
@@ -48,33 +49,31 @@ def create_ss_rankine_model():
         expr=m.rankine.fs.net_power <= power_max
     )
 
-    # Calculate cycle and boiler efficiencies
-    m.rankine.fs.boiler_eff = Expression(
-        expr=0.2143 * (m.rankine.fs.net_power / power_max)
-        + 0.7357,
-        doc="Boiler efficiency in fraction"
-    )
-    m.rankine.fs.cycle_efficiency = Expression(
-        expr=m.rankine.fs.net_power / \
-        m.rankine.fs.plant_heat_duty[0] * m.rankine.fs.boiler_eff * 100,
-        doc="Cycle efficiency in %"
-    )
+    if method == "with_efficiency":
+        # Calculate cycle and boiler efficiencies
+        m.rankine.fs.boiler_eff = Expression(
+            expr=0.2143 * (m.rankine.fs.net_power / power_max)
+            + 0.7357,
+            doc="Boiler efficiency in fraction"
+        )
+        m.rankine.fs.cycle_efficiency = Expression(
+            expr=m.rankine.fs.net_power / \
+            m.rankine.fs.plant_heat_duty[0] * m.rankine.fs.boiler_eff * 100,
+            doc="Cycle efficiency in %"
+        )
 
     # Unfix data
-    m.rankine.fs.plant_power_out[0].unfix()
-
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()  # normally fixed
     # m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)
     # m.rankine.fs.boiler.inlet.flow_mol[0].setlb(11804)
     # m.rankine.fs.boiler.inlet.flow_mol[0].setub(17854)
-
     m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)
     m.rankine.fs.boiler.inlet.flow_mol[0].setub(None)
     m.rankine.fs.boiler.outlet.flow_mol[0].setlb(1)
     m.rankine.fs.boiler.outlet.flow_mol[0].setub(None)
 
-    m.rankine.fs.boiler.heat_duty[0].setlb(boiler_heat_min)
-    m.rankine.fs.boiler.heat_duty[0].setub(boiler_heat_max)
+    # m.rankine.fs.boiler.heat_duty[0].setlb(boiler_heat_min)
+    # m.rankine.fs.boiler.heat_duty[0].setub(boiler_heat_max)
 
     # Unfix storage system data
     m.rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
@@ -306,7 +305,8 @@ for blk in blks:
         expr=(
             (blk_rankine.fs.operating_cost
              + blk_rankine.fs.plant_fixed_operating_cost
-             + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24))
+             + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24)
+        )
     )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     # blk.fix_power = pyo.Constraint(
@@ -356,10 +356,11 @@ for blk in blks:
         value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6)))
     print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue)))
     print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost)))
-    print(' Cycle efficiency (%): {:.4f}'.format(
-        value(blks[c].rankine.fs.cycle_efficiency)))
-    print(' Boiler efficiency (%): {:.4f}'.format(
-        value(blks[c].rankine.fs.boiler_eff) * 100))
+    if method == "with_efficiency":
+        print(' Cycle efficiency (%): {:.4f}'.format(
+            value(blks[c].rankine.fs.cycle_efficiency)))
+        print(' Boiler efficiency (%): {:.4f}'.format(
+            value(blks[c].rankine.fs.boiler_eff) * 100))
     print(' Boiler heat duty: {:.4f}'.format(
         value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6))
     print(' Boiler flow mol (mol/s): {:.4f}'.format(
@@ -401,19 +402,29 @@ hours = np.arange(n_time_points*n_weeks_to_plot)
 # lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
 lmp_array = np.asarray(lmp[0:n_time_points])
 tank_array = np.asarray(tank_level[0:n_weeks_to_plot]).flatten()
-fig, ax1 = plt.subplots(figsize=(12, 8))
+fig, ax1 = plt.subplots(figsize=(10, 5))
 
 color = 'tab:green'
 ax1.set_xlabel('Hour')
 ax1.set_ylabel('Hot Tank Level [kg]', color=color)
-ax1.step(hours, tank_array, color=color)
+ax1.spines["top"].set_visible(False)
+ax1.spines["right"].set_visible(False)
+ax1.grid(linestyle=':', which='both',
+         color='gray', alpha=0.20)
+ax1.step([x + 1 for x in hours], tank_array,
+         marker='o', ms=8,
+         color=color)
 ax1.tick_params(axis='y', labelcolor=color)
+ax1.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
 
 ax2 = ax1.twinx()
-color = 'tab:blue'
+color = 'b'
 ax2.set_ylabel('LMP [$/MWh]', color=color)
-ax2.plot(hours, lmp_array, color=color)
+ax2.plot([x + 1 for x in hours], lmp_array,
+         marker='o', ms=8,
+         color=color)
 ax2.tick_params(axis='y', labelcolor=color)
+# plt.savefig('multiperiod_new_tank_level_lmp_vs_hours.png')
 plt.show()
 
 # n_weeks_to_plot = 1
