@@ -316,7 +316,7 @@ def model_analysis(m):
     cycle_eff = []
 
     m.capacity_factor = Param(initialize=1, mutable=True)
-    capacity_factor_list = [1, 0.9, 0.8, 0.7, .65]
+    capacity_factor_list = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]
 
     for cf in capacity_factor_list:
         m.fs.plant_power_out[0].fix(cf*436)
@@ -331,20 +331,23 @@ def model_analysis(m):
     cf_array = np.asarray(cf_list)
     opex_array = np.asarray(opex_list)
     cycle_array = np.asarray(cycle_eff)
-    fig, ax1 = plt.subplots(figsize=(12, 8))
+    fig1, ax1 = plt.subplots(figsize=(12, 8))
 
     color = 'tab:green'
     ax1.set_xlabel('Capacity Factor (%)')
     ax1.set_ylabel('Operating Cost ($/MWh)', color=color)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.grid(linestyle=':', which='both', color='gray', alpha=0.30)
     ax1.plot(cf_array, opex_array, marker='o', markersize=10, color=color)
     ax1.tick_params(axis='y', labelcolor=color)
 
     color = 'b'
     ax2 = ax1.twinx()
-    # ax1.set_xlabel('Capacity Factor (%)')
     ax2.set_ylabel('Cycle Efficiency (%)', color=color)
     ax2.plot(cf_array, cycle_array, marker='o', markersize=10, color=color)
     ax2.tick_params(axis='y', labelcolor=color)
+    # plt.savefig('usc_analysis_without_eff.png')
     plt.show()
 
 
