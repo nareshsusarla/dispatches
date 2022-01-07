@@ -157,7 +157,7 @@ m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
 power = [310, 325, 420, 400] # in MW
-lmp = [2, 2.2, 5, 10] # in $/MWh
+lmp = [4, 10, 50, 100] # in $/MWh
 
 count = 0
 # add market data for each block
@@ -166,11 +166,7 @@ for blk in blks:
     blk.lmp_signal = pyo.Param(default=0, mutable=True)
     blk.revenue = lmp[count]*blk.rankine.fs.net_power
     blk.operating_cost = pyo.Expression(
-        expr=(
-            (blk_rankine.fs.operating_cost
-             + blk_rankine.fs.plant_fixed_operating_cost
-             + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24)
-        )
+        expr=blk_rankine.fs.operating_cost * blk.rankine.fs.net_power
     )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     # blk.fix_power = pyo.Constraint(
