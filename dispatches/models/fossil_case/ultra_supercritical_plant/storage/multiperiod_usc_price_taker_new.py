@@ -27,14 +27,40 @@ plt.rc('axes', titlesize=24)
 
 
 def create_ss_rankine_model():
-    p_lower_bound = 350  # MW
-    p_upper_bound = 450  # MW
+    power_max = 436 # in MW
+    power_min = int(0.65 * power_max) # 283 in MW
     boiler_heat_max = 918e6  # in W
-    boiler_heat_min = 626e6  # 586e6  # in W
+    # boiler_heat_min = 626e6  # in MW
+    boiler_heat_min = 586e6  # in W
 
     m = pyo.ConcreteModel()
     m.rankine = usc.main()
-    # set bounds for net cycle power output
+
+    # Set bounds for net power output
+    m.rankine.fs.net_power = Expression(
+        expr=(m.rankine.fs.plant_power_out[0]
+              + (-1e-6) * m.rankine.fs.es_turbine.work_mechanical[0])
+    )
+    m.rankine.fs.eq_min_power = pyo.Constraint(
+        expr=m.rankine.fs.net_power >= power_min
+    )
+    m.rankine.fs.eq_max_power = pyo.Constraint(
+        expr=m.rankine.fs.net_power <= power_max
+    )
+
+    # Calculate cycle and boiler efficiencies
+    m.rankine.fs.boiler_eff = Expression(
+        expr=0.2143 * (m.rankine.fs.net_power / power_max)
+        + 0.7357,
+        doc="Boiler efficiency in fraction"
+    )
+    m.rankine.fs.cycle_efficiency = Expression(
+        expr=m.rankine.fs.net_power / \
+        m.rankine.fs.plant_heat_duty[0] * m.rankine.fs.boiler_eff * 100,
+        doc="Cycle efficiency in %"
+    )
+
+    # Unfix data
     m.rankine.fs.plant_power_out[0].unfix()
 
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()  # normally fixed
@@ -44,11 +70,13 @@ def create_ss_rankine_model():
 
     m.rankine.fs.boiler.inlet.flow_mol[0].setlb(1)
     m.rankine.fs.boiler.inlet.flow_mol[0].setub(None)
+    m.rankine.fs.boiler.outlet.flow_mol[0].setlb(1)
+    m.rankine.fs.boiler.outlet.flow_mol[0].setub(None)
 
     m.rankine.fs.boiler.heat_duty[0].setlb(boiler_heat_min)
     m.rankine.fs.boiler.heat_duty[0].setub(boiler_heat_max)
 
-    # Unfix all data
+    # Unfix storage system data
     m.rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
     m.rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()
     for salt_hxc in [m.rankine.fs.hxc]:
@@ -262,7 +290,7 @@ blks = mp_rankine.get_active_process_blocks()
 # lmp = [21, 22, 50, 100]  # , 22.4929, 21.8439, 23.4379, 23.4379]
 power = [310, 325, 420, 400] #, 310, 325, 420, 400, 310, 325, 420, 400,
          # 310, 325, 420, 400, 310, 325, 420, 400, 310, 325, 420, 400]
-lmp = [10, 20, 50, 100] #, 21, 22, 50, 100, 21, 22, 50, 100,
+lmp = [10, 22, 50, 100] #, 21, 22, 50, 100, 21, 22, 50, 100,
        # 21, 22, 50, 100, 21, 22, 50, 100, 21, 22, 50, 100]
 
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
@@ -272,31 +300,18 @@ count = 0
 for blk in blks:
     blk_rankine = blk.rankine
     blk.lmp_signal = pyo.Param(default=0, mutable=True)
-    blk.net_power = Expression(expr=(
-        blk.rankine.fs.plant_power_out[0]
-        + (-1e-6) * blk.rankine.fs.es_turbine.work_mechanical[0]))
-
-    blk.eq_min_power = pyo.Constraint(
-        expr=blk.net_power >= 100)
-
-    blk.eq_max_power = pyo.Constraint(
-        expr=blk.net_power <= 450)
-
-    blk.revenue = lmp[count]*blk.net_power
+    blk.revenue = lmp[count]*blk.rankine.fs.net_power
     # blk.revenue = blk.lmp_signal*blk_rankine.fs.plant_power_out[0]
-    blk.operating_cost = pyo.Expression(expr=(
-        (blk_rankine.fs.operating_cost
-         + blk_rankine.fs.plant_fixed_operating_cost
-         + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24)))
+    blk.operating_cost = pyo.Expression(
+        expr=(
+            (blk_rankine.fs.operating_cost
+             + blk_rankine.fs.plant_fixed_operating_cost
+             + blk_rankine.fs.plant_variable_operating_cost) / (365 * 24))
+    )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     # blk.fix_power = pyo.Constraint(
-    #     expr=power[count] == blk.net_power
+    #     expr=power[count] == blk.rankine.fs.net_power
     # )
-    # Cycle efficiency
-    blk.cycle_efficiency = Expression(
-        expr=blk.net_power / \
-        blk.rankine.fs.plant_heat_duty[0] * 100
-    )
     # blk.fix_power = pyo.Constraint(
     #     expr=blk.dispatch == (
     #         blk.rankine.fs.plant_power_out[0]
@@ -306,8 +321,8 @@ for blk in blks:
     count += 1
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
+# blks[0].rankine.previous_salt_inventory_hot.fix(1)
 blks[0].rankine.previous_salt_inventory_cold.fix(1)
-# blks[0].rankine.previous_salt_inventory_cold.fix(1)
 # blks[0].rankine.previous_power.fix(400)
 
 n_weeks = 1
@@ -324,7 +339,7 @@ for week in range(n_weeks):
         [pyo.value(blks[i].rankine.salt_inventory_hot)
          for i in range(n_time_points)])
     net_power.append(
-        [pyo.value(blks[i].rankine.fs.plant_power_out[0])
+        [pyo.value(blks[i].rankine.fs.net_power)
          for i in range(n_time_points)])
 log_close_to_bounds(m)
 log_infeasible_constraints(m)
@@ -333,46 +348,52 @@ c = 0
 for blk in blks:
     print()
     print('Block {}'.format(c))
-    print(' Boiler heat duty',
-          value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6)
-    print(' Boiler flow mol (mol/s)',
-          value(blks[c].rankine.fs.boiler.outlet.flow_mol[0]))
-    print(' Cycle efficiency (%)',
-          value(blks[c].cycle_efficiency))
-    print(' Plant Power Out',
-          value(blks[c].rankine.fs.plant_power_out[0]))
-    print(' ES Turbine Power',
-          value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6))
-    print(' Previous salt inventory',
-          value(blks[c].rankine.previous_salt_inventory_hot))
-    print(' Salt from HXC (kg)',
-          value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600)
-    print(' Salt from HXD (kg)',
-          value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600)
-    print(' HXC Duty (MW)',
-          value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6)
-    print(' HXD Duty (MW)',
-          value(blks[c].rankine.fs.hxd.heat_duty[0]) * 1e-6)
-    print(' Split fraction to HXC',
-          value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"]))
-    print(' Split fraction to HXD',
-          value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"]))
-    print(' Salt flow HXC (kg)',
-          value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]))
-    print(' Salt flow HXD (kg)',
-          value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]))
-    print(' Steam flow HXC (kg)',
-          value(blks[c].rankine.fs.hxc.outlet_1.flow_mol[0]))
-    print(' Steam flow HXD (kg)',
-          value(blks[c].rankine.fs.hxd.outlet_2.flow_mol[0]))
-    print(' Delta T in HXC (kg)',
-          value(blks[c].rankine.fs.hxc.delta_temperature_in[0]))
-    print(' Delta T out HXC (kg)',
-          value(blks[c].rankine.fs.hxc.delta_temperature_out[0]))
-    print(' Delta T in HXD (kg)',
-          value(blks[c].rankine.fs.hxd.delta_temperature_in[0]))
-    print(' Delta T out HXD (kg)',
-          value(blks[c].rankine.fs.hxd.delta_temperature_out[0]))
+    print(' Net power: {:.4f}'.format(
+        value(blks[c].rankine.fs.net_power)))
+    print(' Plant Power Out: {:.4f}'.format(
+        value(blks[c].rankine.fs.plant_power_out[0])))
+    print(' ES Turbine Power: {:.4f}'.format(
+        value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6)))
+    print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue)))
+    print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost)))
+    print(' Cycle efficiency (%): {:.4f}'.format(
+        value(blks[c].rankine.fs.cycle_efficiency)))
+    print(' Boiler efficiency (%): {:.4f}'.format(
+        value(blks[c].rankine.fs.boiler_eff) * 100))
+    print(' Boiler heat duty: {:.4f}'.format(
+        value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6))
+    print(' Boiler flow mol (mol/s): {:.4f}'.format(
+        value(blks[c].rankine.fs.boiler.outlet.flow_mol[0])))
+    print(' Previous salt inventory: {:.4f}'.format(
+        value(blks[c].rankine.previous_salt_inventory_hot)))
+    print(' Salt from HXC (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600))
+    print(' Salt from HXD (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600))
+    print(' HXC Duty (MW): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6))
+    print(' HXD Duty (MW): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.heat_duty[0]) * 1e-6))
+    print(' Split fraction to HXC: {:.4f}'.format(
+        value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"])))
+    print(' Split fraction to HXD: {:.4f}'.format(
+        value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"])))
+    print(' Salt flow HXC (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0])))
+    print(' Salt flow HXD (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0])))
+    print(' Steam flow HXC (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.outlet_1.flow_mol[0])))
+    print(' Steam flow HXD (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.outlet_2.flow_mol[0])))
+    print(' Delta T in HXC (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.delta_temperature_in[0])))
+    print(' Delta T out HXC (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.delta_temperature_out[0])))
+    print(' Delta T in HXD (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.delta_temperature_in[0])))
+    print(' Delta T out HXD (kg): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.delta_temperature_out[0])))
     c += 1
 
 n_weeks_to_plot = 1
@@ -397,7 +418,7 @@ plt.show()
 
 # n_weeks_to_plot = 1
 # hours = np.arange(n_time_points*n_weeks_to_plot)
-# lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
+# # lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
 # power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
 
 # fig, ax1 = plt.subplots(figsize=(12, 8))
