@@ -994,7 +994,7 @@ def add_bounds(m):
     # Maximum flow/heat is calculated solving no storage case with power
     # max = 436. Minimum flow/heat is calculated solving no storage mode
     # with min power = 283 (0.65*p_max)
-    # m.flow_max = m.main_flow  # in mol/s
+    m.flow_max = m.main_flow  # in mol/s
     m.flow_min = 11804  # in mol/s
     m.boiler_heat_max = 918e6  # in W
     m.boiler_heat_min = 586e6  # in W
@@ -1066,7 +1066,7 @@ def add_bounds(m):
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxd.area.setlb(0)
     m.fs.hxd.area.setub(6000)  # 5000
-    m.fs.hxd.delta_temperature_in.setlb(5)
+    m.fs.hxd.delta_temperature_in.setlb(4.9)
     m.fs.hxd.delta_temperature_out.setlb(10)
     m.fs.hxd.delta_temperature_in.setub(300)
     m.fs.hxd.delta_temperature_out.setub(300)
