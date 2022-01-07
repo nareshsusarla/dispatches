@@ -90,7 +90,7 @@ from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
 
-def create_charge_model(m):
+def create_charge_model(m, method=None):
     """Create flowsheet and add unit models.
     """
 
@@ -463,13 +463,13 @@ def create_charge_model(m):
     ###########################################################################
     #  Create the stream Arcs and return the model                            #
     ###########################################################################
-    _make_constraints(m)
+    _make_constraints(m, method=None)
     _create_arcs(m)
     TransformationFactory("network.expand_arcs").apply_to(m)
     return m
 
 
-def _make_constraints(m):
+def _make_constraints(m, method=None):
     """Declare the constraints for the charge model
     """
 
@@ -507,6 +507,40 @@ def _make_constraints(m):
             ) ==
             m.fs.plant_power_out[t] * 1e6 * (pyunits.W/pyunits.MW)
         )
+    m.fs.net_power = Expression(
+        expr=(m.fs.plant_power_out[0]
+              + (-1e-6) * m.fs.es_turbine.work_mechanical[0])
+    )
+    m.fs.max_power = Param(
+        initialize=436,
+        mutable=True,
+        doc='Pmax for the power plant [MW]')
+    m.fs.boiler_eff = Expression(
+        expr=0.2143 * (m.fs.net_power / m.fs.max_power)
+        + 0.7357,
+        doc="Boiler efficiency in fraction"
+    )
+    m.fs.coal_heat_duty = Var(
+        initialize=1000000,
+        bounds=(0, 1e15),
+        doc="Coal heat duty supplied to boiler (MW)")
+
+    if method == "with_efficiency":
+        def coal_heat_duty_rule(b):
+            return m.fs.coal_heat_duty * m.fs.boiler_eff == (
+                m.fs.plant_heat_duty[0])
+        m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
+
+    else:
+        def coal_heat_duty_rule(b):
+            return m.fs.coal_heat_duty == (
+                m.fs.plant_heat_duty[0])
+        m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
+
+    m.fs.cycle_efficiency = Expression(
+        expr=m.fs.net_power / m.fs.coal_heat_duty * 100,
+        doc="Cycle efficiency in %"
+    )
 
 
 def _create_arcs(m):
@@ -859,7 +893,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     def op_cost_rule(b):
         return m.fs.operating_cost == (
             m.fs.operating_hours * m.fs.coal_price *
-            (m.fs.plant_heat_duty[0] * 1e6)
+            (m.fs.coal_heat_duty * 1e6)
             - (m.fs.cooling_price * m.fs.operating_hours *
                m.fs.cooler.heat_duty[0])
         )
@@ -1097,13 +1131,13 @@ def add_bounds(m):
     return m
 
 
-def main():
+def main(method=None):
 
     m = usc.build_plant_model()
     usc.initialize(m)
 
     # Create a flowsheet, add properties, unit models, and arcs
-    m = create_charge_model(m)
+    m = create_charge_model(m, method=None)
 
     # Give all the required inputs to the model
     set_model_input(m)
@@ -1441,7 +1475,8 @@ if __name__ == "__main__":
     # m = build_model(m_ready,
     #                 scenario=i)
     # m_chg, solver = main()
-    m_chg = main()
+    method = "without_efficiency"
+    m_chg = main(method=method)
     m_chg.fs.lmp = Var(
         m_chg.fs.time,
         domain=Reals,
