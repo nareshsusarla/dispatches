@@ -358,6 +358,8 @@ for blk in blks:
         value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6)))
     print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue)))
     print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost)))
+    print(' Specific Operating cost ($/MWh): {:.4f}'.format(
+        value(blks[c].operating_cost) / value(blks[c].rankine.fs.net_power)))
     # if method == "with_efficiency":
     print(' Cycle efficiency (%): {:.4f}'.format(
         value(blks[c].rankine.fs.cycle_efficiency)))
