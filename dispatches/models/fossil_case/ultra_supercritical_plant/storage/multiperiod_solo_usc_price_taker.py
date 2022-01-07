@@ -233,7 +233,7 @@ ax1.grid(linestyle=':', which='both',
          color='#696969', alpha=0.20)
 ax1.set_xlabel('Time Period (hr)')
 ax1.set_ylabel('Net Power [MW]', color=color[0])
-ax1.plot([x + 1 for x in hours], net_power_array,
+ax1.step([x + 1 for x in hours], net_power_array,
          marker='.', ms=10,
          ls='-', lw=1,
          color=color[0])
