@@ -234,7 +234,7 @@ ax1.grid(linestyle=':', which='both',
 ax1.set_xlabel('Time Period (hr)')
 ax1.set_ylabel('Net Power [MW]', color=color[0])
 ax1.step([x + 1 for x in hours], net_power_array,
-         marker='.', ms=10,
+         marker='o', ms=8,
          ls='-', lw=1,
          color=color[0])
 ax1.tick_params(axis='y', labelcolor=color[0])
@@ -244,7 +244,8 @@ ax2 = ax1.twinx()
 ax2.set_ylabel('LMP [$/MWh]',
                color=color[1])
 ax2.plot([x + 1 for x in hours], lmp_array,
-         marker='o', ls='-', lw=1,
+         marker='o', ms=8,
+         ls='-', lw=1,
          color=color[1])
 ax2.tick_params(axis='y', labelcolor=color[1])
 # plt.savefig('multiperiod_solo_net_power_lmp_vs_hours.png')
