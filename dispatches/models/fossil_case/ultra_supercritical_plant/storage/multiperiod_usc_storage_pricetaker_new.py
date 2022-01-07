@@ -34,14 +34,16 @@ def create_ss_rankine_model():
     # boiler_heat_min = 626e6  # in MW
     boiler_heat_min = 586e6  # in W
 
+    # method = "without_efficiency"
+
     m = pyo.ConcreteModel()
-    m.rankine = usc.main()
+    m.rankine = usc.main(method=method)
 
     # Set bounds for net power output
-    m.rankine.fs.net_power = Expression(
-        expr=(m.rankine.fs.plant_power_out[0]
-              + (-1e-6) * m.rankine.fs.es_turbine.work_mechanical[0])
-    )
+    # m.rankine.fs.net_power = Expression(
+    #     expr=(m.rankine.fs.plant_power_out[0]
+    #           + (-1e-6) * m.rankine.fs.es_turbine.work_mechanical[0])
+    # )
     m.rankine.fs.eq_min_power = pyo.Constraint(
         expr=m.rankine.fs.net_power >= power_min
     )
@@ -49,18 +51,18 @@ def create_ss_rankine_model():
         expr=m.rankine.fs.net_power <= power_max
     )
 
-    if method == "with_efficiency":
-        # Calculate cycle and boiler efficiencies
-        m.rankine.fs.boiler_eff = Expression(
-            expr=0.2143 * (m.rankine.fs.net_power / power_max)
-            + 0.7357,
-            doc="Boiler efficiency in fraction"
-        )
-        m.rankine.fs.cycle_efficiency = Expression(
-            expr=m.rankine.fs.net_power / \
-            m.rankine.fs.plant_heat_duty[0] * m.rankine.fs.boiler_eff * 100,
-            doc="Cycle efficiency in %"
-        )
+    # if method == "with_efficiency":
+    #     # Calculate cycle and boiler efficiencies
+    #     m.rankine.fs.boiler_eff = Expression(
+    #         expr=0.2143 * (m.rankine.fs.net_power / power_max)
+    #         + 0.7357,
+    #         doc="Boiler efficiency in fraction"
+    #     )
+    #     m.rankine.fs.cycle_efficiency = Expression(
+    #         expr=m.rankine.fs.net_power / \
+    #         m.rankine.fs.plant_heat_duty[0] * m.rankine.fs.boiler_eff * 100,
+    #         doc="Cycle efficiency in %"
+    #     )
 
     # Unfix data
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()  # normally fixed
@@ -321,8 +323,8 @@ for blk in blks:
     count += 1
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
-# blks[0].rankine.previous_salt_inventory_hot.fix(1)
-blks[0].rankine.previous_salt_inventory_cold.fix(1)
+blks[0].rankine.previous_salt_inventory_hot.fix(1)
+# blks[0].rankine.previous_salt_inventory_cold.fix(1)
 # blks[0].rankine.previous_power.fix(400)
 
 n_weeks = 1
@@ -356,11 +358,11 @@ for blk in blks:
         value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6)))
     print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue)))
     print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost)))
-    if method == "with_efficiency":
-        print(' Cycle efficiency (%): {:.4f}'.format(
-            value(blks[c].rankine.fs.cycle_efficiency)))
-        print(' Boiler efficiency (%): {:.4f}'.format(
-            value(blks[c].rankine.fs.boiler_eff) * 100))
+    # if method == "with_efficiency":
+    print(' Cycle efficiency (%): {:.4f}'.format(
+        value(blks[c].rankine.fs.cycle_efficiency)))
+    print(' Boiler efficiency (%): {:.4f}'.format(
+        value(blks[c].rankine.fs.boiler_eff) * 100))
     print(' Boiler heat duty: {:.4f}'.format(
         value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6))
     print(' Boiler flow mol (mol/s): {:.4f}'.format(
