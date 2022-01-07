@@ -90,7 +90,7 @@ from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
 
-def create_charge_model(m, method=None):
+def create_charge_model(m, method=None, max_power=None):
     """Create flowsheet and add unit models.
     """
 
@@ -463,13 +463,13 @@ def create_charge_model(m, method=None):
     ###########################################################################
     #  Create the stream Arcs and return the model                            #
     ###########################################################################
-    _make_constraints(m, method=None)
+    _make_constraints(m, method=method, max_power=max_power)
     _create_arcs(m)
     TransformationFactory("network.expand_arcs").apply_to(m)
     return m
 
 
-def _make_constraints(m, method=None):
+def _make_constraints(m, method=None, max_power=None):
     """Declare the constraints for the charge model
     """
 
@@ -512,7 +512,7 @@ def _make_constraints(m, method=None):
               + (-1e-6) * m.fs.es_turbine.work_mechanical[0])
     )
     m.fs.max_power = Param(
-        initialize=436,
+        initialize=max_power,
         mutable=True,
         doc='Pmax for the power plant [MW]')
     m.fs.boiler_eff = Expression(
@@ -994,7 +994,7 @@ def add_bounds(m):
     # Maximum flow/heat is calculated solving no storage case with power
     # max = 436. Minimum flow/heat is calculated solving no storage mode
     # with min power = 283 (0.65*p_max)
-    m.flow_max = m.main_flow  # in mol/s
+    # m.flow_max = m.main_flow  # in mol/s
     m.flow_min = 11804  # in mol/s
     m.boiler_heat_max = 918e6  # in W
     m.boiler_heat_min = 586e6  # in W
@@ -1136,13 +1136,13 @@ def add_bounds(m):
     return m
 
 
-def main(method=None):
+def main(method=None, max_power=None):
 
     m = usc.build_plant_model()
     usc.initialize(m)
 
     # Create a flowsheet, add properties, unit models, and arcs
-    m = create_charge_model(m, method=None)
+    m = create_charge_model(m, method=method, max_power=max_power)
 
     # Give all the required inputs to the model
     set_model_input(m)
@@ -1481,7 +1481,8 @@ if __name__ == "__main__":
     #                 scenario=i)
     # m_chg, solver = main()
     method = "with_efficiency"
-    m_chg = main(method=method)
+    max_power = 436
+    m_chg = main(method=method, max_power=max_power)
     m_chg.fs.lmp = Var(
         m_chg.fs.time,
         domain=Reals,
