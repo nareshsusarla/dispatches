@@ -428,7 +428,7 @@ ax2.plot([x + 1 for x in hours], lmp_array,
          color=color[1])
 ax2.tick_params(axis='y',
                 labelcolor=color[1])
-plt.savefig('multiperiod_usc_storage_new_tank_level.png')
+# plt.savefig('multiperiod_usc_storage_new_tank_level.png')
 
 
 power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
@@ -456,6 +456,6 @@ ax4.step([x + 1 for x in hours], lmp_array,
          color=color[1])
 ax4.tick_params(axis='y',
                 labelcolor=color[1])
-plt.savefig('multiperiod_usc_storage_new_power.png')
+# plt.savefig('multiperiod_usc_storage_new_power.png')
 
 plt.show()
