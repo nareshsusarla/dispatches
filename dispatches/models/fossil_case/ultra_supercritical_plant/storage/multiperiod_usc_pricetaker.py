@@ -128,7 +128,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
              b2.rankine.previous_power)]
 
 
-n_time_points = 1*4  # hours in a week
+n_time_points = 1*9  # hours in a week
 
 # create the multiperiod model object
 mp_rankine = MultiPeriodModel(
@@ -156,8 +156,8 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-power = [310, 325, 420, 400] # in MW
-lmp = [4, 10, 50, 100] # in $/MWh
+# power = [310, 325, 420, 400] # in MW
+lmp = [10, 15, 16, 17, 18, 19, 20, 25, 30] # in $/MWh
 
 count = 0
 # add market data for each block
@@ -200,11 +200,13 @@ for blk in blks:
     print(' Net power (MW): {} (dummy previous power: {:.4f})'.format(
         value(blks[c].rankine.fs.net_power),
         value(blks[c].rankine.previous_power)))
-    print(' Revenue: {:.4f}'.format(
+    print(' Revenue ($/h)): {:.4f}'.format(
         value(blks[c].revenue)))
-    print(' Operating Cost: {:.4f}'.format(
+    print(' Operating Cost ($/h)): {:.4f}'.format(
         value(blks[c].operating_cost)))
-    print(' Boiler heat duty: {:.4f}'.format(
+    print(' Specific Operating Cost ($/MWh)): {:.4f}'.format(
+        value(blks[c].rankine.fs.operating_cost)))
+    print(' Boiler heat duty (MWth)): {:.4f}'.format(
         value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6))
     print(' Boiler flow mol (mol/s): {:.4f}'.format(
         value(blks[c].rankine.fs.boiler.outlet.flow_mol[0])))
