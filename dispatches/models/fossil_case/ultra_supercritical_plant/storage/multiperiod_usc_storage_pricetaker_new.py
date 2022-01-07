@@ -35,12 +35,9 @@ def create_ss_rankine_model():
     # boiler_heat_min = 626e6  # in MW
     boiler_heat_min = 586e6  # in W
 
-    # method = "without_efficiency"
-
     m = pyo.ConcreteModel()
     m.rankine = usc.main(method=method, max_power=max_power)
 
-    # m.rankine.fs.max_power.value = power_max
     # Set bounds for net power output
     # m.rankine.fs.net_power = Expression(
     #     expr=(m.rankine.fs.plant_power_out[0]
@@ -263,7 +260,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
             #  b2.rankine.previous_power)]
 
 
-n_time_points = 1*1  # hours in a week
+n_time_points = 1*4  # hours in a week
 
 # create the multiperiod model object
 mp_rankine = MultiPeriodModel(
@@ -291,15 +288,8 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-# power = [310, 325, 420, 400]  # , 310, 325, 420, 400]
-# lmp = [21, 22, 50, 100]  # , 22.4929, 21.8439, 23.4379, 23.4379]
-# power = [310, 325, 420, 400] #, 310, 325, 420, 400, 310, 325, 420, 400,
-         # 310, 325, 420, 400, 310, 325, 420, 400, 310, 325, 420, 400]
-# lmp = [15, 19, 21, 25] #, 21, 22, 50, 100, 21, 22, 50, 100,
-       # 21, 22, 50, 100, 21, 22, 50, 100, 21, 22, 50, 100]
-
-power = [440]
-lmp = [21]
+# power = [310, 325, 420, 400]
+lmp = [15, 19, 21, 25]
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
 
 count = 0
@@ -317,9 +307,9 @@ for blk in blks:
         )
     )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
-    blk.fix_power = pyo.Constraint(
-        expr=power[count] == blk.rankine.fs.net_power
-    )
+    # blk.fix_power = pyo.Constraint(
+    #     expr=power[count] == blk.rankine.fs.net_power
+    # )
     # blk.fix_power = pyo.Constraint(
     #     expr=blk.dispatch == (
     #         blk.rankine.fs.plant_power_out[0]
@@ -329,8 +319,8 @@ for blk in blks:
     count += 1
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
-# blks[0].rankine.previous_salt_inventory_hot.fix(1)
-blks[0].rankine.previous_salt_inventory_cold.fix(1)
+blks[0].rankine.previous_salt_inventory_hot.fix(1)
+# blks[0].rankine.previous_salt_inventory_cold.fix(1)
 # blks[0].rankine.previous_power.fix(400)
 
 n_weeks = 1
@@ -355,7 +345,7 @@ log_infeasible_constraints(m)
 c = 0
 for blk in blks:
     print()
-    print('Block {}'.format(c))
+    print('Period {}'.format(c+1))
     print(' Net power: {:.4f}'.format(
         value(blks[c].rankine.fs.net_power)))
     print(' Plant Power Out: {:.4f}'.format(
@@ -366,7 +356,6 @@ for blk in blks:
     print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost)))
     print(' Specific Operating cost ($/MWh): {:.4f}'.format(
         value(blks[c].operating_cost) / value(blks[c].rankine.fs.net_power)))
-    # if method == "with_efficiency":
     print(' Cycle efficiency (%): {:.4f}'.format(
         value(blks[c].rankine.fs.cycle_efficiency)))
     print(' Boiler efficiency (%): {:.4f}'.format(
@@ -412,51 +401,61 @@ hours = np.arange(n_time_points*n_weeks_to_plot)
 # lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
 lmp_array = np.asarray(lmp[0:n_time_points])
 tank_array = np.asarray(tank_level[0:n_weeks_to_plot]).flatten()
-fig, ax1 = plt.subplots(figsize=(10, 5))
+font = {'size':16}
+plt.rc('font', **font)
+fig1, ax1 = plt.subplots(figsize=(10, 5))
 
-color = 'r'
-ax1.set_xlabel('Hour')
-ax1.set_ylabel('Hot Tank Level [kg]', color=color)
+color = ['r', 'b', 'tab:green']
+ax1.set_xlabel('Time Period (hr)')
+ax1.set_ylabel('Hot Tank Level (kg)',
+               color=color[0])
 ax1.spines["top"].set_visible(False)
 ax1.spines["right"].set_visible(False)
 ax1.grid(linestyle=':', which='both',
-         color='gray', alpha=0.20)
+         color='gray', alpha=0.30)
 ax1.step([x + 1 for x in hours], tank_array,
          marker='o', ms=8,
-         color=color)
-ax1.tick_params(axis='y', labelcolor=color)
+         color=color[0])
+ax1.tick_params(axis='y',
+                labelcolor=color[0])
 ax1.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
 
 ax2 = ax1.twinx()
-color = 'b'
-ax2.set_ylabel('LMP [$/MWh]', color=color)
+ax2.set_ylabel('LMP ($/MWh)',
+               color=color[1])
 ax2.plot([x + 1 for x in hours], lmp_array,
          marker='o', ms=8,
-         color=color)
-ax2.tick_params(axis='y', labelcolor=color)
-# plt.savefig('multiperiod_new_tank_level_lmp_vs_hours.png')
+         color=color[1])
+ax2.tick_params(axis='y',
+                labelcolor=color[1])
+plt.savefig('multiperiod_usc_storage_new_tank_level.png')
 
-n_weeks_to_plot = 1
-hours = np.arange(n_time_points*n_weeks_to_plot)
-# lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
+
 power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
+fig2, ax3 = plt.subplots(figsize=(10, 5))
 
-fig2, ax3 = plt.subplots(figsize=(12, 8))
-
-color = 'tab:green'
-ax3.set_xlabel('Hour')
-ax3.set_ylabel('Power Output [MW]', color=color)
+ax3.set_xlabel('Time Period (hr)')
+ax3.set_ylabel('Power Output (MW)',
+               color=color[2])
+ax3.spines["top"].set_visible(False)
+ax3.spines["right"].set_visible(False)
+ax3.grid(linestyle=':', which='both',
+         color='gray', alpha=0.30)
 ax3.step([x + 1 for x in hours], power_array,
          marker='o', ms=8,
-         color=color)
-ax3.tick_params(axis='y', labelcolor=color)
+         color=color[2])
+ax3.tick_params(axis='y',
+                labelcolor=color[2])
+ax3.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
 
 ax4 = ax3.twinx()
-color = 'b'
-ax4.set_ylabel('LMP [$/MWh]', color=color)
+ax4.set_ylabel('LMP ($/MWh)',
+               color=color[1])
 ax4.step([x + 1 for x in hours], lmp_array,
          marker='o', ms=8,
-         color=color)
-ax4.tick_params(axis='y', labelcolor=color)
+         color=color[1])
+ax4.tick_params(axis='y',
+                labelcolor=color[1])
+plt.savefig('multiperiod_usc_storage_new_power.png')
 
 plt.show()
