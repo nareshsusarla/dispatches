@@ -42,12 +42,12 @@ def create_ss_rankine_model():
     # Set bounds for plant power
     # m.rankine.fs.plant_power_out[0].setlb(None)
     # m.rankine.fs.plant_power_out[0].setub(None)
-    m.rankine.fs.plant_min_power_eq = pyo.Constraint(
-        expr=m.rankine.fs.plant_power_out[0] >= min_power
-    )
-    m.rankine.fs.plant_max_power_eq = pyo.Constraint(
-        expr=m.rankine.fs.plant_power_out[0] <= max_power
-    )
+    # m.rankine.fs.plant_min_power_eq = pyo.Constraint(
+    #     expr=m.rankine.fs.plant_power_out[0] >= min_power
+    # )
+    # m.rankine.fs.plant_max_power_eq = pyo.Constraint(
+    #     expr=m.rankine.fs.plant_power_out[0] <= max_power
+    # )
     # m.rankine.fs.plant_min_power_eq = pyo.Constraint(
     #     expr=m.rankine.fs.net_power >= min_power
     # )
@@ -56,12 +56,12 @@ def create_ss_rankine_model():
     # )
 
     # Set bounds for discharge turbine
-    m.rankine.fs.es_turbine_min_power_eq = pyo.Constraint(
-        expr=m.rankine.fs.es_turbine.work[0] * (-1e-6) >= min_power_storage
-    )
-    m.rankine.fs.es_turbine_max_power_eq = pyo.Constraint(
-        expr=m.rankine.fs.es_turbine.work[0] * (-1e-6) <= max_power_storage
-    )
+    # m.rankine.fs.es_turbine_min_power_eq = pyo.Constraint(
+    #     expr=m.rankine.fs.es_turbine.work[0] * (-1e-6) >= min_power_storage
+    # )
+    # m.rankine.fs.es_turbine_max_power_eq = pyo.Constraint(
+    #     expr=m.rankine.fs.es_turbine.work[0] * (-1e-6) <= max_power_storage
+    # )
 
     # No bounds on boiler heat duty
     # m.rankine.fs.boiler.heat_duty[0].setlb(boiler_heat_min)
@@ -75,6 +75,8 @@ def create_ss_rankine_model():
     m.rankine.fs.boiler.outlet.flow_mol[0].setub(None)
     m.rankine.fs.plant_power_out[0].setlb(min_power)
     m.rankine.fs.plant_power_out[0].setub(max_power)
+    m.rankine.fs.es_turbine.work[0].setlb(max_power_storage * (-1e-6))
+    m.rankine.fs.es_turbine.work[0].setub(min_power_storage * (-1e-6))
 
     # Unfix storage system data
     m.rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
@@ -139,14 +141,14 @@ def create_mp_rankine_block():
     #  DOF = 1
     print('DOFs within mp create 1 =', degrees_of_freedom(m))
     # Add coupling variable (next_power_output)
-    # b1.previous_power = Var(
-    #     # b1.fs.time,
-    #     domain=NonNegativeReals,
-    #     initialize=400,
-    #     bounds=(100, 450),
-    #     # bounds=(0, 6739292),
-    #     doc="Previous period power (MW)"
-    #     )
+    b1.previous_power = Var(
+        # b1.fs.time,
+        domain=NonNegativeReals,
+        initialize=400,
+        bounds=(100, 450),
+        # bounds=(0, 6739292),
+        doc="Previous period power (MW)"
+        )
 
     b1.previous_salt_inventory_hot = Var(
         # b1.fs.time,
@@ -185,17 +187,17 @@ def create_mp_rankine_block():
         doc="Cold salt inventory at the end of the hour (or time period), kg"
         )
 
-    # @b1.fs.Constraint(doc="Plant ramping down constraint")
-    # def constraint_ramp_down(b):
-    #     return (
-    #         b1.previous_power - 40 >=
-    #         b1.fs.plant_power_out[0])
+    @b1.fs.Constraint(doc="Plant ramping down constraint")
+    def constraint_ramp_down(b):
+        return (
+            b1.previous_power - 50 <=
+            b1.fs.plant_power_out[0])
 
-    # @b1.fs.Constraint(doc="Plant ramping up constraint")
-    # def constraint_ramp_up(b):
-    #     return (
-    #         b1.previous_power + 40 <=
-    #         b1.fs.plant_power_out[0])
+    @b1.fs.Constraint(doc="Plant ramping up constraint")
+    def constraint_ramp_up(b):
+        return (
+            b1.previous_power + 50 >=
+            b1.fs.plant_power_out[0])
 
     @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
     def constraint_salt_inventory_hot(b):
@@ -239,9 +241,9 @@ def get_rankine_link_variable_pairs(b1, b2):
         b2: next time block
     """
     return [(b1.rankine.salt_inventory_hot,
-             b2.rankine.previous_salt_inventory_hot)]#,
-            # (b1.rankine.fs.plant_power_out[0],
-            #  b2.rankine.previous_power)]
+             b2.rankine.previous_salt_inventory_hot),
+            (b1.rankine.fs.plant_power_out[0],
+             b2.rankine.previous_power)]
 
 # the final power output and battery state must be the same
 # as the intial power output and battery state
@@ -254,12 +256,12 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     """
     # return
     return [(b1.rankine.salt_inventory_hot,
-              b2.rankine.previous_salt_inventory_hot)]#,
+             b2.rankine.previous_salt_inventory_hot)]#,
             # (b1.rankine.fs.plant_power_out[0],
             #  b2.rankine.previous_power)]
 
 
-number_hours = 24
+number_hours = 8
 n_time_points = 1*number_hours  # hours in a week
 
 # create the multiperiod model object
@@ -292,12 +294,12 @@ blks = mp_rankine.get_active_process_blocks()
 # lmp = [15, 19, 21, 25]
 lmp = [
     15, 19, 21, 25,
-    12, 16, 22, 20,
-    15, 19, 21, 25,
-    12, 16, 22, 20,
-    15, 19, 21, 25,
-    12, 16, 22, 20
-]
+    12, 16, 22, 20]#,
+#     15, 19, 21, 25,
+#     12, 16, 22, 20,
+#     15, 19, 21, 25,
+#     12, 16, 22, 20
+# ]
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
 
 count = 0
@@ -328,12 +330,12 @@ for blk in blks:
     # )
     count += 1
 
-# scaling_obj = 1e-3 # for 8 hours analysis
-scaling_obj = 1e-4 # for 24 hours analysis
+scaling_obj = 1e-3 # for 8 hours analysis
+# scaling_obj = 1e-4 # for 24 hours analysis
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
 blks[0].rankine.previous_salt_inventory_hot.fix(1)
 blks[0].rankine.previous_salt_inventory_cold.fix(6739291)
-# blks[0].rankine.previous_power.fix(400)
+blks[0].rankine.previous_power.fix(300)
 
 n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
