@@ -231,8 +231,8 @@ def get_rankine_periodic_variable_pairs(b1, b2):
             # (b1.rankine.fs.plant_power_out[0],
             #  b2.rankine.previous_power)]
 
-
-n_time_points = 1*4  # hours in a week
+number_hours = 4
+n_time_points = 1 * number_hours  # hours in a week
 
 # create the multiperiod model object
 mp_rankine = MultiPeriodModel(
@@ -382,7 +382,12 @@ hours = np.arange(n_time_points*n_weeks_to_plot)
 # lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
 lmp_array = np.asarray(lmp[0:n_time_points])
 hot_tank_array = np.asarray(hot_tank_level[0:n_weeks_to_plot]).flatten()
-net_power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
+
+# Convert array to list to include hot tank level at time zero
+lmp_list = [0] + lmp_array.tolist()
+hot_tank_array0 = value(blks[0].rankine.previous_salt_inventory_hot)
+hours_list = hours.tolist() + [number_hours]
+hot_tank_list = [hot_tank_array0] + hot_tank_array.tolist()
 
 color = ['tab:green', 'b', 'r']
 plt.rcParams['lines.linewidth'] = 2
@@ -396,21 +401,28 @@ ax1.grid(linestyle=':', which='both',
          color='#696969', alpha=0.20)
 ax1.set_xlabel('Time Period (hr)')
 ax1.set_ylabel('Hot Tank Level [kg]', color=color[2])
-ax1.step([x + 1 for x in hours], hot_tank_array,
-         marker='.', ms=10,
-         ls='-', lw=1,
-         color=color[2])
+ax1.step(# [x + 1 for x in hours], hot_tank_array,
+    hours_list, hot_tank_list,
+    marker='.', ms=8,
+    ls='-', lw=1,
+    color=color[2])
 ax1.tick_params(axis='y', labelcolor=color[2])
-ax1.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
+ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=1))
 
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP [$/MWh]',
                color=color[1])
-ax2.plot([x + 1 for x in hours], lmp_array,
-         marker='o', ls='-', lw=1,
-         color=color[1])
+ax2.step(# [x + 1 for x in hours], lmp_array,
+    hours_list, lmp_list,
+    marker='o', ls='-', lw=1,
+    color=color[1])
 ax2.tick_params(axis='y', labelcolor=color[1])
-# plt.savefig('hot_tank_lmp_vs_hours.png')
+plt.savefig('hot_tank_lmp_vs_hours.png')
+
+power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
+# Convert array to list to include net power at time zero
+power_array0 = 0 # zero since the plant is not operating
+power_list = [power_array0] + power_array.tolist()
 
 fig2, ax3 = plt.subplots(figsize=(10, 5))
 ax3.spines["top"].set_visible(False)
@@ -419,19 +431,22 @@ ax3.grid(linestyle=':', which='both',
          color='#696969', alpha=0.20)
 ax3.set_xlabel('Time Period (hr)')
 ax3.set_ylabel('Net Power [MW]', color=color[0])
-ax3.plot([x + 1 for x in hours], net_power_array,
-         marker='.', ms=10,
-         ls='-', lw=1,
-         color=color[0])
-ax3.tick_params(axis='y', labelcolor=color[0])
-ax3.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
+ax3.step(# [x + 1 for x in hours], power_array
+    hours_list, power_list,
+    marker='.', ms=8,
+    ls='-', lw=1,
+    color=color[0])
+ax3.tick_params(axis='y',
+                labelcolor=color[0])
+ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=1))
 
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP [$/MWh]',
                color=color[1])
-ax4.plot([x + 1 for x in hours], lmp_array,
+ax4.step([x + 1 for x in hours], lmp_array,
          marker='o', ls='-', lw=1,
          color=color[1])
-ax4.tick_params(axis='y', labelcolor=color[1])
-# plt.savefig('net_power_lmp_vs_hours.png')
+ax4.tick_params(axis='y',
+                labelcolor=color[1])
+plt.savefig('net_power_lmp_vs_hours.png')
 plt.show()
