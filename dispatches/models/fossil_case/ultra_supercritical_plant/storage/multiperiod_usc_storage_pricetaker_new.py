@@ -26,11 +26,11 @@ matplotlib.rc('font', size=24)
 plt.rc('axes', titlesize=24)
 
 method = "with_efficiency" # options: with_efficiency and without_efficiency
-max_power = 450 # in MW
+max_power = 436 # in MW
 
 def create_ss_rankine_model():
     min_power = int(0.65 * max_power) # 283 in MW
-    max_power_storage = 100 # in MW
+    max_power_storage = 24 # in MW
     min_power_storage = 1 # in MW
 
     m = pyo.ConcreteModel()
@@ -217,10 +217,11 @@ def get_rankine_periodic_variable_pairs(b1, b2):
         b1: final time block
         b2: first time block
     """
+    # return
     return [(b1.rankine.salt_inventory_hot,
              b2.rankine.previous_salt_inventory_hot)]#,
-            # (b1.rankine.fs.plant_power_out[0],
-            #  b2.rankine.previous_power)]
+    #         # (b1.rankine.fs.plant_power_out[0],
+    #         #  b2.rankine.previous_power)]
 
 
 number_hours = 8
@@ -234,7 +235,7 @@ mp_rankine = MultiPeriodModel(
     n_time_points=n_time_points,
     process_model_func=create_mp_rankine_block,
     linking_variable_func=get_rankine_link_variable_pairs,
-    periodic_variable_func=get_rankine_periodic_variable_pairs
+    # periodic_variable_func=get_rankine_periodic_variable_pairs
     )
 
 # OPTIONAL KEYWORD ARGUMENTS
@@ -277,12 +278,25 @@ for blk in blks:
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     count += 1
 
+# scaling_obj = 1 # for 8 hours analysis
 scaling_obj = 1e-3 # for 8 hours analysis
 # scaling_obj = 1e-4 # for 24 hours analysis
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
-blks[0].rankine.previous_salt_inventory_hot.fix(1)
-blks[0].rankine.previous_salt_inventory_cold.fix(6739291)
-blks[0].rankine.previous_power.fix(300)
+
+# # Hot Tank Empty Scenario
+# blks[0].rankine.previous_salt_inventory_hot.fix(1)
+# blks[0].rankine.previous_salt_inventory_cold.fix(6739291)
+
+# Tank Half Full Scenario
+blks[0].rankine.previous_salt_inventory_hot.fix(6739292/2)
+blks[0].rankine.previous_salt_inventory_cold.fix(6739292/2)
+
+# # Hot Tank Full Scenario
+# blks[0].rankine.previous_salt_inventory_hot.fix(6739291)
+# blks[0].rankine.previous_salt_inventory_cold.fix(1)
+
+
+blks[0].rankine.previous_power.fix(400)
 
 n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
