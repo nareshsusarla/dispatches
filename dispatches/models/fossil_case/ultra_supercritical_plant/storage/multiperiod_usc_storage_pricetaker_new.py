@@ -260,7 +260,8 @@ def get_rankine_periodic_variable_pairs(b1, b2):
             #  b2.rankine.previous_power)]
 
 
-n_time_points = 1*4  # hours in a week
+number_hours = 4
+n_time_points = 1*number_hours  # hours in a week
 
 # create the multiperiod model object
 mp_rankine = MultiPeriodModel(
@@ -325,7 +326,7 @@ blks[0].rankine.previous_salt_inventory_hot.fix(1)
 
 n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
-tank_level = []
+hot_tank_level = []
 net_power = []
 
 for week in range(n_weeks):
@@ -333,7 +334,7 @@ for week in range(n_weeks):
     # for (i, blk) in enumerate(blks):
     #     blk.lmp_signal = weekly_prices[week][i]
     opt.solve(m, tee=True)
-    tank_level.append(
+    hot_tank_level.append(
         [pyo.value(blks[i].rankine.salt_inventory_hot)
          for i in range(n_time_points)])
     net_power.append(
@@ -400,7 +401,14 @@ n_weeks_to_plot = 1
 hours = np.arange(n_time_points*n_weeks_to_plot)
 # lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
 lmp_array = np.asarray(lmp[0:n_time_points])
-tank_array = np.asarray(tank_level[0:n_weeks_to_plot]).flatten()
+hot_tank_array = np.asarray(hot_tank_level[0:n_weeks_to_plot]).flatten()
+
+# Convert array to list to include hot tank level at time zero
+lmp_list = [0] + lmp_array.tolist()
+hot_tank_array0 = value(blks[0].rankine.previous_salt_inventory_hot)
+hours_list = hours.tolist() + [number_hours]
+hot_tank_list = [hot_tank_array0] + hot_tank_array.tolist()
+
 font = {'size':16}
 plt.rc('font', **font)
 fig1, ax1 = plt.subplots(figsize=(10, 5))
@@ -413,27 +421,32 @@ ax1.spines["top"].set_visible(False)
 ax1.spines["right"].set_visible(False)
 ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-ax1.step([x + 1 for x in hours], tank_array,
-         marker='o', ms=8,
-         color=color[0])
+ax1.step(# [x + 1 for x in hours], hot_tank_array,
+    hours_list, hot_tank_list,
+    marker='o', ms=8,
+    color=color[0])
 ax1.tick_params(axis='y',
                 labelcolor=color[0])
-ax1.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
+ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=1))
 
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP ($/MWh)',
                color=color[1])
-ax2.step([x + 1 for x in hours], lmp_array,
-         marker='o', ms=8,
-         color=color[1])
+ax2.step(# [x + 1 for x in hours], lmp_array,
+    hours_list, lmp_list,
+    marker='o', ms=8,
+    color=color[1])
 ax2.tick_params(axis='y',
                 labelcolor=color[1])
-# plt.savefig('multiperiod_usc_storage_new_tank_level.png')
+# plt.savefig('multiperiod_usc_storage_new_hot_tank_level.png')
 
 
 power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
-fig2, ax3 = plt.subplots(figsize=(10, 5))
+# Convert array to list to include net power at time zero
+power_array0 = 0 # zero since the plant is not operating
+power_list = [power_array0] + power_array.tolist()
 
+fig2, ax3 = plt.subplots(figsize=(10, 5))
 ax3.set_xlabel('Time Period (hr)')
 ax3.set_ylabel('Power Output (MW)',
                color=color[2])
@@ -441,9 +454,10 @@ ax3.spines["top"].set_visible(False)
 ax3.spines["right"].set_visible(False)
 ax3.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-ax3.step([x + 1 for x in hours], power_array,
-         marker='o', ms=8,
-         color=color[2])
+ax3.step(# [x + 1 for x in hours], power_array,
+    hours_list, power_list,
+    marker='o', ms=8,
+    color=color[2])
 ax3.tick_params(axis='y',
                 labelcolor=color[2])
 ax3.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
@@ -451,9 +465,11 @@ ax3.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP ($/MWh)',
                color=color[1])
-ax4.step([x + 1 for x in hours], lmp_array,
-         marker='o', ms=8,
-         color=color[1])
+ax4.step(# [x + 1 for x in hours], lmp_array,
+    hours_list, lmp_list,
+    marker='o', ms=8,
+    color=color[1]
+)
 ax4.tick_params(axis='y',
                 labelcolor=color[1])
 # plt.savefig('multiperiod_usc_storage_new_power.png')
