@@ -205,27 +205,28 @@ def create_mp_rankine_block():
             + 3600*b1.fs.hxc.inlet_2.flow_mass[0]
             - 3600*b1.fs.hxd.inlet_1.flow_mass[0])
 
-    @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
-    def constraint_salt_inventory_cold(b):
+    @b1.fs.Constraint(doc="Maximum salt inventory at any time")
+    def constraint_salt_inventory(b):
         return (
-            b1.salt_inventory_cold ==
-            b1.previous_salt_inventory_cold
-            - 3600*b1.fs.hxc.inlet_2.flow_mass[0]
-            + 3600*b1.fs.hxd.inlet_1.flow_mass[0])
-
-    # @b1.fs.Constraint(doc="Maximum salt inventory at any time")
-    # def constraint_salt_inventory(b):
-    #     return (
-    #         b1.salt_inventory_hot +
-    #         b1.salt_inventory_cold == b1.fs.salt_amount)
-    # print('DOFs after mp create =', degrees_of_freedom(m))
-
-    @b1.fs.Constraint(doc="Maximum previous salt inventory at any time")
-    def constraint_salt_previous_inventory(b):
-        return (
-            b1.previous_salt_inventory_hot +
-            b1.previous_salt_inventory_cold == b1.fs.salt_amount)
+            b1.salt_inventory_hot +
+            b1.salt_inventory_cold == b1.fs.salt_amount)
     print('DOFs after mp create =', degrees_of_freedom(m))
+
+    # @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
+    # def constraint_salt_inventory_cold(b):
+    #     return (
+    #         b1.salt_inventory_cold ==
+    #         b1.previous_salt_inventory_cold
+    #         - 3600*b1.fs.hxc.inlet_2.flow_mass[0]
+    #         + 3600*b1.fs.hxd.inlet_1.flow_mass[0])
+
+
+    # @b1.fs.Constraint(doc="Maximum previous salt inventory at any time")
+    # def constraint_salt_previous_inventory(b):
+    #     return (
+    #         b1.previous_salt_inventory_hot +
+    #         b1.previous_salt_inventory_cold == b1.fs.salt_amount)
+    # print('DOFs after mp create =', degrees_of_freedom(m))
     # raise Exception()
     return m
 
@@ -300,10 +301,12 @@ lmp = [
 # lmp = [22.4929, 21.8439, 23.4379, 23.4379, 23.4379, 21.6473, 21.6473]
 
 count = 0
+# m.hot_level = Param(default=1, mutable=False)
+# m.cold_level = Param(default=6739292 - m.hotlevel, mutable=False)
 # add market data for each block
 for blk in blks:
     blk_rankine = blk.rankine
-    blk.lmp_signal = pyo.Param(default=0, mutable=True)
+    blk.lmp_signal = Param(default=0, mutable=True)
     blk.revenue = lmp[count]*blk.rankine.fs.net_power
     # blk.revenue = blk.lmp_signal*blk_rankine.fs.plant_power_out[0]
     blk.operating_cost = pyo.Expression(
@@ -329,7 +332,7 @@ for blk in blks:
 scaling_obj = 1e-4 # for 24 hours analysis
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
 blks[0].rankine.previous_salt_inventory_hot.fix(1)
-# blks[0].rankine.previous_salt_inventory_cold.fix(1)
+blks[0].rankine.previous_salt_inventory_cold.fix(6739291)
 # blks[0].rankine.previous_power.fix(400)
 
 n_weeks = 1
