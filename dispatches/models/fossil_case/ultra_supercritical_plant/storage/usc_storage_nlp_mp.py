@@ -994,7 +994,7 @@ def add_bounds(m):
     # Maximum flow/heat is calculated solving no storage case with power
     # max = 436. Minimum flow/heat is calculated solving no storage mode
     # with min power = 283 (0.65*p_max)
-    m.flow_max = m.main_flow  # in mol/s
+    m.flow_max = m.main_flow * 1.5  # in mol/s
     m.flow_min = 11804  # in mol/s
     m.boiler_heat_max = 918e6  # in W
     m.boiler_heat_min = 586e6  # in W
