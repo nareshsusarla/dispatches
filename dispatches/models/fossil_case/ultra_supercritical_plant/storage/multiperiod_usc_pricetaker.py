@@ -245,10 +245,11 @@ ax1.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=1))
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP ($/MWh)',
                color=color[1])
-ax2.plot([x + 1 for x in hours], lmp_array,
+ax2.step([x + 1 for x in hours], lmp_array,
          marker='o', ms=8,
          ls='-', lw=1,
          color=color[1])
-ax2.tick_params(axis='y', labelcolor=color[1])
+ax2.tick_params(axis='y',
+                labelcolor=color[1])
 # plt.savefig('multiperiod_usc_pricetaker_net_power.png')
 plt.show()
