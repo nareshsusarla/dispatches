@@ -156,13 +156,13 @@ def create_mp_rankine_block():
     @b1.fs.Constraint(doc="Plant ramping down constraint")
     def constraint_ramp_down(b):
         return (
-            b1.previous_power - 90 <=
+            b1.previous_power - 60 <=
             b1.fs.plant_power_out[0])
 
     @b1.fs.Constraint(doc="Plant ramping up constraint")
     def constraint_ramp_up(b):
         return (
-            b1.previous_power + 90 >=
+            b1.previous_power + 60 >=
             b1.fs.plant_power_out[0])
 
     @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
