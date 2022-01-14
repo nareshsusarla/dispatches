@@ -1115,8 +1115,8 @@ def add_bounds(m):
     m.fs.hx_pump.control_volume.work[0].setlb(0)
     m.fs.hx_pump.control_volume.work[0].setub(1e10)
 
-    m.fs.plant_power_out[0].setlb(100)
-    m.fs.plant_power_out[0].setub(450)
+    # m.fs.plant_power_out[0].setlb(100)
+    # m.fs.plant_power_out[0].setub(450)
 
     for unit_k in [m.fs.booster]:
         unit_k.inlet.flow_mol[:].setlb(0)  # mol/s
@@ -1216,8 +1216,12 @@ def print_results(m, results):
     print('')
     print("***************** Power Plant Operation ******************")
     print('')
+    print('Net Power (MW): {:.6f}'.format(
+        value(m.fs.net_power)))
     print('Plant Power (MW): {:.6f}'.format(
         value(m.fs.plant_power_out[0])))
+    print('ES turbine Power (MW): {:.6f}'.format(
+        value(m.fs.es_turbine.work[0]) * (-1e-6)))
     print('Boiler feed water flow (mol/s): {:.6f}'.format(
         value(m.fs.boiler.inlet.flow_mol[0])))
     print('Boiler duty (MW_th): {:.6f}'.format(
@@ -1313,15 +1317,34 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver, power=None):
+def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fix_power=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
 
-    m.fs.plant_power_out.fix(power)
-    # m.fs.power_demand_constraint = Constraint(
-    #     expr=m.fs.plant_power_out[0] >= power
-    # )
+    # Add constraints and bounds for plant and discharge produced
+    # power
+    min_power = int(0.65 * max_power)
+    max_power_storage = 24 # in MW
+    min_power_storage = 1 # in MW
+
+    if fix_power:
+        m.fs.power_demand_eq = Constraint(
+            expr=m.fs.net_power == power
+        )
+    else:
+        m.fs.plant_power_min = Constraint(
+            expr=m.fs.plant_power_out[0] >= min_power
+        )
+        m.fs.plant_power_max = Constraint(
+            expr=m.fs.plant_power_out[0] <= max_power
+        )
+        m.fs.storage_power_min = Constraint(
+            expr=m.fs.es_turbine.work[0] * (-1e-6) >= min_power_storage
+        )
+        m.fs.storage_power_max = Constraint(
+            expr=m.fs.es_turbine.work[0] * (-1e-6) <= max_power_storage
+        )
 
     # Fix variables in the flowsheet
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
@@ -1351,8 +1374,15 @@ def model_analysis(m, solver, power=None):
     m.fs.hxc.outlet_2.temperature.fix(m.fs.salt_hot_temperature)
     m.fs.hxd.inlet_1.temperature.fix(m.fs.salt_hot_temperature)
     m.fs.hxd.outlet_1.temperature.fix(513.15)
-    print('DOF after unfix = ', degrees_of_freedom(m))
-    # raise Exception()
+
+    # For testing
+    # m.fs.salt_storage_max = Constraint(
+    #     expr=m.fs.hxc.inlet_2.flow_mass[0] <= 10
+    # )
+    # m.fs.hxc.inlet_2.flow_mass.fix(19)
+
+    # print('DOF after unfix = ', degrees_of_freedom(m))
+
     # Add salt inventory mass balances
     m.fs.previous_salt_inventory_hot = Var(
         m.fs.time,
@@ -1383,65 +1413,68 @@ def model_analysis(m, solver, power=None):
         doc="Cold salt inventory at the end of the hour (or time period), kg"
         )
 
-    @m.fs.Constraint(m.fs.time,
-                     doc="Inventory balance at the end of the time period")
-    def constraint_salt_inventory_hot(b, t):
+    @m.fs.Constraint(doc="Inventory balance at the end of the time period")
+    def constraint_salt_inventory_hot(b):
         return (
-            b.salt_inventory_hot[t] ==
-            b.previous_salt_inventory_hot[t]
-            + 3600*b.hxc.inlet_2.flow_mass[t]
-            - 3600*b.hxd.inlet_1.flow_mass[t])
+            b.salt_inventory_hot[0] ==
+            b.previous_salt_inventory_hot[0]
+            + 3600 * b.hxc.inlet_2.flow_mass[0]
+            - 3600 * b.hxd.inlet_1.flow_mass[0])
 
-    @m.fs.Constraint(m.fs.time,
-                      doc="Inventory balance at the end of the time period")
-    def constraint_salt_inventory_cold(b, t):
-        return (
-            b.salt_inventory_cold[t] ==
-            b.previous_salt_inventory_cold[t]
-            - 3600*b.hxc.inlet_2.flow_mass[t]
-            + 3600*b.hxd.inlet_1.flow_mass[t])
-
-    # @m.fs.Constraint(m.fs.time,
-    #                  doc="Maximum salt inventory at any time")
-    # def constraint_salt_inventory(b, t):
+    # @m.fs.Constraint(doc="Inventory balance at the end of the time period")
+    # def constraint_salt_inventory_cold(b):
     #     return (
-    #         b.salt_inventory_hot[t] +
-    #         b.salt_inventory_cold[t] == b.salt_amount)
+    #         b.salt_inventory_cold[0] ==
+    #         b.previous_salt_inventory_cold[0]
+    #         - 3600 * b.hxc.inlet_2.flow_mass[0]
+    #         + 3600 * b.hxd.inlet_1.flow_mass[0])
 
-    @m.fs.Constraint(m.fs.time,
-                     doc="Maximum previous salt inventory at any time")
-    def constraint_salt_previous_inventory(b, t):
+    @m.fs.Constraint(doc="Maximum salt inventory at any time")
+    def constraint_salt_inventory(b):
         return (
-            b.previous_salt_inventory_hot[t] +
-            b.previous_salt_inventory_cold[t] == b.salt_amount)
+            b.salt_inventory_hot[0] +
+            b.salt_inventory_cold[0] == b.salt_amount)
 
-    # Fix the previous salt inventory
-    m.fs.previous_salt_inventory_hot[0].fix(1)
-    # m.fs.previous_salt_inventory_cold[0].fix(0)
+    # @m.fs.Constraint(doc="Maximum previous salt inventory at any time")
+    # def constraint_salt_previous_inventory(b):
+    #     return (
+    #         b.previous_salt_inventory_hot[0] +
+    #         b.previous_salt_inventory_cold[0] == b.salt_amount)
 
-    # Add new flow bounds to boiler
-    m.fs.boiler_flow_lb = Constraint(
-        expr=m.fs.boiler.inlet.flow_mol[0] >= m.flow_min)
-    m.fs.boiler_flow_ub = Constraint(
-        expr=m.fs.boiler.inlet.flow_mol[0] <= m.flow_max)
+
+    # Fix the previous salt inventory based on the tank scenario
+    tank_max = 6739291 # in kg
+    if tank_scenario == "hot_empty":
+        m.fs.previous_salt_inventory_hot[0].fix(1)
+        m.fs.previous_salt_inventory_cold[0].fix(tank_max)
+    elif tank_scenario == "hot_half_full":
+        m.fs.previous_salt_inventory_hot[0].fix(tank_max / 2)
+        m.fs.previous_salt_inventory_cold[0].fix(tank_max / 2)
+    elif tank_scenario == "hot_full":
+        m.fs.previous_salt_inventory_hot[0].fix(tank_max)
+        m.fs.previous_salt_inventory_cold[0].fix(1)
+    else:
+        print('Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full')
+
 
     # Calculate revenue
     m.fs.revenue = Expression(
         expr=(m.fs.lmp[0] *
-              m.fs.plant_power_out[0]),
+              m.fs.net_power),
         doc="Revenue function in $/h assuming 1 hr operation"
     )
 
     # Objective function: total costs
+    scaling_factor = 1e-2
     m.obj = Objective(
         expr=(
             m.fs.revenue
             - ((m.fs.operating_cost
                 + m.fs.plant_fixed_operating_cost
                 + m.fs.plant_variable_operating_cost) / (365 * 24))
-            - ((m.fs.capital_cost
-                + m.fs.plant_capital_cost) / (365 * 24))
-        ),
+            # - ((m.fs.capital_cost
+            #     + m.fs.plant_capital_cost) / (365 * 24))
+        ) * scaling_factor,
         sense=maximize
     )
 
@@ -1473,29 +1506,26 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
-    # m_usc = usc.build_plant_model()
-    # usc.initialize(m_usc)
-
-    # m_ready = disconnect_arcs(m_usc)
-    # m = build_model(m_ready,
-    #                 scenario=i)
-    # m_chg, solver = main()
+    # Tank scenarios: "hot_empty", "hot_full", "hot_half_full"
+    max_power = 437.542126
+    power_demand = 436 # in MW
     method = "with_efficiency"
-    max_power = 436
+    tank_scenario = "hot_empty"
+    fix_power = False
+
     m_chg = main(method=method, max_power=max_power)
+
     m_chg.fs.lmp = Var(
         m_chg.fs.time,
         domain=Reals,
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(80)  # 80
-    # m_chg.cycle = 'discharge'
-    # m = model_analysis(m_chg,
-    #                    solver,
-    #                    cycle=m_chg.cycle)
+    m_chg.fs.lmp[0].fix(22)
 
-    power_demand = 400
     m = model_analysis(m_chg,
                        solver,
-                       power=power_demand)
+                       power=power_demand,
+                       max_power=max_power,
+                       tank_scenario=tank_scenario,
+                       fix_power=fix_power)
