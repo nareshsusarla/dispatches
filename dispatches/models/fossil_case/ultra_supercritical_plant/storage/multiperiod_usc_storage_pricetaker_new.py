@@ -77,6 +77,7 @@ def create_ss_rankine_model():
     m.rankine.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
 
     # Fix storage heat exchangers area and salt temperatures
+    # m.rankine.fs.hxc.inlet_1.flow_mol.fix(2000)
     m.rankine.fs.hxc.area.fix(1904)
     m.rankine.fs.hxd.area.fix(1095)
     m.rankine.fs.hxc.outlet_2.temperature[0].fix(831)
@@ -86,10 +87,9 @@ def create_ss_rankine_model():
     return m
 
 
-# with open('rts_results_all_prices.npy', 'rb') as f:
-#     dispatch = np.load(f)
-#     price = np.load(f)
-
+with open('rts_results_all_prices_base_case.npy', 'rb') as f:
+    dispatch = np.load(f)
+    price = np.load(f)
 # plt.figure(figsize=(12, 8))
 # prices_used = copy.copy(price)
 # prices_used[prices_used > 200] = 200
@@ -222,7 +222,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     #         #  b2.rankine.previous_power)]
 
 
-number_hours = 8
+number_hours = 24
 n_time_points = 1*number_hours  # hours in a week
 
 # Create the multiperiod model object. You can pass arguments to your
@@ -250,9 +250,12 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-lmp = [
-    15, 19, 21, 25,
-    12, 21, 30, 20]
+lmp = price[0:number_hours].tolist()
+# print(len(lmp))
+# print(lmp)
+# raise Exception()
+    # 15, 19, 21, 25,
+    # 12, 21, 30, 20]
 #     12, 16, 22, 20,
 #     15, 19, 21, 25,
 #     12, 16, 22, 20
@@ -276,7 +279,7 @@ for blk in blks:
     count += 1
 
 if number_hours >= 10:
-    scaling_obj = 1e-4
+    scaling_obj = 1#e-4
 else:
     scaling_obj = 1e-3
 
@@ -284,15 +287,15 @@ m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
 
 # Initial state for salt tank for different scenarios
 tank_scenario = "hot_empty" # scenarios: "hot_empty", "hot_full", "hot_half_full"
-tank_max = 6739291 # in kg
+tank_max = 6739292 # in kg
 if tank_scenario == "hot_empty":
     blks[0].rankine.previous_salt_inventory_hot.fix(1)
-    blks[0].rankine.previous_salt_inventory_cold.fix(tank_max)
+    blks[0].rankine.previous_salt_inventory_cold.fix(tank_max-1)
 elif tank_scenario == "hot_half_full":
     blks[0].rankine.previous_salt_inventory_hot.fix(tank_max/2)
     blks[0].rankine.previous_salt_inventory_cold.fix(tank_max/2)
 elif tank_scenario == "hot_full":
-    blks[0].rankine.previous_salt_inventory_hot.fix(tank_max)
+    blks[0].rankine.previous_salt_inventory_hot.fix(tank_max-1)
     blks[0].rankine.previous_salt_inventory_cold.fix(1)
 else:
     print("Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full")
@@ -322,6 +325,8 @@ c = 0
 for blk in blks:
     print()
     print('Period {}'.format(c+1))
+    print(' Objective: {:.4f}'.format(
+        value(blks[c].cost)))
     print(' Net power: {:.4f}'.format(
         value(blks[c].rankine.fs.net_power)))
     print(' Plant Power Out: {:.4f}'.format(
