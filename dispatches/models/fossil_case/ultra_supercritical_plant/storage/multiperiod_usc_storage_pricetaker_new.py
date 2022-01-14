@@ -37,8 +37,6 @@ def create_ss_rankine_model():
     m.rankine = usc.main(method=method, max_power=max_power)
 
     # Set bounds for plant power
-    m.rankine.fs.plant_power_out[0].setlb(None)
-    m.rankine.fs.plant_power_out[0].setub(None)
     # m.rankine.fs.plant_power_out[0].setlb(min_power)
     # m.rankine.fs.plant_power_out[0].setub(max_power)
     m.rankine.fs.plant_min_power_eq = pyo.Constraint(
@@ -158,13 +156,13 @@ def create_mp_rankine_block():
     @b1.fs.Constraint(doc="Plant ramping down constraint")
     def constraint_ramp_down(b):
         return (
-            b1.previous_power - 50 <=
+            b1.previous_power - 90 <=
             b1.fs.plant_power_out[0])
 
     @b1.fs.Constraint(doc="Plant ramping up constraint")
     def constraint_ramp_up(b):
         return (
-            b1.previous_power + 50 >=
+            b1.previous_power + 90 >=
             b1.fs.plant_power_out[0])
 
     @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
@@ -254,14 +252,13 @@ blks = mp_rankine.get_active_process_blocks()
 
 lmp = [
     15, 19, 21, 25,
-    12, 16, 22, 20]#,
-#     15, 19, 21, 25,
+    12, 22, 30, 20]
 #     12, 16, 22, 20,
 #     15, 19, 21, 25,
 #     12, 16, 22, 20
 # ]
 
-# Add market data for each block
+# Add lmp market data for each block
 count = 0
 for blk in blks:
     blk_rankine = blk.rankine
@@ -278,31 +275,35 @@ for blk in blks:
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     count += 1
 
-# scaling_obj = 1 # for 8 hours analysis
-scaling_obj = 1e-3 # for 8 hours analysis
-# scaling_obj = 1e-4 # for 24 hours analysis
+if number_hours >= 10:
+    scaling_obj = 1e-4
+else:
+    scaling_obj = 1e-3
+
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
 
-# # Hot Tank Empty Scenario
-# blks[0].rankine.previous_salt_inventory_hot.fix(1)
-# blks[0].rankine.previous_salt_inventory_cold.fix(6739291)
-
-# Tank Half Full Scenario
-blks[0].rankine.previous_salt_inventory_hot.fix(6739292/2)
-blks[0].rankine.previous_salt_inventory_cold.fix(6739292/2)
-
-# # Hot Tank Full Scenario
-# blks[0].rankine.previous_salt_inventory_hot.fix(6739291)
-# blks[0].rankine.previous_salt_inventory_cold.fix(1)
-
+# Initial state for salt tank for different scenarios
+tank_scenario = "hot_empty" # scenarios: "hot_empty", "hot_full", "hot_half_full"
+tank_max = 6739291 # in kg
+if tank_scenario == "hot_empty":
+    blks[0].rankine.previous_salt_inventory_hot.fix(1)
+    blks[0].rankine.previous_salt_inventory_cold.fix(tank_max)
+elif tank_scenario == "hot_half_full":
+    blks[0].rankine.previous_salt_inventory_hot.fix(tank_max/2)
+    blks[0].rankine.previous_salt_inventory_cold.fix(tank_max/2)
+elif tank_scenario == "hot_full":
+    blks[0].rankine.previous_salt_inventory_hot.fix(tank_max)
+    blks[0].rankine.previous_salt_inventory_cold.fix(1)
+else:
+    print("Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full")
 
 blks[0].rankine.previous_power.fix(400)
 
+# Plot results
 n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
 hot_tank_level = []
 net_power = []
-
 for week in range(n_weeks):
     print("Solving for week: ", week)
     # for (i, blk) in enumerate(blks):
