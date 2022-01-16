@@ -32,7 +32,7 @@ max_power_storage = 24 # in MW
 min_power_storage = 1 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
-scaling_factor = 2e-3
+scaling_factor = 1e-4
 
 def create_ss_rankine_model():
 
@@ -226,8 +226,8 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     #         # (b1.rankine.fs.plant_power_out[0],
     #         #  b2.rankine.previous_power)]
 
-
-number_hours = 48
+number_days = 7
+number_hours = 24 * number_days
 n_time_points = 1*number_hours  # hours in a week
 
 # Create the multiperiod model object. You can pass arguments to your
@@ -317,7 +317,7 @@ for week in range(n_weeks):
     print("Solving for week: ", week)
     # for (i, blk) in enumerate(blks):
     #     blk.lmp_signal = weekly_prices[week][i]
-    opt.solve(m, tee=True)
+    results = opt.solve(m, tee=True)
     hot_tank_level.append(
         [pyo.value(blks[i].rankine.salt_inventory_hot)
          for i in range(n_time_points)])
@@ -325,14 +325,15 @@ for week in range(n_weeks):
         [pyo.value(blks[i].rankine.fs.net_power)
          for i in range(n_time_points)])
 log_close_to_bounds(m)
-log_infeasible_constraints(m)
+# log_infeasible_constraints(m)
+print(results)
 
 c = 0
 for blk in blks:
     print()
     print('Period {}'.format(c+1))
     print(' Objective: {:.4f}'.format(
-        value(blks[c].cost)))
+        value(blks[c].cost) / scaling_factor))
     print(' Net power: {:.4f}'.format(
         value(blks[c].rankine.fs.net_power)))
     print(' Plant Power Out: {:.4f}'.format(
@@ -340,7 +341,7 @@ for blk in blks:
     print(' ES Turbine Power: {:.4f}'.format(
         value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6)))
     print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue)))
-    print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost)))
+    print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost) / scaling_factor))
     print(' Specific Operating cost ($/MWh): {:.4f}'.format(
         value(blks[c].operating_cost) / value(blks[c].rankine.fs.net_power)))
     print(' Cycle efficiency (%): {:.4f}'.format(
@@ -413,7 +414,7 @@ ax1.step(# [x + 1 for x in hours], hot_tank_array,
     color=color[0])
 ax1.tick_params(axis='y',
                 labelcolor=color[0])
-ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=1))
+ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=12))
 
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP ($/MWh)',
@@ -446,7 +447,7 @@ ax3.step(# [x + 1 for x in hours], power_array,
     color=color[2])
 ax3.tick_params(axis='y',
                 labelcolor=color[2])
-ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=1))
+ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=12))
 
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP ($/MWh)',
