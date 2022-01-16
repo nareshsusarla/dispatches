@@ -27,12 +27,14 @@ plt.rc('axes', titlesize=24)
 
 method = "with_efficiency" # options: with_efficiency and without_efficiency
 max_power = 436 # in MW
-scaling_factor = 1e-3
+min_power = int(0.65 * max_power) # 283 in MW
+max_power_storage = 24 # in MW
+min_power_storage = 1 # in MW
+max_power_total = max_power + max_power_storage
+min_power_total = min_power + min_power_storage
+scaling_factor = 2e-3
 
 def create_ss_rankine_model():
-    min_power = int(0.65 * max_power) # 283 in MW
-    max_power_storage = 24 # in MW
-    min_power_storage = 1 # in MW
 
     m = pyo.ConcreteModel()
     m.rankine = usc.main(method=method, max_power=max_power)
@@ -125,7 +127,7 @@ def create_mp_rankine_block():
     b1.previous_power = Var(
         domain=NonNegativeReals,
         initialize=400,
-        bounds=(100, 450),
+        bounds=(min_power_total, max_power_total),
         doc="Previous period power (MW)"
         )
 
@@ -225,7 +227,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     #         #  b2.rankine.previous_power)]
 
 
-number_hours = 24
+number_hours = 48
 n_time_points = 1*number_hours  # hours in a week
 
 # Create the multiperiod model object. You can pass arguments to your
