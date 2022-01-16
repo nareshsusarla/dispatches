@@ -32,7 +32,7 @@ max_power_storage = 24 # in MW
 min_power_storage = 1 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
-scaling_factor = 1e-4
+scaling_factor = 1e-3
 
 def create_ss_rankine_model():
 
@@ -226,7 +226,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     #         # (b1.rankine.fs.plant_power_out[0],
     #         #  b2.rankine.previous_power)]
 
-number_days = 7
+number_days = 1
 number_hours = 24 * number_days
 n_time_points = 1*number_hours  # hours in a week
 
@@ -414,7 +414,7 @@ ax1.step(# [x + 1 for x in hours], hot_tank_array,
     color=color[0])
 ax1.tick_params(axis='y',
                 labelcolor=color[0])
-ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=12))
+ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
 
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP ($/MWh)',
@@ -447,7 +447,7 @@ ax3.step(# [x + 1 for x in hours], power_array,
     color=color[2])
 ax3.tick_params(axis='y',
                 labelcolor=color[2])
-ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=12))
+ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
 
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP ($/MWh)',
