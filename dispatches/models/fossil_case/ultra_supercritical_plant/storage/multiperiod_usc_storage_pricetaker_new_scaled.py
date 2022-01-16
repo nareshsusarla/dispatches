@@ -410,7 +410,7 @@ ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, hot_tank_list,
-    marker='o', ms=8,
+    marker='o', ms=4,
     color=color[0])
 ax1.tick_params(axis='y',
                 labelcolor=color[0])
@@ -421,7 +421,7 @@ ax2.set_ylabel('LMP ($/MWh)',
                color=color[1])
 ax2.step(# [x + 1 for x in hours], lmp_array,
     hours_list, lmp_list,
-    marker='o', ms=7, alpha=0.75,
+    marker='o', ms=3, alpha=0.75,
     ls=':', color=color[1])
 ax2.tick_params(axis='y',
                 labelcolor=color[1])
@@ -443,7 +443,7 @@ ax3.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
 ax3.step(# [x + 1 for x in hours], power_array,
     hours_list, power_list,
-    marker='o', ms=8,
+    marker='o', ms=4,
     color=color[2])
 ax3.tick_params(axis='y',
                 labelcolor=color[2])
@@ -454,7 +454,7 @@ ax4.set_ylabel('LMP ($/MWh)',
                color=color[1])
 ax4.step(# [x + 1 for x in hours], lmp_array,
     hours_list, lmp_list,
-    marker='o', ms=7, alpha=0.75,
+    marker='o', ms=3, alpha=0.75,
     ls=':', color=color[1]
 )
 ax4.tick_params(axis='y',
