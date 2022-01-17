@@ -27,6 +27,7 @@ plt.rc('axes', titlesize=24)
 
 method = "with_efficiency" # options: with_efficiency and without_efficiency
 max_power = 436 # in MW
+load_from_file = 'initialized_usc_storage_mlp_mp.json'
 
 def create_ss_rankine_model():
     min_power = int(0.65 * max_power) # 283 in MW
@@ -34,7 +35,9 @@ def create_ss_rankine_model():
     min_power_storage = 1 # in MW
 
     m = pyo.ConcreteModel()
-    m.rankine = usc.main(method=method, max_power=max_power)
+    m.rankine = usc.main(method=method,
+                         max_power=max_power,
+                         load_from_file=load_from_file)
 
     # Set bounds for plant power
     # m.rankine.fs.plant_power_out[0].setlb(min_power)
@@ -118,7 +121,7 @@ def create_mp_rankine_block():
     m = create_ss_rankine_model()
     b1 = m.rankine
 
-    print('DOFs within mp create 1 =', degrees_of_freedom(m))
+    # print('DOFs within mp create 1 =', degrees_of_freedom(m))
 
     # Add coupling variables
     b1.previous_power = Var(
@@ -178,7 +181,7 @@ def create_mp_rankine_block():
         return (
             b1.salt_inventory_hot +
             b1.salt_inventory_cold == b1.fs.salt_amount)
-    print('DOFs after mp create =', degrees_of_freedom(m))
+    # print('DOFs after mp create =', degrees_of_freedom(m))
 
     # @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
     # def constraint_salt_inventory_cold(b):
@@ -222,7 +225,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     #         #  b2.rankine.previous_power)]
 
 
-number_hours = 24
+number_hours = 24*7
 n_time_points = 1*number_hours  # hours in a week
 
 # Create the multiperiod model object. You can pass arguments to your
@@ -250,7 +253,7 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-lmp = price[0:number_hours].tolist()
+lmp = price[0:n_time_points].tolist()
 # print(len(lmp))
 # print(lmp)
 # raise Exception()
@@ -279,7 +282,7 @@ for blk in blks:
     count += 1
 
 if number_hours >= 10:
-    scaling_obj = 1#e-4
+    scaling_obj = 1e-5
 else:
     scaling_obj = 1e-3
 
@@ -307,6 +310,8 @@ n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
 hot_tank_level = []
 net_power = []
+hxc_duty = []
+hxd_duty = []
 for week in range(n_weeks):
     print("Solving for week: ", week)
     # for (i, blk) in enumerate(blks):
@@ -317,6 +322,12 @@ for week in range(n_weeks):
          for i in range(n_time_points)])
     net_power.append(
         [pyo.value(blks[i].rankine.fs.net_power)
+         for i in range(n_time_points)])
+    hxc_duty.append(
+        [pyo.value(blks[i].rankine.fs.hxc.heat_duty[0]) * 1e-6
+         for i in range(n_time_points)])
+    hxd_duty.append(
+        [pyo.value(blks[i].rankine.fs.hxd.heat_duty[0]) * 1e-6
          for i in range(n_time_points)])
 log_close_to_bounds(m)
 log_infeasible_constraints(m)
@@ -407,7 +418,7 @@ ax1.step(# [x + 1 for x in hours], hot_tank_array,
     color=color[0])
 ax1.tick_params(axis='y',
                 labelcolor=color[0])
-ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=1))
+ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=10))
 
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP ($/MWh)',
@@ -440,7 +451,7 @@ ax3.step(# [x + 1 for x in hours], power_array,
     color=color[2])
 ax3.tick_params(axis='y',
                 labelcolor=color[2])
-ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=1))
+ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=10))
 
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP ($/MWh)',
@@ -453,5 +464,40 @@ ax4.step(# [x + 1 for x in hours], lmp_array,
 ax4.tick_params(axis='y',
                 labelcolor=color[1])
 plt.savefig('multiperiod_usc_storage_new_power.png')
+
+hxc_array = np.asarray(hxc_duty[0:n_weeks_to_plot]).flatten()
+hxd_array = np.asarray(hxd_duty[0:n_weeks_to_plot]).flatten()
+hxc_duty1 = 0 # zero since the plant is not operating
+hxc_duty_list = [hxc_duty1] + hxc_array.tolist()
+hxd_duty1 = 0 # zero since the plant is not operating
+hxd_duty_list = [hxd_duty1] + hxd_array.tolist()
+
+fig3, ax5 = plt.subplots(figsize=(12, 8))
+ax5.set_xlabel('Time Period (hr)')
+ax5.set_ylabel('HXC Duty (MW)',
+               color=color[2])
+ax5.spines["top"].set_visible(False)
+ax5.spines["right"].set_visible(False)
+ax5.grid(linestyle=':', which='both',
+         color='gray', alpha=0.30)
+ax5.step(# [x + 1 for x in hours], power_array,
+    hours_list, hxc_duty_list,
+    marker='o', ms=8,
+    color=color[0])
+ax5.tick_params(axis='y',
+                labelcolor=color[0])
+ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=10))
+
+ax6 = ax5.twinx()
+ax6.set_ylabel('HXD Duty (MW)',
+               color=color[1])
+ax6.step(# [x + 1 for x in hours], lmp_array,
+    hours_list, hxd_duty_list,
+    marker='o', ms=7, alpha=0.75,
+    ls=':', color=color[2]
+)
+ax6.tick_params(axis='y',
+                labelcolor=color[2])
+plt.savefig('multiperiod_usc_storage_new_hxduty.png')
 
 plt.show()
