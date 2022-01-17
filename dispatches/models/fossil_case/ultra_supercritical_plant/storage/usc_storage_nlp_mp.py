@@ -57,6 +57,7 @@ from idaes.generic_models.unit_models import (HeatExchanger,
                                               MomentumMixingType,
                                               Heater)
 import idaes.core.util.unit_costing as icost
+from idaes.core.util import model_serializer as ms
 
 # Import IDAES Libraries
 from idaes.generic_models.unit_models import PressureChanger
@@ -904,10 +905,6 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         )
     m.fs.op_cost_eq = Constraint(rule=op_cost_rule)
 
-    # Initialize operating cost
-    calculate_variable_from_constraint(
-        m.fs.operating_cost,
-        m.fs.op_cost_eq)
 
     ###########################################################################
     #  Annual capital and operating cost for full plant
@@ -936,11 +933,6 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         ) * (m.CE_index / 575.4)
     m.fs.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
 
-    # Initialize capital cost of power plant
-    calculate_variable_from_constraint(
-        m.fs.plant_capital_cost,
-        m.fs.plant_cap_cost_eq)
-
     # Add function to calculate fixed and variable operating costs in
     # the plant. Equations from "USC Cost function.pptx" sent by
     # Naresh
@@ -959,6 +951,19 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         ) * (m.CE_index / 575.4)  # in $/yr
     m.fs.op_variable_plant_cost_eq = Constraint(
         rule=op_variable_plant_cost_rule)
+
+    return m
+
+def initialize_with_costing(m):
+    # Initialize operating cost
+    calculate_variable_from_constraint(
+        m.fs.operating_cost,
+        m.fs.op_cost_eq)
+
+    # Initialize capital cost of power plant
+    calculate_variable_from_constraint(
+        m.fs.plant_capital_cost,
+        m.fs.plant_cap_cost_eq)
 
     # Initialize plant fixed and variable operating costs
     calculate_variable_from_constraint(
@@ -1136,35 +1141,63 @@ def add_bounds(m):
     return m
 
 
-def main(method=None, max_power=None):
+def main(method=None, max_power=None, load_from_file=None):
 
-    m = usc.build_plant_model()
-    usc.initialize(m)
+    if load_from_file is not None:
 
-    # Create a flowsheet, add properties, unit models, and arcs
-    m = create_charge_model(m, method=method, max_power=max_power)
+        # build plant model
+        m = usc.build_plant_model()
 
-    # Give all the required inputs to the model
-    set_model_input(m)
-    print('DOF after build: ', degrees_of_freedom(m))
-    # Add scaling factor
-    set_scaling_factors(m)
+        # Create a flowsheet, add properties, unit models, and arcs
+        m = create_charge_model(m, method=method, max_power=max_power)
 
-    # Initialize the model with a sequential initialization and custom
-    # routines
-    print('DOF before initialization: ', degrees_of_freedom(m))
-    initialize(m)
-    print('DOF after initialization: ', degrees_of_freedom(m))
+        # Give all the required inputs to the model
+        set_model_input(m)
+        # print('DOF after build: ', degrees_of_freedom(m))
+        # Add scaling factor
+        set_scaling_factors(m)
 
-    # Add cost correlations
-    build_costing(m)
-    print('DOF after costing: ', degrees_of_freedom(m))
-    # raise Exception()
+        # Add cost correlations
+        m = build_costing(m)
+        # print('DOF after costing: ', degrees_of_freedom(m))
+        # raise Exception()
+
+        # Initialize with bounds
+        ms.from_json(m, fname=load_from_file)
+    else:
+
+        m = usc.build_plant_model()
+        usc.initialize(m)
+
+        # Create a flowsheet, add properties, unit models, and arcs
+        m = create_charge_model(m, method=method, max_power=max_power)
+
+        # Give all the required inputs to the model
+        set_model_input(m)
+        print('DOF after build: ', degrees_of_freedom(m))
+        # Add scaling factor
+        set_scaling_factors(m)
+
+        # Initialize the model with a sequential initialization and custom
+        # routines
+        print('DOF before initialization: ', degrees_of_freedom(m))
+        initialize(m)
+        print('DOF after initialization: ', degrees_of_freedom(m))
+
+        # Add cost correlations
+        m = build_costing(m)
+        print('DOF after costing: ', degrees_of_freedom(m))
+        # raise Exception()
+
+        # Initialize with bounds
+        initialize_with_costing(m)
 
     # Add bounds
     add_bounds(m)
-    print('DOF after bounds: ', degrees_of_freedom(m))
+    # print('DOF after bounds: ', degrees_of_freedom(m))
 
+    # # storing the initialization file
+    # ms.to_json(m, fname='initialized_usc_storage_mlp_mp.json')
     return m
 
 
