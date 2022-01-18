@@ -32,12 +32,33 @@ max_power_storage = 24 # in MW
 min_power_storage = 1 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
+load_from_file = 'initialized_usc_storage_mlp_mp.json'
+
+# Add number of days and hours per week
+number_days = 1
+number_hours = 24 * number_days
 scaling_factor = 1e-3
+print()
+print('Scaling_factor:', scaling_factor)
+
+# Select lmp source data and scaling factor according to that
+use_rts_data = False
+if use_rts_data:
+    print('>>>>>> Using RTS lmp data')
+    with open('rts_results_all_prices_base_case.npy', 'rb') as f:
+        dispatch = np.load(f)
+        price = np.load(f)
+else:
+    print('>>>>>> Using NREL lmp data')
+    price = np.load("nrel_scenario_average_hourly.npy")
+
 
 def create_ss_rankine_model():
 
     m = pyo.ConcreteModel()
-    m.rankine = usc.main(method=method, max_power=max_power)
+    m.rankine = usc.main(method=method,
+                         max_power=max_power,
+                         load_from_file=load_from_file)
 
     # Set bounds for plant power
     # m.rankine.fs.plant_power_out[0].setlb(min_power)
@@ -89,10 +110,6 @@ def create_ss_rankine_model():
 
     return m
 
-
-with open('rts_results_all_prices_base_case.npy', 'rb') as f:
-    dispatch = np.load(f)
-    price = np.load(f)
 # plt.figure(figsize=(12, 8))
 # prices_used = copy.copy(price)
 # prices_used[prices_used > 200] = 200
@@ -118,10 +135,11 @@ with open('rts_results_all_prices_base_case.npy', 'rb') as f:
 
 
 def create_mp_rankine_block():
+    print('>>> Creating USC plant model and initialization for each time period')
     m = create_ss_rankine_model()
     b1 = m.rankine
 
-    print('DOFs within mp create 1 =', degrees_of_freedom(m))
+    # print('DOFs within mp create 1 =', degrees_of_freedom(m))
 
     # Add coupling variables
     b1.previous_power = Var(
@@ -183,7 +201,7 @@ def create_mp_rankine_block():
         return (
             b1.salt_inventory_hot +
             b1.salt_inventory_cold == b1.fs.salt_amount * scaling_factor)
-    print('DOFs after mp create =', degrees_of_freedom(m))
+    # print('DOFs after mp create =', degrees_of_freedom(m))
 
     # @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
     # def constraint_salt_inventory_cold(b):
@@ -226,20 +244,19 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     #         # (b1.rankine.fs.plant_power_out[0],
     #         #  b2.rankine.previous_power)]
 
-number_days = 1
-number_hours = 24 * number_days
-n_time_points = 1*number_hours  # hours in a week
+n_time_points = 1 * number_hours  # hours in a week
 
 # Create the multiperiod model object. You can pass arguments to your
 # "process_model_func" for each time period using a dict of dicts as
 # shown here.  In this case, it is setting up empty dictionaries for
 # each time period.
+i = 0
 mp_rankine = MultiPeriodModel(
     n_time_points=n_time_points,
     process_model_func=create_mp_rankine_block,
     linking_variable_func=get_rankine_link_variable_pairs,
     # periodic_variable_func=get_rankine_periodic_variable_pairs
-    )
+)
 
 # OPTIONAL KEYWORD ARGUMENTS
 # time_points = np.arange(0,n_time_points)
@@ -256,15 +273,7 @@ m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
 lmp = price[0:number_hours].tolist()
-# print(len(lmp))
 # print(lmp)
-# raise Exception()
-    # 15, 19, 21, 25,
-    # 12, 21, 30, 20]
-#     12, 16, 22, 20,
-#     15, 19, 21, 25,
-#     12, 16, 22, 20
-# ]
 
 # Add lmp market data for each block
 count = 0
@@ -282,11 +291,6 @@ for blk in blks:
     )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     count += 1
-
-# if number_hours >= 10:
-#     scaling_obj = 1#e-4
-# else:
-#     scaling_obj = 1e-3
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
 
@@ -313,37 +317,47 @@ n_weeks = 1
 opt = pyo.SolverFactory('ipopt')
 hot_tank_level = []
 net_power = []
+hxc_duty = []
+hxd_duty = []
 for week in range(n_weeks):
-    print("Solving for week: ", week)
+    print()
+    print(">>>>>> Solving for week {}, {} day(s) and {} hours: ".format(week + 1, number_days, number_hours))
     # for (i, blk) in enumerate(blks):
     #     blk.lmp_signal = weekly_prices[week][i]
     results = opt.solve(m, tee=True)
     hot_tank_level.append(
-        [pyo.value(blks[i].rankine.salt_inventory_hot)
+        [(pyo.value(blks[i].rankine.salt_inventory_hot) / scaling_factor) * 1e-3
          for i in range(n_time_points)])
     net_power.append(
         [pyo.value(blks[i].rankine.fs.net_power)
          for i in range(n_time_points)])
+    hxc_duty.append(
+        [pyo.value(blks[i].rankine.fs.hxc.heat_duty[0]) * 1e-6
+         for i in range(n_time_points)])
+    hxd_duty.append(
+        [pyo.value(blks[i].rankine.fs.hxd.heat_duty[0]) * 1e-6
+         for i in range(n_time_points)])
+
 log_close_to_bounds(m)
 # log_infeasible_constraints(m)
 print(results)
 
 c = 0
+print('Objective: {:.4f}'.format(value(m.obj)))
 for blk in blks:
     print()
     print('Period {}'.format(c+1))
-    print(' Objective: {:.4f}'.format(
-        value(blks[c].cost) / scaling_factor))
     print(' Net power: {:.4f}'.format(
         value(blks[c].rankine.fs.net_power)))
     print(' Plant Power Out: {:.4f}'.format(
         value(blks[c].rankine.fs.plant_power_out[0])))
     print(' ES Turbine Power: {:.4f}'.format(
         value(blks[c].rankine.fs.es_turbine.work_mechanical[0])*(-1e-6)))
-    print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue)))
+    print(' Cost ($): {:.4f}'.format(value(blks[c].cost) / scaling_factor))
+    print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue) / scaling_factor))
     print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost) / scaling_factor))
     print(' Specific Operating cost ($/MWh): {:.4f}'.format(
-        value(blks[c].operating_cost) / value(blks[c].rankine.fs.net_power)))
+        (value(blks[c].operating_cost) /scaling_factor) / value(blks[c].rankine.fs.net_power)))
     print(' Cycle efficiency (%): {:.4f}'.format(
         value(blks[c].rankine.fs.cycle_efficiency)))
     print(' Boiler efficiency (%): {:.4f}'.format(
@@ -352,12 +366,12 @@ for blk in blks:
         value(blks[c].rankine.fs.boiler.heat_duty[0]) * 1e-6))
     print(' Boiler flow mol (mol/s): {:.4f}'.format(
         value(blks[c].rankine.fs.boiler.outlet.flow_mol[0])))
-    print(' Previous salt inventory: {:.4f}'.format(
-        value(blks[c].rankine.previous_salt_inventory_hot)))
-    print(' Salt from HXC (kg): {:.4f}'.format(
-        value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600))
-    print(' Salt from HXD (kg): {:.4f}'.format(
-        value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600))
+    print(' Previous salt inventory (mton): {:.4f}'.format(
+        (value(blks[c].rankine.previous_salt_inventory_hot) / scaling_factor) * 1e-3))
+    print(' Salt from HXC (mton): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0]) * 3600 * 1e-3))
+    print(' Salt from HXD (mton): {:.4f}'.format(
+        value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0]) * 3600 * 1e-3))
     print(' HXC Duty (MW): {:.4f}'.format(
         value(blks[c].rankine.fs.hxc.heat_duty[0]) * 1e-6))
     print(' HXD Duty (MW): {:.4f}'.format(
@@ -366,13 +380,13 @@ for blk in blks:
         value(blks[c].rankine.fs.ess_hp_split.split_fraction[0, "to_hxc"])))
     print(' Split fraction to HXD: {:.4f}'.format(
         value(blks[c].rankine.fs.ess_bfp_split.split_fraction[0, "to_hxd"])))
-    print(' Salt flow HXC (kg): {:.4f}'.format(
+    print(' Salt flow HXC (kg/s): {:.4f}'.format(
         value(blks[c].rankine.fs.hxc.outlet_2.flow_mass[0])))
-    print(' Salt flow HXD (kg): {:.4f}'.format(
+    print(' Salt flow HXD (kg/s): {:.4f}'.format(
         value(blks[c].rankine.fs.hxd.outlet_1.flow_mass[0])))
-    print(' Steam flow HXC (kg): {:.4f}'.format(
+    print(' Steam flow HXC (mol/s): {:.4f}'.format(
         value(blks[c].rankine.fs.hxc.outlet_1.flow_mol[0])))
-    print(' Steam flow HXD (kg): {:.4f}'.format(
+    print(' Steam flow HXD (mol/s): {:.4f}'.format(
         value(blks[c].rankine.fs.hxd.outlet_2.flow_mol[0])))
     print(' Delta T in HXC (kg): {:.4f}'.format(
         value(blks[c].rankine.fs.hxc.delta_temperature_in[0])))
@@ -392,7 +406,7 @@ hot_tank_array = np.asarray(hot_tank_level[0:n_weeks_to_plot]).flatten()
 
 # Convert array to list to include hot tank level at time zero
 lmp_list = [0] + lmp_array.tolist()
-hot_tank_array0 = value(blks[0].rankine.previous_salt_inventory_hot)
+hot_tank_array0 = (value(blks[0].rankine.previous_salt_inventory_hot) / scaling_factor) * 1e-3
 hours_list = hours.tolist() + [number_hours]
 hot_tank_list = [hot_tank_array0] + hot_tank_array.tolist()
 
@@ -402,7 +416,7 @@ fig1, ax1 = plt.subplots(figsize=(12, 8))
 
 color = ['r', 'b', 'tab:green']
 ax1.set_xlabel('Time Period (hr)')
-ax1.set_ylabel('Hot Tank Level (kg)',
+ax1.set_ylabel('Hot Tank Level (metric ton)',
                color=color[0])
 ax1.spines["top"].set_visible(False)
 ax1.spines["right"].set_visible(False)
@@ -428,6 +442,7 @@ ax2.tick_params(axis='y',
 plt.savefig('multiperiod_usc_storage_scaled_new_hot_tank_level.png')
 
 
+no_zero_point = True
 power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
 # Convert array to list to include net power at time zero
 power_array0 = 0 # zero since the plant is not operating
@@ -441,24 +456,80 @@ ax3.spines["top"].set_visible(False)
 ax3.spines["right"].set_visible(False)
 ax3.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-ax3.step(# [x + 1 for x in hours], power_array,
-    hours_list, power_list,
-    marker='o', ms=4,
-    color=color[2])
+if no_zero_point:
+    ax3.step([x + 1 for x in hours], power_array,
+             marker='o', ms=4,
+             color=color[2])
+else:
+    ax3.step(hours_list, power_list,
+             marker='o', ms=4,
+             color=color[2])
 ax3.tick_params(axis='y',
                 labelcolor=color[2])
-ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
+if no_zero_point:
+    ax3.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=4))
+else:
+    ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
 
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP ($/MWh)',
                color=color[1])
-ax4.step(# [x + 1 for x in hours], lmp_array,
-    hours_list, lmp_list,
-    marker='o', ms=3, alpha=0.75,
-    ls=':', color=color[1]
-)
+if no_zero_point:
+    ax4.step([x + 1 for x in hours], lmp_array,
+             marker='o', ms=3, alpha=0.75,
+             ls=':', color=color[1])
+else:
+    ax4.step(hours_list, lmp_list,
+             marker='o', ms=3, alpha=0.75,
+             ls=':', color=color[1])
 ax4.tick_params(axis='y',
                 labelcolor=color[1])
 plt.savefig('multiperiod_usc_storage_scaled_new_power.png')
+
+
+hxc_array = np.asarray(hxc_duty[0:n_weeks_to_plot]).flatten()
+hxd_array = np.asarray(hxd_duty[0:n_weeks_to_plot]).flatten()
+hxc_duty0 = 0 # zero since the plant is not operating
+hxc_duty_list = [hxc_duty0] + hxc_array.tolist()
+hxd_duty0 = 0 # zero since the plant is not operating
+hxd_duty_list = [hxd_duty0] + hxd_array.tolist()
+
+fig3, ax5 = plt.subplots(figsize=(12, 8))
+ax5.set_xlabel('Time Period (hr)')
+ax5.set_ylabel('Charge Heat Exchanger Heat Duty (MW)',
+               color=color[0])
+ax5.spines["top"].set_visible(False)
+ax5.spines["right"].set_visible(False)
+ax5.grid(linestyle=':', which='both',
+         color='gray', alpha=0.30)
+if no_zero_point:
+    ax5.step([x + 1 for x in hours], hxc_array,
+             marker='o', ms=4,
+             color=color[0])
+else:
+    ax5.step(hours_list, hxc_duty_list,
+             marker='o', ms=4,
+             color=color[0])
+ax5.tick_params(axis='y',
+                labelcolor=color[0])
+if no_zero_point:
+    ax5.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=4))
+else:
+    ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
+
+ax6 = ax5.twinx()
+ax6.set_ylabel('Discharge Heat Exchanger Heat Duty (MW)',
+               color=color[2])
+if no_zero_point:
+    ax6.step([x + 1 for x in hours], hxd_array,
+             marker='o', ms=4,
+             color=color[2])
+else:
+    ax6.step(hours_list, hxd_duty_list,
+             marker='o', ms=4,
+             color=color[2])
+ax6.tick_params(axis='y',
+                labelcolor=color[2])
+plt.savefig('multiperiod_usc_storage_scaled_new_hxduty.png')
 
 plt.show()
