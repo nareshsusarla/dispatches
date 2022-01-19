@@ -37,7 +37,15 @@ load_from_file = 'initialized_usc_storage_mlp_mp.json'
 # Add number of days and hours per week
 number_days = 1
 number_hours = 24 * number_days
-scaling_factor = 1
+
+lx = True
+if lx:
+    scaling_obj = 1
+    scaling_factor = 1e-3
+else:
+    scaling_obj = 1e-2
+    scaling_factor = 1
+
 print()
 print('Scaling_factor:', scaling_factor)
 
@@ -52,7 +60,6 @@ else:
     print('>>>>>> Using NREL lmp data')
     price = np.load("nrel_scenario_average_hourly.npy")
 
-# raise Exception()
 # price = [22.9684,
 #         21.1168,
 #         20.4,
@@ -320,8 +327,7 @@ for blk in blks:
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     count += 1
 
-# m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]))
-m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * 1e-2)
+m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
 
 # Initial state for salt tank for different scenarios
 tank_scenario = "hot_empty" # scenarios: "hot_empty", "hot_full", "hot_half_full"
@@ -351,7 +357,7 @@ hxc_duty = []
 hxd_duty = []
 for week in range(n_weeks):
     print()
-    print(">>>>>> Solving for week {}, {} day(s) and {} hours: ".format(week + 1, number_days, number_hours))
+    print(">>>>>> Solving for week {}: {} hours of operation in {} day(s) ".format(week + 1, number_hours, number_days))
     # for (i, blk) in enumerate(blks):
     #     blk.lmp_signal = weekly_prices[week][i]
     results = opt.solve(m, tee=True)
@@ -359,8 +365,11 @@ for week in range(n_weeks):
         [(pyo.value(blks[i].rankine.salt_inventory_hot) / scaling_factor) * 1e-3
          for i in range(n_time_points)])
     cold_tank_level.append(
-        [((tank_max - pyo.value(blks[i].rankine.salt_inventory_hot)) / scaling_factor) * 1e-3
+        [(pyo.value(blks[i].rankine.salt_inventory_cold) / scaling_factor) * 1e-3
          for i in range(n_time_points)])
+    # cold_tank_level.append(
+    #     [((tank_max - pyo.value(blks[i].rankine.salt_inventory_hot)) / scaling_factor) * 1e-3
+    #      for i in range(n_time_points)])
     net_power.append(
         [pyo.value(blks[i].rankine.fs.net_power)
          for i in range(n_time_points)])
@@ -450,7 +459,7 @@ font = {'size':16}
 plt.rc('font', **font)
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 
-color = ['r', 'b', 'tab:green', 'k']
+color = ['r', 'b', 'tab:green', 'k', 'tab:orange']
 ax1.set_xlabel('Time Period (hr)')
 ax1.set_ylabel('Salt Tank Level (metric ton)',
                color=color[3])
@@ -458,76 +467,71 @@ ax1.spines["top"].set_visible(False)
 ax1.spines["right"].set_visible(False)
 ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
+plt.axhline(tank_max, ls=':', lw=1.75,
+            color=color[4])
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, hot_tank_list,
-    marker='o', ms=4, label='Hot Salt',
-    color=color[0])
+    marker='^', ms=4, label='Hot Salt',
+    lw=1, color=color[0])
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, cold_tank_list,
-    marker='o', ms=4, label='Cold Salt',
-    color=color[2])
-ax1.legend(loc="upper center")
+    marker='v', ms=4, label='Cold Salt',
+    lw=1, color=color[1])
+ax1.legend(loc="center left", frameon=False)
 ax1.tick_params(axis='y')#,
                 # labelcolor=color[3])
-ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
+ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
 
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP ($/MWh)',
-               color=color[1])
-ax2.step(# [x + 1 for x in hours], lmp_array,
-    hours_list, lmp_list,
-    marker='o', ms=3, alpha=0.75,
-    ls=':', color=color[1])
+               color=color[2])
+ax2.step([x + 1 for x in hours], lmp_array,
+         marker='o', ms=3, alpha=0.5,
+         ls='-', lw=1,
+         color=color[2])
 ax2.tick_params(axis='y',
-                labelcolor=color[1])
+                labelcolor=color[2])
 plt.savefig('multiperiod_usc_storage_rts1_salt_tank_level_24h.png')
 
 
-no_zero_point = False
+font = {'size':18}
+plt.rc('font', **font)
+
 power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
 # Convert array to list to include net power at time zero
-power_array0 = 400 # zero since the plant is not operating
+power_array0 = value(blks[0].rankine.previous_power)
 power_list = [power_array0] + power_array.tolist()
 
 fig2, ax3 = plt.subplots(figsize=(12, 8))
 ax3.set_xlabel('Time Period (hr)')
-ax3.set_ylabel('Power Output (MW)',
-               color=color[2])
+ax3.set_ylabel('Net Power Output (MW)',
+               color=color[1])
 ax3.spines["top"].set_visible(False)
 ax3.spines["right"].set_visible(False)
 ax3.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-if no_zero_point:
-    ax3.step([x + 1 for x in hours], power_array,
-             marker='o', ms=4,
-             color=color[2])
-else:
-    ax3.step(hours_list, power_list,
-             marker='o', ms=4,
-             color=color[2])
+plt.axhline(max_power, ls=':', lw=1.75,
+            color=color[4])
+ax3.step(hours_list, power_list,
+         marker='o', ms=4,
+         lw=1, color=color[1])
 ax3.tick_params(axis='y',
-                labelcolor=color[2])
-if no_zero_point:
-    ax3.set_xticks(np.arange(1, n_time_points*n_weeks_to_plot + 1, step=4))
-else:
-    ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
+                labelcolor=color[1])
+ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
 
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP ($/MWh)',
-               color=color[1])
-if no_zero_point:
-    ax4.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=3, alpha=0.75,
-             ls=':', color=color[1])
-else:
-    ax4.step(hours_list, lmp_list,
-             marker='o', ms=3, alpha=0.75,
-             ls=':', color=color[1])
+               color=color[2])
+ax4.step([x + 1 for x in hours], lmp_array,
+         marker='o', ms=3, alpha=0.5,
+         ls='-', lw=1,
+         color=color[2])
 ax4.tick_params(axis='y',
-                labelcolor=color[1])
+                labelcolor=color[2])
 plt.savefig('multiperiod_usc_storage_rts1_power_24h.png')
 
 
+zero_point = False
 hxc_array = np.asarray(hxc_duty[0:n_weeks_to_plot]).flatten()
 hxd_array = np.asarray(hxd_duty[0:n_weeks_to_plot]).flatten()
 hxc_duty0 = 0 # zero since the plant is not operating
@@ -543,29 +547,35 @@ ax5.spines["top"].set_visible(False)
 ax5.spines["right"].set_visible(False)
 ax5.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-ax5.step(# [x + 1 for x in hours], power_array,
-    hours_list, hxc_duty_list,
-    marker='o', ms=8, label='HX Charge',
-    color=color[0])
-ax5.step(# [x + 1 for x in hours], power_array,
-    hours_list, hxd_duty_list,
-    marker='*', ms=8, label='HX Discharge',
-    color=color[2])
-ax5.legend()
+if zero_point:
+    ax5.step(hours_list, hxc_duty_list,
+             marker='^', ms=4, label='HX Charge',
+             color=color[0])
+    ax5.step(hours_list, hxd_duty_list,
+             marker='v', ms=4, label='HX Discharge',
+             color=color[1])
+else:
+    ax5.step([x + 1 for x in hours], hxc_array,
+             marker='^', ms=4, lw=1,
+             label='HX Charge',
+             color=color[0])
+    ax5.step([x + 1 for x in hours], hxd_array,
+             marker='v', ms=4, lw=1,
+             label='HX Discharge',
+             color=color[1])
+ax5.legend(loc="upper left", frameon=False)
 ax5.tick_params(axis='y',
                 labelcolor=color[3])
-ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=4))
+ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
 
 ax6 = ax5.twinx()
 ax6.set_ylabel('LMP ($/MWh)',
-               color=color[1])
-ax6.step(# [x + 1 for x in hours], lmp_array,
-    hours_list, lmp_list,
-    marker='o', ms=7, alpha=0.75,
-    ls=':', color=color[1]
-)
+               color=color[2])
+ax6.step([x + 1 for x in hours], lmp_array,
+         marker='o', ms=3, alpha=0.5,
+         ls='-', color=color[2])
 ax6.tick_params(axis='y',
-                labelcolor=color[3])
+                labelcolor=color[2])
 plt.savefig('multiperiod_usc_storage_rts1_hxduty_24h.png')
 
 plt.show()
