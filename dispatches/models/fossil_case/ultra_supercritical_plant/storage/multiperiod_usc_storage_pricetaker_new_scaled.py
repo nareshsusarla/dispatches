@@ -40,12 +40,12 @@ load_from_file = 'initialized_usc_storage_mlp_mp.json'
 number_days = 1
 number_hours = 24 * number_days
 
-lx = True
+lx = False
 if lx:
     scaling_obj = 1
     scaling_factor = 1e-3
 else:
-    scaling_obj = 1e-2
+    scaling_obj = 1
     scaling_factor = 1
 
 print()
@@ -176,25 +176,25 @@ def create_mp_rankine_block():
     b1.previous_salt_inventory_hot = Var(
         domain=NonNegativeReals,
         initialize=1,
-        # bounds=(0, inventory_max),
+        bounds=(0, inventory_max),
         doc="Hot salt at the beginning of the hour (or time period), kg"
         )
     b1.salt_inventory_hot = Var(
         domain=NonNegativeReals,
         initialize=80,
-        # bounds=(0, inventory_max),
+        bounds=(0, inventory_max),
         doc="Hot salt inventory at the end of the hour (or time period), kg"
         )
     b1.previous_salt_inventory_cold = Var(
         domain=NonNegativeReals,
         initialize=1,
-        # bounds=(0, inventory_max),
+        bounds=(0, inventory_max),
         doc="Cold salt at the beginning of the hour (or time period), kg"
         )
     b1.salt_inventory_cold = Var(
         domain=NonNegativeReals,
         initialize=80,
-        # bounds=(0, inventory_max),
+        bounds=(0, inventory_max),
         doc="Cold salt inventory at the end of the hour (or time period), kg"
         )
 
@@ -458,9 +458,9 @@ ax1.spines["top"].set_visible(False)
 ax1.spines["right"].set_visible(False)
 ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-plt.axhline(tank_max, ls=':', lw=1.75,
+plt.axhline(tank_max*1e-3, ls=':', lw=1.75,
             color=color[4])
-plt.text(number_hours / 2 - 0.5, tank_max + 100, 'max salt',
+plt.text(number_hours / 2 - 0.5, tank_max*1e-3 + 100, 'max salt',
          color=color[4])
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, hot_tank_list,
