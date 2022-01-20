@@ -52,42 +52,24 @@ print()
 print('Scaling_factor:', scaling_factor)
 
 # Select lmp source data and scaling factor according to that
-use_rts_data = True
+use_rts_data = False
+use_mod_rts_data = True
 if use_rts_data:
     print('>>>>>> Using RTS lmp data')
     with open('rts_results_all_prices_base_case.npy', 'rb') as f:
         dispatch = np.load(f)
         price = np.load(f)
+elif use_mod_rts_data:
+    price = [22.9684, 21.1168, 20.4, 20.419,
+             20.419, 21.2877, 23.07, 25,
+             18.4634, 0, 0, 0,
+             0, 0, 0, 0,
+             19.0342, 23.07, 200, 200,
+             200, 200, 200, 200]
 else:
     print('>>>>>> Using NREL lmp data')
     price = np.load("nrel_scenario_average_hourly.npy")
 
-# price = [22.9684,
-#         21.1168,
-#         20.4,
-#         20.419,
-#         20.419,
-#         21.2877,
-#         23.07,
-#         25,
-#         18.4634,
-#         0,
-#         0,
-#         0,
-#         0,
-#         0,
-#         0,
-#         0,
-#         19.0342,
-#         23.07,
-#         200,
-#         200,
-#         200,
-#         200,
-#         200,
-#         200,
-#         200
-#         ]
 def create_ss_rankine_model():
 
     m = pyo.ConcreteModel()
@@ -313,8 +295,10 @@ mp_rankine.build_multi_period_model()
 m = mp_rankine.pyomo_model
 blks = mp_rankine.get_active_process_blocks()
 
-lmp = price[0:number_hours].tolist()
-# lmp = price
+if use_rts_data:
+    lmp = price[0:number_hours].tolist()
+elif use_mod_rts_data:
+    lmp = price
 # print(lmp)
 
 # Add lmp market data for each block
