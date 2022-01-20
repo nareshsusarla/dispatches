@@ -458,9 +458,9 @@ ax1.spines["top"].set_visible(False)
 ax1.spines["right"].set_visible(False)
 ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-plt.axhline(tank_max*1e-3, ls=':', lw=1.75,
+plt.axhline((tank_max / scaling_factor)*1e-3, ls=':', lw=1.75,
             color=color[4])
-plt.text(number_hours / 2 - 0.5, tank_max*1e-3 + 100, 'max salt',
+plt.text(number_hours / 2 - 1, (tank_max/scaling_factor)*1e-3 + 100, 'max salt',
          color=color[4])
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, hot_tank_list,
@@ -470,7 +470,7 @@ ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, cold_tank_list,
     marker='v', ms=4, label='Cold Salt',
     lw=1, color=color[1])
-ax1.legend(loc="center left", frameon=False)
+ax1.legend(loc="center right", frameon=False)
 ax1.tick_params(axis='y')#,
                 # labelcolor=color[3])
 ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
@@ -503,9 +503,9 @@ ax3.spines["top"].set_visible(False)
 ax3.spines["right"].set_visible(False)
 ax3.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-plt.text(number_hours / 2 - 1, max_power - 5.5, 'max plant power',
+plt.text(number_hours / 2 - 3, max_power - 5.5, 'max plant power',
          color=color[4])
-plt.text(number_hours / 2 - 0.9, max_power_total + 1, 'max net power',
+plt.text(number_hours / 2 - 3, max_power_total + 1, 'max net power',
          color=color[4])
 plt.axhline(max_power, ls='-.', lw=1.75,
             color=color[4])
@@ -546,9 +546,9 @@ ax5.spines["top"].set_visible(False)
 ax5.spines["right"].set_visible(False)
 ax5.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-plt.text(number_hours / 2 - 0.66, max_storage_heat_duty +1, 'max storage',
+plt.text(number_hours / 2 - 1.75, max_storage_heat_duty +1, 'max storage',
          color=color[4])
-plt.text(number_hours / 2 - 0.66, min_storage_heat_duty -5.3, 'min storage',
+plt.text(number_hours / 2 - 1.65, min_storage_heat_duty -5.3, 'min storage',
          color=color[4])
 plt.axhline(max_storage_heat_duty, ls=':', lw=1.75,
             color=color[4])
@@ -556,19 +556,19 @@ plt.axhline(min_storage_heat_duty, ls=':', lw=1.75,
             color=color[4])
 if zero_point:
     ax5.step(hours_list, hxc_duty_list,
-             marker='^', ms=4, label='Charge Heat Exchanger',
+             marker='^', ms=4, label='Charge',
              color=color[0])
     ax5.step(hours_list, hxd_duty_list,
-             marker='v', ms=4, label='Discharge Heat Exchanger',
+             marker='v', ms=4, label='Discharge',
              color=color[1])
 else:
     ax5.step([x + 1 for x in hours], hxc_array,
              marker='^', ms=4, lw=1,
-             label='Charge Heat Exchanger',
+             label='Charge',
              color=color[0])
     ax5.step([x + 1 for x in hours], hxd_array,
              marker='v', ms=4, lw=1,
-             label='Discharge Heat Exchanger',
+             label='Discharge',
              color=color[1])
 ax5.legend(loc="center left", frameon=False)
 ax5.tick_params(axis='y',
