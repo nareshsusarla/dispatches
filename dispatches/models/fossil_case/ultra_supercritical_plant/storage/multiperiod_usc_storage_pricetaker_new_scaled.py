@@ -32,6 +32,8 @@ max_power_storage = 24 # in MW
 min_power_storage = 1 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
+min_storage_heat_duty = 10 # in MW
+max_storage_heat_duty = 150 # in MW
 load_from_file = 'initialized_usc_storage_mlp_mp.json'
 
 # Add number of days and hours per week
@@ -112,8 +114,13 @@ def create_ss_rankine_model():
     m.rankine.fs.es_turbine_max_power_eq = pyo.Constraint(
         expr=m.rankine.fs.es_turbine.work[0] * (-1e-6) <= max_power_storage
     )
-    m.rankine.fs.hxc.heat_duty.setlb(1e7)
-    m.rankine.fs.hxd.heat_duty.setlb(1e7)
+
+    m.rankine.fs.hxc.heat_duty.setlb(min_storage_heat_duty * 1e6)
+    m.rankine.fs.hxd.heat_duty.setlb(min_storage_heat_duty * 1e6)
+    # m.rankine.fs.hxc.heat_duty.setub(None)
+    # m.rankine.fs.hxd.heat_duty.setub(None)
+    # m.rankine.fs.hxc.heat_duty.setub(max_storage_heat_duty * 1e6)
+    # m.rankine.fs.hxd.heat_duty.setub(max_storage_heat_duty * 1e6)
     # Unfix data
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()
 
@@ -284,7 +291,7 @@ n_time_points = 1 * number_hours  # hours in a week
 # "process_model_func" for each time period using a dict of dicts as
 # shown here.  In this case, it is setting up empty dictionaries for
 # each time period.
-i = 0
+
 mp_rankine = MultiPeriodModel(
     n_time_points=n_time_points,
     process_model_func=create_mp_rankine_block,
@@ -469,6 +476,8 @@ ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
 plt.axhline(tank_max, ls=':', lw=1.75,
             color=color[4])
+plt.text(number_hours / 2 - 0.5, tank_max + 100, 'max salt',
+         color=color[4])
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, hot_tank_list,
     marker='^', ms=4, label='Hot Salt',
@@ -510,7 +519,13 @@ ax3.spines["top"].set_visible(False)
 ax3.spines["right"].set_visible(False)
 ax3.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-plt.axhline(max_power, ls=':', lw=1.75,
+plt.text(number_hours / 2 - 1, max_power - 5.5, 'max plant power',
+         color=color[4])
+plt.text(number_hours / 2 - 0.9, max_power_total + 1, 'max net power',
+         color=color[4])
+plt.axhline(max_power, ls='-.', lw=1.75,
+            color=color[4])
+plt.axhline(max_power_total, ls=':', lw=1.75,
             color=color[4])
 ax3.step(hours_list, power_list,
          marker='o', ms=4,
@@ -547,23 +562,31 @@ ax5.spines["top"].set_visible(False)
 ax5.spines["right"].set_visible(False)
 ax5.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
+plt.text(number_hours / 2 - 0.66, max_storage_heat_duty +1, 'max storage',
+         color=color[4])
+plt.text(number_hours / 2 - 0.66, min_storage_heat_duty -5.3, 'min storage',
+         color=color[4])
+plt.axhline(max_storage_heat_duty, ls=':', lw=1.75,
+            color=color[4])
+plt.axhline(min_storage_heat_duty, ls=':', lw=1.75,
+            color=color[4])
 if zero_point:
     ax5.step(hours_list, hxc_duty_list,
-             marker='^', ms=4, label='HX Charge',
+             marker='^', ms=4, label='Charge Heat Exchanger',
              color=color[0])
     ax5.step(hours_list, hxd_duty_list,
-             marker='v', ms=4, label='HX Discharge',
+             marker='v', ms=4, label='Discharge Heat Exchanger',
              color=color[1])
 else:
     ax5.step([x + 1 for x in hours], hxc_array,
              marker='^', ms=4, lw=1,
-             label='HX Charge',
+             label='Charge Heat Exchanger',
              color=color[0])
     ax5.step([x + 1 for x in hours], hxd_array,
              marker='v', ms=4, lw=1,
-             label='HX Discharge',
+             label='Discharge Heat Exchanger',
              color=color[1])
-ax5.legend(loc="upper left", frameon=False)
+ax5.legend(loc="center left", frameon=False)
 ax5.tick_params(axis='y',
                 labelcolor=color[3])
 ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
