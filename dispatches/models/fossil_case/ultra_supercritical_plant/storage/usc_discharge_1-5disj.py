@@ -163,8 +163,7 @@ def create_discharge_model(m):
 
 
 def _solar_salt_ohtc_calculation(m):
-    """Block of equations for disjunct 1 for the selection of solar salt
-    as the storage fluid in charge heat exchanger
+    """Block of equations for computing heat_transfer coefficient
     """
 
     # m = disj.model()
@@ -371,7 +370,7 @@ def _make_constraints(m):
 
     @m.fs.discharge.es_turbine.Constraint(
         m.fs.time,
-        doc="Turbine outlet should be saturated steam")
+        doc="Turbine outlet should be a saturated steam")
     def constraint_esturbine_temperature_out(b, t):
         return (
             b.control_volume.properties_out[t].temperature ==
@@ -398,7 +397,7 @@ def disconect_arcs(m):
     """Create arcs"""
 
     # Disconnect arcs from ultra supercritical plant base model to
-    # connect the charge heat exchanger
+    # connect the charge heat exchanger and disjuncts
     for arc_s in [m.fs.condpump_to_fwh1,
                   m.fs.fwh4_to_fwh5,
                   m.fs.booster_to_fwh6,
@@ -410,7 +409,7 @@ def disconect_arcs(m):
 
 
 def add_disjunction(m):
-    """Add storage fluid selection and steam source disjunctions to the
+    """Add water source disjunction to the
     model
     """
 
@@ -433,7 +432,7 @@ def add_disjunction(m):
 
 
 def condpump_source_disjunct_equations(disj):
-    """Disjunction 2: selection of very high pressure steam source
+    """Disjunction 1: Water is sourced from Condenser Pump
     """
 
     m = disj.model()
@@ -472,7 +471,7 @@ def condpump_source_disjunct_equations(disj):
 
 
 def fwh4_source_disjunct_equations(disj):
-    """Disjunction 2: selection of very high pressure steam source
+    """Disjunction 1: Water is sourced from FWH4 Pump
     """
 
     m = disj.model()
@@ -481,12 +480,12 @@ def fwh4_source_disjunct_equations(disj):
     m.fs.discharge.fwh4_source_disjunct.fwh4_to_essplit = Arc(
         source=m.fs.fwh[4].outlet_2,
         destination=m.fs.discharge.es_split.inlet,
-        doc="Connection from FWH1 to ES splitter"
+        doc="Connection from FWH4 to ES splitter"
     )
     m.fs.discharge.fwh4_source_disjunct.essplit_to_fwh5 = Arc(
         source=m.fs.discharge.es_split.to_fwh,
         destination=m.fs.fwh[5].inlet_2,
-        doc="Connection from ES splitter to FWH2"
+        doc="Connection from ES splitter to FWH5"
     )
 
     m.fs.discharge.fwh4_source_disjunct.condpump_to_fwh1 = Arc(
@@ -511,7 +510,7 @@ def fwh4_source_disjunct_equations(disj):
 
 
 def booster_source_disjunct_equations(disj):
-    """Disjunction 2: selection of very high pressure steam source
+    """Disjunction 1: Water is sourced from Booster Pump
     """
 
     m = disj.model()
@@ -525,7 +524,7 @@ def booster_source_disjunct_equations(disj):
     m.fs.discharge.booster_source_disjunct.essplit_to_fwh6 = Arc(
         source=m.fs.discharge.es_split.to_fwh,
         destination=m.fs.fwh[6].inlet_2,
-        doc="Connection from FWH6 to ES splitter"
+        doc="Connection from ES splitter to FWH6"
     )
 
     m.fs.discharge.booster_source_disjunct.fwh4_to_fwh5 = Arc(
@@ -550,7 +549,7 @@ def booster_source_disjunct_equations(disj):
 
 
 def bfp_source_disjunct_equations(disj):
-    """Disjunction 2: selection of very high pressure steam source
+    """Disjunction 1: Water is sourced from Boiler Feed Pump
     """
 
     m = disj.model()
@@ -589,7 +588,7 @@ def bfp_source_disjunct_equations(disj):
 
 
 def fwh9_source_disjunct_equations(disj):
-    """Disjunction 2: selection of very high pressure steam source
+    """Disjunction 1: Water is sourced from FWH9
     """
 
     m = disj.model()
@@ -746,7 +745,7 @@ def initialize(m, solver=None,
                        "max_iter": 300},
                fluid=None,
                source=None):
-    """Initialize the units included in the charge model
+    """Initialize the units included in the discharge model
     """
 
     optarg = {
@@ -783,12 +782,10 @@ def initialize(m, solver=None,
 
 def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     """ Add cost correlations for the storage design analysis. This
-    function is used to estimate the capital and operatig cost of
+    function is used to estimate the capital and operating cost of
     integrating an energy storage system. It contains cost
-    correlations to estimate the capital cost of charge heat
-    exchanger, salt storage tank, molten salt pump, and salt
-    inventory. Note that it does not compute the cost of the whole
-    power plant.
+    correlations to estimate the capital cost of discharge heat
+    exchanger, and molten salt pump.
 
     """
 
@@ -1036,7 +1033,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
 
 def add_bounds(m, source=None):
-    """Add bounds to units in charge model
+    """Add bounds to units in discharge model
 
     """
 
