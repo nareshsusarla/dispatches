@@ -460,7 +460,7 @@ ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
 plt.axhline((tank_max / scaling_factor)*1e-3, ls=':', lw=1.75,
             color=color[4])
-plt.text(number_hours / 2 - 1, (tank_max/scaling_factor)*1e-3 + 100, 'max salt',
+plt.text(number_hours / 2 - 1.5, (tank_max/scaling_factor)*1e-3 + 100, 'max salt',
          color=color[4])
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, hot_tank_list,
@@ -505,7 +505,7 @@ ax3.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
 plt.text(number_hours / 2 - 3, max_power - 5.5, 'max plant power',
          color=color[4])
-plt.text(number_hours / 2 - 3, max_power_total + 1, 'max net power',
+plt.text(number_hours / 2 - 2.8, max_power_total + 1, 'max net power',
          color=color[4])
 plt.axhline(max_power, ls='-.', lw=1.75,
             color=color[4])
@@ -530,7 +530,7 @@ ax4.tick_params(axis='y',
 plt.savefig('multiperiod_usc_storage_rts1_power_24h.png')
 
 
-zero_point = False
+zero_point = True
 hxc_array = np.asarray(hxc_duty[0:n_weeks_to_plot]).flatten()
 hxd_array = np.asarray(hxd_duty[0:n_weeks_to_plot]).flatten()
 hxc_duty0 = 0 # zero since the plant is not operating
@@ -546,9 +546,9 @@ ax5.spines["top"].set_visible(False)
 ax5.spines["right"].set_visible(False)
 ax5.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-plt.text(number_hours / 2 - 1.75, max_storage_heat_duty +1, 'max storage',
+plt.text(number_hours / 2 - 2.2, max_storage_heat_duty + 1, 'max storage',
          color=color[4])
-plt.text(number_hours / 2 - 1.65, min_storage_heat_duty -5.3, 'min storage',
+plt.text(number_hours / 2 - 2, min_storage_heat_duty - 6.5, 'min storage',
          color=color[4])
 plt.axhline(max_storage_heat_duty, ls=':', lw=1.75,
             color=color[4])
@@ -570,7 +570,7 @@ else:
              marker='v', ms=4, lw=1,
              label='Discharge',
              color=color[1])
-ax5.legend(loc="center left", frameon=False)
+ax5.legend(loc="center right", frameon=False)
 ax5.tick_params(axis='y',
                 labelcolor=color[3])
 ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
