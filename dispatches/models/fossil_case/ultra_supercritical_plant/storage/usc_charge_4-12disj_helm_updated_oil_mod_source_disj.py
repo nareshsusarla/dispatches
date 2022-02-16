@@ -113,7 +113,8 @@ import thermal_oil_updated as thermal_oil
 from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
-scaling_factor = 1e-3
+scaling_factor = 1
+scaling_obj = 1e-6
 
 def create_charge_model(m):
     """Create flowsheet and add unit models.
@@ -1532,6 +1533,20 @@ def set_scaling_factors(m):
               m.fs.charge.connector,
               m.fs.charge.cooler_connector]:
         iscale.set_scaling_factor(k.control_volume.heat, 1e-6)
+
+
+def set_var_scaling(m):
+    iscale.set_scaling_factor(m.fs.charge.cooler_capital_cost, 1e-3)
+    # iscale.set_scaling_factor(m.fs.charge.cooler_disjunct.constraint_cooler_capital_cost_function,
+    #                           1e-3)
+    iscale.set_scaling_factor(m.fs.charge.capital_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.solar_salt_disjunct.capital_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.hitec_salt_disjunct.capital_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.thermal_oil_disjunct.capital_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.operating_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.plant_capital_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.plant_fixed_operating_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.charge.plant_variable_operating_cost, 1e-6)
 
 
 def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
@@ -3288,6 +3303,8 @@ def print_model(nlp_model, nlp_data):
 
     if nlp_model.fs.charge.cooler_disjunct.indicator_var.value == 1:
         print('        Disjunction 3: Cooler is selected')
+        print('         Cooler capital cost ($/yr):',
+              value(nlp_model.fs.charge.cooler_capital_cost))
         print('         Cooler heat duty (MW):',
               nlp_model.fs.charge.cooler_disjunct.cooler.heat_duty[0].value * 1e-6)
         print('         Cooler Tout: ',
@@ -3423,16 +3440,16 @@ def print_results(m, results):
         if abs(d.indicator_var.value - 1) < 1e-6:
             print(d.name, ' should be selected!')
     print('')
-    print('Obj (M$/year): {:.6f}'.format((value(m.obj) / (scaling_factor**2)) * 1e-6))
+    print('Objective (M$/year): {:.6f}'.format((value(m.obj) / scaling_obj) * 1e-6))
     print('Plant capital cost (M$/y): {:.6f}'.format(
         (pyo.value(m.fs.charge.plant_capital_cost) / scaling_factor) * 1e-6))
     print('Plant fixed operating costs (M$/y): {:.6f}'.format(
         (pyo.value(m.fs.charge.plant_fixed_operating_cost) / scaling_factor) * 1e-6))
     print('Plant variable operating costs (M$/y): {:.6f}'.format(
         (pyo.value(m.fs.charge.plant_variable_operating_cost) / scaling_factor) * 1e-6))
-    print('Charge capital cost ($/y): {:.6f}'.format(
+    print('Charge capital cost (M$/y): {:.6f}'.format(
         (pyo.value(m.fs.charge.capital_cost) / scaling_factor) * 1e-6))
-    print('Charge Operating costs ($/y): {:.6f}'.format(
+    print('Charge operating costs (M$/y): {:.6f}'.format(
         (pyo.value(m.fs.charge.operating_cost) / scaling_factor) * 1e-6))
     print('Plant Power (MW): {:.6f}'.format(
         value(m.fs.plant_power_out[0])))
@@ -3448,6 +3465,8 @@ def print_results(m, results):
     print('')
     if m.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
         print('Salt: Solar salt is selected!')
+        print('HXC heat duty: {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.heat_duty[0]) / 1e6))
         print('Heat exchanger area (m2): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.hxc.area)))
         print('Heat exchanger cost ($) [($/y)]: {:.6f} [{:.6f}]'.format(
@@ -3471,7 +3490,7 @@ def print_results(m, results):
         print('Delta temperature at inlet (K): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.hxc.
                   delta_temperature_in[0])))
-        print('elta temperature at outlet (K): {:.6f}'.format(
+        print('Delta temperature at outlet (K): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.hxc.
                   delta_temperature_out[0])))
         print('Salt cost ($/y): {:.6f}'.format(
@@ -3481,16 +3500,14 @@ def print_results(m, results):
                   costing.total_tank_cost / m.number_of_years)))
         print('Salt pump cost ($/y): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.spump_purchase_cost)))
-        print('')
         print('Salt storage tank volume in m3: {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.tank_volume)))
         print('Salt density: {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.
-                  side_2.properties_in[0].density['Liq'])))
-        print('HXC heat duty: {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.heat_duty[0]) / 1e6))
+            value(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density['Liq'])))
     elif m.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
         print('Salt: Hitec salt is selected')
+        print('HXC heat duty: {:.6f}'.format(
+            value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6))
         print('Heat exchanger area (m2): {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.hxc.area)))
         print('Heat exchanger cost ($/y): {:.6f}'.format(
@@ -3533,6 +3550,8 @@ def print_results(m, results):
             value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6))
     else:
         print('Salt: Thermal oil is selected!')
+        print('HXC heat duty: {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0]) * 1e-6))
         print('Heat exchanger area (m2): {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.area)))
         print('Oil flow (kg/s): {:.6f}'.format(
@@ -3560,8 +3579,6 @@ def print_results(m, results):
         print('Oil density: {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.
                   tube.properties_in[0].density["Liq"])))
-        print('HXC heat duty: {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0]) * 1e-6))
     print('')
     print('Solver details')
     print(results)
@@ -3662,6 +3679,13 @@ def model_analysis(m, solver, heat_duty=None):
         arc_s.expanded_block.flow_mol_equality.deactivate()
         arc_s.expanded_block.pressure_equality.deactivate()
 
+    # Add scaling when scaling_factor is not used
+    if scaling_factor == 1:
+        set_var_scaling(m)
+        print('>> Set scaling factor through iscale')
+    else:
+        print('>> Scaling factor: {}'.format(scaling_factor))
+
     # Objective function: total costs
     m.obj = Objective(
         expr=(
@@ -3671,7 +3695,7 @@ def model_analysis(m, solver, heat_duty=None):
             + m.fs.charge.plant_fixed_operating_cost
             + m.fs.charge.plant_variable_operating_cost
             + m.fs.charge.cooler_capital_cost
-        ) * scaling_factor
+        ) * scaling_obj
     )
 
     print('DOF before solution = ', degrees_of_freedom(m))
@@ -3688,7 +3712,6 @@ def model_analysis(m, solver, heat_duty=None):
     print_results(m, results)
     # print_reports(m)
 
-   
 
 if __name__ == "__main__":
 
