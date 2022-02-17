@@ -31,7 +31,7 @@ Additional main assumptions are as follows:
     and condenser.  (3) Multi-stage turbines are modeled as multiple
     lumped single stage turbines
 
-updated (01/28/2022)
+updated (02/16/2022)
 """
 
 # Notes by esrawli:
@@ -44,13 +44,11 @@ updated (01/28/2022)
 # 6. Corrected constraints:
 #    - op_cost_rule, without the -q_baseline
 #    - plant_cap_cost_rule, op_fixed_cap_cost_rule, op_variable_cap_cost_rule
-#      using plant_power_out instead of heat_duty (pending)
-# 6. Corrected constraints:
-#    - op_cost_rule, without the -q_baseline
-#    - plant_cap_cost_rule, op_fixed_cap_cost_rule, op_variable_cap_cost_rule
-#      using plant_power_out instead of heat_duty and multiply by (CE_index/575.4)
+#      using plant_power_out instead of plant_heat_duty and multiply by (CE_index/575.4)
 # 7. Number of years was changed from 5 to 30
-# 8. Objective function considers all costs
+# 8. Add boiler and cycle efficiency
+# 9. Add revenue expression and random lmp signal value
+# 10. Objective function is a maximization of profit
 
 __author__ = "Naresh Susarla and Soraya Rawlings"
 
@@ -63,7 +61,7 @@ import os
 import pyomo.environ as pyo
 from pyomo.environ import (Block, Param, Constraint, Objective,
                            TransformationFactory, SolverFactory,
-                           Expression, value, log, exp, Var)
+                           Expression, value, log, exp, Var, maximize)
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.common.fileutils import this_file_dir
@@ -114,9 +112,9 @@ from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
 scaling_factor = 1
-scaling_obj = 1e-6
+scaling_obj = 1e-3
 
-def create_charge_model(m):
+def create_charge_model(m, method=None, max_power=None):
     """Create flowsheet and add unit models.
     """
 
@@ -230,14 +228,14 @@ def create_charge_model(m):
     ###########################################################################
     # Add constraints and create the stream Arcs and return the model
     ###########################################################################
-    _make_constraints(m)
+    _make_constraints(m, method=method, max_power=max_power)
 
     _disconnect_arcs(m)
     TransformationFactory("network.expand_arcs").apply_to(m.fs.charge)
     return m
 
 
-def _make_constraints(m):
+def _make_constraints(m, method=None, max_power=None):
     """Declare the constraints for the charge model
     """
 
@@ -249,6 +247,37 @@ def _make_constraints(m):
             (m.main_steam_pressure * 1.1231)
         # return m.fs.charge.hx_pump.outlet.pressure[t] == \
         #     (m.main_steam_pressure * 1.1231)
+
+    m.fs.max_power = Param(
+        initialize=max_power,
+        mutable=True,
+        doc='Pmax for the power plant [MW]')
+    m.fs.boiler_eff = Expression(
+        expr=0.2143 * (m.fs.plant_power_out[0] / m.fs.max_power)
+        + 0.7357,
+        doc="Boiler efficiency in fraction"
+    )
+    m.fs.coal_heat_duty = Var(
+        initialize=1000,
+        bounds=(0, 1e5),
+        doc="Coal heat duty supplied to boiler (MW)")
+
+    if method == "with_efficiency":
+        def coal_heat_duty_rule(b):
+            return m.fs.coal_heat_duty * m.fs.boiler_eff == (
+                m.fs.plant_heat_duty[0])
+        m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
+
+    else:
+        def coal_heat_duty_rule(b):
+            return m.fs.coal_heat_duty == (
+                m.fs.plant_heat_duty[0])
+        m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
+
+    m.fs.cycle_efficiency = Expression(
+        expr=m.fs.plant_power_out[0] / m.fs.coal_heat_duty * 100,
+        doc="Cycle efficiency in %"
+    )
 
 
 def _disconnect_arcs(m):
@@ -2790,7 +2819,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     def op_cost_rule(b):
         return m.fs.charge.operating_cost == (
             m.fs.charge.operating_hours * m.fs.charge.coal_price *
-            (m.fs.plant_heat_duty[0] * 1e6)
+            # (m.fs.plant_heat_duty[0] * 1e6)
+            (m.fs.coal_heat_duty * 1e6)
             - (m.fs.charge.cooling_price * m.fs.charge.operating_hours *
                m.fs.charge.cooler_heat_duty[0])
         ) * scaling_factor
@@ -3136,10 +3166,10 @@ def add_bounds(m):
     return m
 
 
-def main(m_usc):
+def main(m_usc, method=None, max_power=None):
 
     # Create a flowsheet, add properties, unit models, and arcs
-    m = create_charge_model(m_usc)
+    m = create_charge_model(m_usc, method=method, max_power=max_power)
 
     # Give all the required inputs to the model
     set_model_input(m)
@@ -3383,6 +3413,8 @@ def print_model(nlp_model, nlp_data):
     #     # nlp_model.fs.turbine[k].display()
     #     print('        Turbine {} work (MW): {:.4f}'.
     #           format(k, value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
+    print('         Boiler efficiency (%): {:.6f}'.format(value(nlp_model.fs.boiler_eff) * 100))
+    print('         Cycle efficiency (%): {:.6f}'.format(value(nlp_model.fs.cycle_efficiency)))
     for k in nlp_model.set_turbine_splitter:
         print("         Turbine splitter {} split fraction 2: {:.4f}".
               format(k,
@@ -3453,6 +3485,8 @@ def print_results(m, results):
         (pyo.value(m.fs.charge.operating_cost) / scaling_factor) * 1e-6))
     print('Plant Power (MW): {:.6f}'.format(
         value(m.fs.plant_power_out[0])))
+    print('Boiler efficiency (%): {:.6f}'.format(value(m.fs.boiler_eff) * 100))
+    print('Cycle efficiency (%): {:.6f}'.format(value(m.fs.cycle_efficiency)))
     print('Boiler feed water flow (mol/s): {:.6f}'.format(
         value(m.fs.boiler.inlet.flow_mol[0])))
     print('Boiler duty (MW_th): {:.6f}'.format(
@@ -3614,7 +3648,7 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver, heat_duty=None):
+def model_analysis(m, solver, heat_duty=None, lmp_signal=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
@@ -3686,16 +3720,25 @@ def model_analysis(m, solver, heat_duty=None):
     else:
         print('>> Scaling factor: {}'.format(scaling_factor))
 
+    # Calculate revenue
+    m.fs.revenue = Expression(
+        expr=(lmp_signal *
+              m.fs.plant_power_out[0]),
+        doc="Revenue function in $/h assuming 1 hr operation"
+    )
+
     # Objective function: total costs
     m.obj = Objective(
         expr=(
-            m.fs.charge.capital_cost
-            + m.fs.charge.operating_cost
-            + m.fs.charge.plant_capital_cost
-            + m.fs.charge.plant_fixed_operating_cost
-            + m.fs.charge.plant_variable_operating_cost
-            + m.fs.charge.cooler_capital_cost
-        ) * scaling_obj
+            m.fs.revenue
+            - (m.fs.charge.operating_cost
+               + m.fs.charge.plant_fixed_operating_cost
+               + m.fs.charge.plant_variable_operating_cost) / (365 * 24)
+            - (m.fs.charge.capital_cost
+               + m.fs.charge.plant_capital_cost
+               + m.fs.charge.cooler_capital_cost) / (365 * 24)
+        ) * scaling_obj,
+        sense=maximize
     )
 
     print('DOF before solution = ', degrees_of_freedom(m))
@@ -3722,11 +3765,15 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
+    method = "with_efficiency"
+    max_power = 436
+    lmp_signal = [22]
     heat_duty_data = [150]
-    for k in heat_duty_data:
-        m_usc = usc.build_plant_model()
-        usc.initialize(m_usc)
+    for j in lmp_signal:
+        for k in heat_duty_data:
+            m_usc = usc.build_plant_model()
+            usc.initialize(m_usc)
 
-        m_chg, solver = main(m_usc)
+            m_chg, solver = main(m_usc, method=method, max_power=max_power)
 
-        m = model_analysis(m_chg, solver, heat_duty=k)
+            m = model_analysis(m_chg, solver, heat_duty=k, lmp_signal=j)
