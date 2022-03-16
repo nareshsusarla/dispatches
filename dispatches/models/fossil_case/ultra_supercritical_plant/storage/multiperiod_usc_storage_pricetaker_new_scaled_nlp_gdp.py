@@ -1,4 +1,8 @@
 # import multiperiod object
+import csv
+import numpy as np
+import copy
+
 from idaes.apps.multiperiod.multiperiod import MultiPeriodModel
 from idaes.apps.multiperiod.examples.simple_rankine_cycle import (
     create_model, set_inputs, initialize_model,
@@ -13,10 +17,6 @@ from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
 
-
-import numpy as np
-import copy
-
 from dispatches.models.fossil_case.ultra_supercritical_plant.storage import (
     usc_storage_nlp_mp as usc_nlp)
 import usc_storage_gdp_mp as usc_gdp
@@ -28,20 +28,22 @@ matplotlib.rc('font', size=24)
 plt.rc('axes', titlesize=24)
 
 gdp_mp = True
-deact_arcs_after_init = False
+deact_arcs_after_init = True
+save_results = True
 
 # Add number of days and hours per week
 n_weeks = 1 # needed for plots
+hours_per_day = 24
 number_days = 1
-number_hours = 4 * number_days
+number_hours = hours_per_day * number_days
 
 # Add lower and upper bounds for power and heat duty
 max_power = 436 # in MW
 min_power = int(0.65 * max_power) # 283 in MW
 max_power_storage = 24 # in MW
 if gdp_mp:
-    min_power_storage = 0 # in MW
-    min_storage_heat_duty = 0 # in MW
+    min_power_storage = 1 # in MW
+    min_storage_heat_duty = 10 # in MW
     path_init_file = 'initialized_usc_storage_gdp_mp.json'
 else:
     min_power_storage = 1 # in MW
@@ -53,20 +55,25 @@ max_storage_heat_duty = 150 # in MW
 load_init_file = False
 load_from_file = path_init_file
 
+factor_mton = 1e-3 # conversion from kg to metric ton
+
 lx = True
 if lx:
-    scaling_obj = 1e-3
+    scaling_obj = 1e-1
     scaling_factor = 1
+    scaling_cost = 1e-3
 else:
     scaling_obj = 1
     scaling_factor = 1
 print()
 print('Scaling_factor:', scaling_factor)
+print('Scaling cost:', scaling_cost)
+print('Scaling obj:', scaling_obj)
 
 method = "with_efficiency" # options: with_efficiency and without_efficiency
-tank_scenario = "hot_full" # Initial state of salt tank: "hot_empty", "hot_full", "hot_half_full"
-tank_min = 1 * scaling_factor# in kg
-tank_max = 6739292 * scaling_factor# in kg
+tank_scenario = "hot_empty" # Initial state of salt tank: "hot_empty", "hot_full", "hot_half_full"
+tank_min = 1 * scaling_factor * factor_mton # in mton
+tank_max = 6739292 * scaling_factor * factor_mton # in mton
 
 # Select lmp source data and scaling factor according to that
 use_rts_data = False
@@ -82,7 +89,19 @@ if use_rts_data:
         price = np.load(f)
     lmp = price[0:number_hours].tolist()
 elif use_mod_rts_data:
-    price = [22.9684, 0, 200, 200]
+    # price = [22.9684, 0, 200, 200]
+    price = [
+        22.9684, 21.1168, 20.4, 20.419,
+        20.419, 21.2877, 23.07, 25,
+        18.4634, 0, 0, 0,
+        0, 0, 0, 0,
+        19.0342, 23.07, 200, 200,
+        200, 200, 200, 200,
+    ]
+    if len(price) < hours_per_day:
+        print()
+        print('**ERROR: I need more LMP data!')
+        raise Exception
     lmp = price
 else:
     print('>> Using NREL lmp data')
@@ -132,8 +151,15 @@ def create_ss_model():
 
     if gdp_mp:
         # Set only upper bound for discharge turbine
+        m.usc.fs.discharge_mode_disjunct.turbine_min_power_eq = pyo.Constraint(
+            expr=storage_work >= min_power_storage
+        )
         m.usc.fs.es_turbine_max_power_eq = pyo.Constraint(
             expr=storage_work * (-1e-6) <= max_power_storage
+        )
+
+        m.usc.fs.charge_mode_disjunct.storage_lower_bound_eq = pyo.Constraint(
+            expr=charge_mode.hxc.heat_duty[0] * 1e-6 >= min_storage_heat_duty
         )
     else:
         # Set lower and upper bounds for discharge turbine
@@ -191,12 +217,8 @@ def create_mp_block():
         doc="Previous period power (MW)"
         )
 
-    if gdp_mp:
-        max_inventory = 1e7 * scaling_factor
-        ramp_rate = 100
-    else:
-        max_inventory = 1e7 * scaling_factor
-        ramp_rate = 60
+    max_inventory = 1e7 * scaling_factor * factor_mton # in mton
+    ramp_rate = 60
 
     b1.previous_salt_inventory_hot = Var(
         domain=NonNegativeReals,
@@ -239,12 +261,10 @@ def create_mp_block():
         @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
         def constraint_salt_inventory_hot(b):
             return (
-                b1.salt_inventory_hot ==
-                b1.previous_salt_inventory_hot
-                # + (b.charge_mode_disjunct.binary_indicator_var * b1.fs.salt_storage * 3600
-                #    - b.discharge_mode_disjunct.binary_indicator_var * b1.fs.salt_storage * 3600) * \
-                # scaling_factor
-                + 3600 * b1.fs.salt_storage * scaling_factor
+                1e-3 * b1.salt_inventory_hot == (
+                    b1.previous_salt_inventory_hot
+                    + (3600 * b1.fs.salt_storage) * scaling_factor * factor_mton # in mton
+                ) * 1e-3
             )
     else:
         @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
@@ -259,28 +279,27 @@ def create_mp_block():
     @b1.fs.Constraint(doc="Maximum salt inventory at any time")
     def constraint_salt_inventory(b):
         return (
-            b1.salt_inventory_hot +
-            b1.salt_inventory_cold == b1.fs.salt_amount * scaling_factor)
+            1e-3 * b1.fs.salt_amount * scaling_factor == (
+                b1.salt_inventory_hot
+                + b1.salt_inventory_cold
+            ) * 1e-3
+        )
 
     # Scale variables and constraints
-    # iscale.set_scaling_factor(b1.fs.salt_amount, 1e-6)
-    # iscale.set_scaling_factor(b1.previous_salt_inventory_hot, 1e-6)
-    # iscale.set_scaling_factor(b1.previous_salt_inventory_cold, 1e-6)
-    # iscale.set_scaling_factor(b1.salt_inventory_hot, 1e-6)
-    # iscale.set_scaling_factor(b1.salt_inventory_cold, 1e-6)
-    # iscale.set_scaling_factor(b1.fs.constraint_salt_inventory_hot, 1e-6)
+    iscale.set_scaling_factor(b1.fs.operating_cost, 1e-3)
+    iscale.set_scaling_factor(b1.fs.plant_fixed_operating_cost, 1e-3)
+    iscale.set_scaling_factor(b1.fs.plant_variable_operating_cost, 1e-3)
+    iscale.set_scaling_factor(b1.fs.plant_capital_cost, 1e-3)
 
-    # iscale.set_scaling_factor(b1.fs.cooler_heat_duty, 1e-6)
-    # iscale.set_scaling_factor(b1.fs.hx_pump_work, 1e-6)
-    # iscale.set_scaling_factor(b1.fs.discharge_turbine_work, 1e-6)
-
-    # iscale.set_scaling_factor(b1.fs.operating_cost, 1e-3)
-    # iscale.set_scaling_factor(b1.fs.plant_fixed_operating_cost, 1e-3)
-    # iscale.set_scaling_factor(b1.fs.plant_variable_operating_cost, 1e-3)
-    # iscale.set_scaling_factor(b1.fs.plant_capital_cost, 1e-3)
-
+    iscale.set_scaling_factor(b1.fs.salt_amount, 1e-3)
+    iscale.set_scaling_factor(b1.salt_inventory_hot, 1e-3)
+    iscale.set_scaling_factor(b1.salt_inventory_cold, 1e-3)
+    iscale.set_scaling_factor(b1.previous_salt_inventory_hot, 1e-3)
+    iscale.set_scaling_factor(b1.previous_salt_inventory_cold, 1e-3)
+    iscale.set_scaling_factor(b1.fs.constraint_salt_inventory_hot, 1e-3)
 
     return m
+
 
 # The tank level and power output are linked between time periods
 def get_rankine_link_variable_pairs(b1, b2):
@@ -288,10 +307,10 @@ def get_rankine_link_variable_pairs(b1, b2):
         b1: current time block
         b2: next time block
     """
-    return [(b1.usc.salt_inventory_hot,
-             b2.usc.previous_salt_inventory_hot),
-            (b1.usc.fs.plant_power_out[0],
-             b2.usc.previous_power)]
+    return [
+        (b1.usc.salt_inventory_hot, b2.usc.previous_salt_inventory_hot),
+        (b1.usc.fs.plant_power_out[0], b2.usc.previous_power)
+    ]
 
 # The final tank level and power output must be the same as the
 # initial tank level and power output state
@@ -301,10 +320,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
         b2: first time block
     """
 
-    return [(b1.usc.salt_inventory_hot,
-             b2.usc.previous_salt_inventory_hot)]#,
-    #         # (b1.usc.fs.plant_power_out[0],
-    #         #  b2.usc.previous_power)]
+    return [(b1.usc.salt_inventory_hot, b2.usc.previous_salt_inventory_hot)]
 
 
 # Create the multiperiod model object. You can pass arguments to your
@@ -316,7 +332,7 @@ mp_usc = MultiPeriodModel(
     n_time_points=n_time_points,
     process_model_func=create_mp_block,
     linking_variable_func=get_rankine_link_variable_pairs,
-    # periodic_variable_func=get_rankine_periodic_variable_pairs
+    periodic_variable_func=get_rankine_periodic_variable_pairs
 )
 
 # If you have no arguments, you don't actually need to pass in
@@ -327,17 +343,37 @@ mp_usc.build_multi_period_model()
 m = mp_usc.pyomo_model
 blks = mp_usc.get_active_process_blocks()
 
+# Add logical constraint to help reduce the alternatives to explore
+# when periodic behavior is expected
+@m.Constraint()
+def _logic_constraint_no_charge_at_timen(m):
+    return (m.blocks[0].process.usc.fs.charge_mode_disjunct.binary_indicator_var
+            + m.blocks[number_hours - 1].process.usc.fs.charge_mode_disjunct.binary_indicator_var) <= 1
+
+@m.Constraint()
+def _logic_constraint_no_discharge_at_timen(m):
+    return (m.blocks[0].process.usc.fs.discharge_mode_disjunct.binary_indicator_var
+            + m.blocks[number_hours - 1].process.usc.fs.discharge_mode_disjunct.binary_indicator_var) <= 1
+
 # Add lmp market data for each block
 count = 0
 for blk in blks:
     # blk.lmp_signal = Param(default=0, mutable=True)
-    blk.revenue = lmp[count] * blk.usc.fs.net_power * scaling_factor
-    blk.operating_cost = pyo.Expression(
+    blk.revenue = pyo.Var(initialize=1e3,
+                          bounds=(0, 1e6),
+                          doc="Revenue in $/h")
+    blk.revenue_eq = pyo.Constraint(
+        expr=1e-3 * blk.revenue == lmp[count] * blk.usc.fs.net_power * scaling_cost * 1e-3)
+    blk.operating_cost = pyo.Var(initialize=1e4,
+                                 bounds=(0, 1e6))
+    blk.operating_cost_eq = pyo.Constraint(
         expr=(
-            (blk.usc.fs.operating_cost
-             + blk.usc.fs.plant_fixed_operating_cost
-             + blk.usc.fs.plant_variable_operating_cost) / (365 * 24)
-        ) * scaling_factor
+            1e-3 * blk.operating_cost == (
+                (blk.usc.fs.operating_cost
+                 + blk.usc.fs.plant_fixed_operating_cost
+                 + blk.usc.fs.plant_variable_operating_cost) / (365 * 24)
+            ) * scaling_cost * 1e-3
+        )
     )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
     count += 1
@@ -348,6 +384,23 @@ m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
 # scenarios are included for salt tank
 blks[0].usc.previous_power.fix(400)
 
+# Fix the operation mode in first period based on salt tank scenario
+if tank_scenario == "hot_empty":
+    print('>>Fix first time period to charge since hot tank is empty')
+    print()
+    blks[0].usc.fs.charge_mode_disjunct.binary_indicator_var.fix(1)
+    blks[0].usc.fs.discharge_mode_disjunct.binary_indicator_var.fix(0)
+    blks[0].usc.fs.no_storage_mode_disjunct.binary_indicator_var.fix(0)
+elif tank_scenario == "hot_full":
+    print('>>Fix first time period to discharge since hot tank is full')
+    print()
+    blks[0].usc.fs.charge_mode_disjunct.binary_indicator_var.fix(0)
+    blks[0].usc.fs.discharge_mode_disjunct.binary_indicator_var.fix(1)
+    blks[0].usc.fs.no_storage_mode_disjunct.binary_indicator_var.fix(0)
+else:
+    print('No specific init for this tank scenario')
+
+# Fix previous salt tank level based on salt scenario
 if tank_scenario == "hot_empty":
     blks[0].usc.previous_salt_inventory_hot.fix(tank_min)
     blks[0].usc.previous_salt_inventory_cold.fix(tank_max-tank_min)
@@ -360,74 +413,148 @@ elif tank_scenario == "hot_full":
 else:
     print("Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full")
 
-def print_model(mdl, _):
+def print_model(mdl, mdl_data, csvfile):
+    
+    mdl.disjunction1_selection = {}
+
     print('       ___________________________________________')
     for blk in mdl.blocks:
         print('       Time period {} '.format(blk+1))
-        print('        Disjunct charge: {}'.format(
+        print('        Charge: {}'.format(
             mdl.blocks[blk].process.usc.fs.charge_mode_disjunct.binary_indicator_var.value))
-        print('        Disjunct discharge: {}'.format(
+        print('        Discharge: {}'.format(
             mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.binary_indicator_var.value))
-        print('        Disjunct no storage: {}'.format(
+        print('        No storage: {}'.format(
             mdl.blocks[blk].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var.value))
         if mdl.blocks[blk].process.usc.fs.charge_mode_disjunct.binary_indicator_var.value == 1:
-            print('        Disjunction 1: Charge mode is selected')
-            print('        HXC Duty (MW): {:.4f}'.format(
+            mdl.disjunction1_selection[mdl_data.master_iteration] = 'Charge selected'
+            print('         HXC area (m2): {:.4f}'.format(
+                value(mdl.blocks[blk].process.usc.fs.charge_mode_disjunct.hxc.area)))
+            print('         HXC Duty (MW): {:.4f}'.format(
                 value(mdl.blocks[blk].process.usc.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6))
-            print('        Salt flow HXC (kg/s): {:.4f}'.format(
+            print('         Salt flow HXC (kg/s): {:.4f}'.format(
                 value(mdl.blocks[blk].process.usc.fs.charge_mode_disjunct.hxc.outlet_2.flow_mass[0])))
+            print('         Cooling heat duty (MW): {:.4f}'.format(
+                value(mdl.blocks[blk].process.usc.fs.charge_mode_disjunct.cooler.heat_duty[0]) * 1e-6))
         elif mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.binary_indicator_var.value == 1:
-            print('        Disjunction 1: Discharge mode is selected')
-            print('        HXD Duty (MW): {:.4f}'.format(
+            mdl.disjunction1_selection[mdl_data.master_iteration] = 'Discharge selected'
+            print('         HXD area (m2): {:.4f}'.format(
+                value(mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.hxd.area)))
+            print('         HXD Duty (MW): {:.4f}'.format(
                 value(mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6))
-            print('        Salt flow HXD (kg/s): {:.4f}'.format(
+            print('         Salt flow HXD (kg/s): {:.4f}'.format(
                 value(mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.hxd.outlet_1.flow_mass[0])))
+            print('         Water flow HXD (mol/s): {:.4f}'.format(
+                value(mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.hxd.outlet_2.flow_mol[0])))
+            print('         ES turbine work (MW): {:.4f}'.format(
+                value(mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.es_turbine.work_mechanical[0]) * -1e-6))
         elif mdl.blocks[blk].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var.value == 1:
-            print('        Disjunction 1: No storage mode is selected')
+            mdl.disjunction1_selection[mdl_data.master_iteration] = 'No_storage selected'
+            print('         Salt flow (kg/s): {:.4f}'.format(
+                value(mdl.blocks[blk].process.usc.fs.salt_storage)))
         else:
-            print('        No other operation alternative!')
-        print()
+            print('        No other operation mode is available!')
         print('        Net power: {:.4f}'.format(value(mdl.blocks[blk].process.usc.fs.net_power)))
-        print('        ES Turbine Power: {:.4f}'.format(
-            value(mdl.blocks[blk].process.usc.fs.discharge_turbine_work)*(1e-6)))
+        print('        Discharge turbine work (MW): {:.4f}'.format(
+            value(mdl.blocks[blk].process.usc.fs.discharge_turbine_work)))
         print('        Cooler heat duty: {:.4f}'.format(
-            value(mdl.blocks[blk].process.usc.fs.cooler_heat_duty)*(1e-6)))
-        print('        Cycle [Boiler] efficiency (%): {:.4f} [{:.4f}]'.format(
-            value(mdl.blocks[blk].process.usc.fs.cycle_efficiency),
-            value(mdl.blocks[blk].process.usc.fs.boiler_eff) * 100))
+            value(mdl.blocks[blk].process.usc.fs.cooler_heat_duty)))
+        print('        Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
+            value(mdl.blocks[blk].process.usc.fs.boiler_eff) *100,
+            value(mdl.blocks[blk].process.usc.fs.cycle_efficiency) * 100))
         print('        Boiler heat duty: {:.4f}'.format(
             value(mdl.blocks[blk].process.usc.fs.boiler.heat_duty[0]) * 1e-6))
         print('        Boiler flow mol (mol/s): {:.4f}'.format(
             value(mdl.blocks[blk].process.usc.fs.boiler.outlet.flow_mol[0])))
-        print('        Salt to storage (kg/s) [kg]: {:.4f} [{:.4f}]'.format(
+        print('        Salt to storage (kg/s) [mton]: {:.4f} [{:.4f}]'.format(
             value(mdl.blocks[blk].process.usc.fs.salt_storage),
-            value(mdl.blocks[blk].process.usc.fs.salt_storage) * 3600))
-        print('        Hot salt inventory (mton): prev: {:.4f}, curr: {:.4f}'.format(
-            (value(mdl.blocks[blk].process.usc.previous_salt_inventory_hot) / scaling_factor) * 1e-3,
-            (value(mdl.blocks[blk].process.usc.salt_inventory_hot) / scaling_factor) * 1e-3))
+            value(mdl.blocks[blk].process.usc.fs.salt_storage) * 3600 * factor_mton))
+        print('        Hot salt inventory (mton): {:.4f}, previous: {:.4f}'.format(
+            value(mdl.blocks[blk].process.usc.salt_inventory_hot) / scaling_factor,
+            value(mdl.blocks[blk].process.usc.previous_salt_inventory_hot) / scaling_factor))
         print('        Makeup water flow (mol/s): {:.4f}'.format(
             value(mdl.blocks[blk].process.usc.fs.condenser_mix.makeup.flow_mol[0])))
+        print('        Total op cost (M$/year): {:.4f}'.format((value(mdl.blocks[blk].process.operating_cost) / scaling_cost)))
+        print('        Revenue (M$/year): {:.4f}'.format((value(mdl.blocks[blk].process.revenue) / scaling_cost)))
         print()
-    print('        Obj (M$/year): {:.4f}'.format(value(mdl.obj) / scaling_factor))
+
+        mdl.objective_value = {}
+        mdl.boiler_heat_duty_value = {}
+        mdl.discharge_turbine_work_value = {}
+        mdl.objective_value[mdl_data.master_iteration] = (value(mdl.obj) / scaling_cost) / scaling_obj
+        mdl.iterations = mdl_data.master_iteration
+        mdl.period = blk
+        mdl.boiler_heat_duty_value[mdl_data.master_iteration] = value(mdl.blocks[blk].process.usc.fs.boiler.heat_duty[0]) * 1e-6
+        mdl.discharge_turbine_work_value[mdl_data.master_iteration] = value(mdl.blocks[blk].process.usc.fs.discharge_turbine_work)
+
+        if save_results:
+            writer = csv.writer(csvfile)
+            writer.writerow(
+                (mdl_data.master_iteration,
+                 mdl.period,
+                 mdl.disjunction1_selection[mdl_data.master_iteration],
+                 mdl.boiler_heat_duty_value[mdl_data.master_iteration],
+                 mdl.discharge_turbine_work_value[mdl_data.master_iteration],
+                 mdl.objective_value[mdl_data.master_iteration])
+            )
+            csvfile.flush()
+
+    print('        Obj (M$/year): {:.4f}'.format((value(mdl.obj) / scaling_cost) / scaling_obj))
     print('       ___________________________________________')
 
-    # log_close_to_bounds(mdl)
+    log_close_to_bounds(mdl)
     # log_infeasible_constraints(mdl)
 
+
+def create_csv_header():
+    csvfile = open('results_subnlp_master_iterations_{}h.csv'.format(hours_per_day),
+                   'w', newline='')
+    writer = csv.writer(csvfile)
+    writer.writerow(
+        ('Iteration', 'TimePeriod(hr)', 'OperationMode',
+         'BoilerHeatDuty(MW)', 'DischargeWork(MW)', 'Obj($/hr)')
+    )
+    return csvfile
+
+
 # Select solver
+csvfile = create_csv_header()
+
 if gdp_mp:
     opt = pyo.SolverFactory('gdpopt')
     opt.CONFIG.strategy = 'RIC'
     # opt.CONFIG.OA_penalty_factor = 1e4
     # opt.CONFIG.max_slack = 1e4
-    opt.CONFIG.call_after_subproblem_solve = print_model
+    # opt.CONFIG.call_after_subproblem_solve = print_model
+    opt.CONFIG.call_after_subproblem_solve = (lambda a, b: print_model(a, b, csvfile))
     opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
-    opt.CONFIG.time_limit = "2400"
+    opt.CONFIG.time_limit = "28000"
 else:
     opt = pyo.SolverFactory('ipopt')
+
+# Initializing disjuncts
+print()
+print()
+print('>>Initializing disjuncts')
+for k in range(number_hours):
+    if k < (hours_per_day / 3):
+        print('  **Setting block {} to charge'.format(k))
+        blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
+        blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+        blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+    elif k < (2 * (hours_per_day / 3)):
+        print('  **Setting block {} to no storage'.format(k))
+        blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+        blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+        blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
+    elif k < hours_per_day:
+        print('  **Setting block {} to discharge'.format(k))
+        blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+        blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(1)
+        blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
 
 # Solve problem
 hot_tank_level = []
@@ -435,12 +562,12 @@ cold_tank_level = []
 net_power = []
 hxc_duty = []
 hxd_duty = []
+discharge_work = []
+boiler_heat_duty = []
 for week in range(n_weeks):
     print()
     print(">> Solving for week {}: {} hours of operation in {} day(s) ".
           format(week + 1, number_hours, number_days))
-    # for (i, blk) in enumerate(blks):
-    #     blk.lmp_signal = weekly_prices[week][i]
     if gdp_mp:
         results = opt.solve(m,
                             tee=True,
@@ -455,14 +582,18 @@ for week in range(n_weeks):
         results = opt.solve(m, tee=True)
 
     hot_tank_level.append(
-        [(pyo.value(blks[i].usc.salt_inventory_hot) / scaling_factor) * 1e-3
+        [(pyo.value(blks[i].usc.salt_inventory_hot) / scaling_factor) # in mton
          for i in range(n_time_points)])
     cold_tank_level.append(
-        [(pyo.value(blks[i].usc.salt_inventory_cold) / scaling_factor) * 1e-3
+        [(pyo.value(blks[i].usc.salt_inventory_cold) / scaling_factor) # in mton
          for i in range(n_time_points)])
     net_power.append(
         [pyo.value(blks[i].usc.fs.net_power)
          for i in range(n_time_points)])
+    boiler_heat_duty.append([pyo.value(blks[i].usc.fs.boiler.heat_duty[0]) * 1e-6
+                             for i in range(n_time_points)])
+    discharge_work.append([pyo.value(blks[i].usc.fs.discharge_turbine_work)
+                           for i in range(n_time_points)])
     if gdp_mp:
         hxc_duty.append(
             [pyo.value(blks[i].usc.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6
@@ -490,114 +621,110 @@ for blk in blks:
         storage_work = blks[c].usc.fs.discharge_turbine_work
         charge_mode = blks[c].usc.fs.charge_mode_disjunct
         discharge_mode = blks[c].usc.fs.discharge_mode_disjunct
-        print(' Charge mode is {}'.format(
+        perc = 100
+        factor = 1
+
+        print(' Charge mode: {}'.format(
             blks[c].usc.fs.charge_mode_disjunct.indicator_var.value))
-        print(' Discharge mode is {}'.format(
+        print(' Discharge mode: {}'.format(
             blks[c].usc.fs.discharge_mode_disjunct.indicator_var.value))
-        print(' No storage mode is {}'.format(
+        print(' No storage mode: {}'.format(
             blks[c].usc.fs.no_storage_mode_disjunct.indicator_var.value))
+        if blks[c].usc.fs.charge_mode_disjunct.binary_indicator_var.value == 1:
+            print('  HXC Duty (MW): {:.4f}'.format(
+                value(charge_mode.hxc.heat_duty[0]) * 1e-6))
+            print('  Salt flow from HXC (kg/s) [mton]: {:.4f} [{:.4f}]'.format(
+                value(charge_mode.hxc.outlet_2.flow_mass[0]),
+                value(charge_mode.hxc.outlet_2.flow_mass[0]) * 3600 * factor_mton))
+            print('  HXC Delta T (K): in: {:.4f}, out: {:.4f}'.format(
+                value(charge_mode.hxc.delta_temperature_in[0]),
+                value(charge_mode.hxc.delta_temperature_out[0])))
+        elif blks[c].usc.fs.discharge_mode_disjunct.binary_indicator_var.value == 1:
+            print('  HXD Duty (MW): {:.4f}'.format(
+                value(discharge_mode.hxd.heat_duty[0]) * 1e-6))
+            print('  Salt from HXD (kg/s) [mton]: {:.4f} [{:.4f}]'.format(
+                value(discharge_mode.hxd.outlet_1.flow_mass[0]),
+                value(discharge_mode.hxd.outlet_1.flow_mass[0]) * 3600 * factor_mton))
+            print('  HXD Delta T (K): in: {:.4f}, out: {:.4f}'.format(
+                value(discharge_mode.hxd.delta_temperature_in[0]),
+                value(discharge_mode.hxd.delta_temperature_out[0])))
+            print('  ES turbine work (MW): {:.4f}'.format(
+                value(discharge_mode.es_turbine.work_mechanical[0]) * -1e-6))
+        elif blks[c].usc.fs.no_storage_mode_disjunct.binary_indicator_var.value == 1:
+            print('  **Note: no storage heat exchangers exist, so the units have the init values ')
+            print('  HXC Duty (MW): {:.4f}'.format(
+                value(charge_mode.hxc.heat_duty[0]) * 1e-6))
+            print('  HXC salt flow (kg/s): {:.4f} '.format(
+                value(charge_mode.hxc.outlet_2.flow_mass[0])))
+            print('  HXD Duty (MW): {:.4f}'.format(
+                value(discharge_mode.hxd.heat_duty[0]) * 1e-6))
+            print('  HXD salt flow (kg/s): {:.4f}'.format(
+                value(discharge_mode.hxd.outlet_1.flow_mass[0])))
+        else:
+            print('  No other operation modes!')
     else:
         storage_work = blks[c].usc.fs.es_turbine.work_mechanical[0]
         charge_mode = blks[c].usc.fs
         discharge_mode = blks[c].usc.fs
+        perc = 1
+        factor = -1e-6
+
     print(' Net power: {:.4f}'.format(
         value(blks[c].usc.fs.net_power)))
     print(' Plant Power Out: {:.4f}'.format(
         value(blks[c].usc.fs.plant_power_out[0])))
-    print(' ES Turbine Power: {:.4f}'.format(
-        value(storage_work)*(-1e-6)))
-    print(' Cost ($): {:.4f}'.format(value(blks[c].cost) / scaling_factor))
-    print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue) / scaling_factor))
-    print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost) /
-                                               scaling_factor))
+    print(' Discharge turbine work (MW): {:.4f}'.format(
+        value(storage_work) * factor))
+    print(' Cost ($): {:.4f}'.format(value(blks[c].cost) / scaling_cost))
+    print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue) / scaling_cost))
+    print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost) / scaling_cost))
     print(' Specific Operating cost ($/MWh): {:.4f}'.format(
-        (value(blks[c].operating_cost) /scaling_factor) /
-        value(blks[c].usc.fs.net_power)))
-    print(' Cycle efficiency (%): {:.4f}'.format(
-        value(blks[c].usc.fs.cycle_efficiency)))
-    print(' Boiler efficiency (%): {:.4f}'.format(
-        value(blks[c].usc.fs.boiler_eff) * 100))
+        (value(blks[c].operating_cost) / scaling_cost) / value(blks[c].usc.fs.net_power)))
+    print(' Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
+        value(blks[c].usc.fs.boiler_eff) * 100,
+        value(blks[c].usc.fs.cycle_efficiency) * perc))
     print(' Boiler heat duty: {:.4f}'.format(
         value(blks[c].usc.fs.boiler.heat_duty[0]) * 1e-6))
     print(' Boiler flow mol (mol/s): {:.4f}'.format(
         value(blks[c].usc.fs.boiler.outlet.flow_mol[0])))
-    print(' Previous salt inventory (mton): {:.4f}'.format(
-        (value(blks[c].usc.previous_salt_inventory_hot) / scaling_factor) * 1e-3))
-    if gdp_mp:
-        if blks[c].usc.fs.charge_mode_disjunct.binary_indicator_var.value == 1:
-            print(' HXC Duty (MW): {:.4f}'.format(
-                value(charge_mode.hxc.heat_duty[0]) * 1e-6))
-            print(' Salt from HXC (mton): {:.4f}'.format(
-                value(charge_mode.hxc.outlet_2.flow_mass[0]) * 3600 * 1e-3))
-            print(' Split fraction to HXC: {:.4f}'.format(
-                value(charge_mode.ess_hp_split.split_fraction[0, "to_hxc"])))
-            print(' Salt flow HXC (kg/s): {:.4f}'.format(
-                value(charge_mode.hxc.outlet_2.flow_mass[0])))
-            print(' Steam flow HXC (mol/s): {:.4f}'.format(
-                value(charge_mode.hxc.outlet_1.flow_mol[0])))
-            print(' Delta T in HXC (kg): {:.4f}'.format(
-                value(charge_mode.hxc.delta_temperature_in[0])))
-            print(' Delta T out HXC (kg): {:.4f}'.format(
-                value(charge_mode.hxc.delta_temperature_out[0])))
-        elif blks[c].usc.fs.discharge_mode_disjunct.binary_indicator_var.value == 1:
-            print(' HXD Duty (MW): {:.4f}'.format(
-                value(discharge_mode.hxd.heat_duty[0]) * 1e-6))
-            print(' Salt from HXD (mton): {:.4f}'.format(
-                value(discharge_mode.hxd.outlet_1.flow_mass[0]) * 3600 * 1e-3))
-            print(' Split fraction to HXD: {:.4f}'.format(
-                value(discharge_mode.ess_bfp_split.split_fraction[0, "to_hxd"])))
-            print(' Salt flow HXD (kg/s): {:.4f}'.format(
-                value(discharge_mode.hxd.outlet_1.flow_mass[0])))
-            print(' Steam flow HXD (mol/s): {:.4f}'.format(
-                value(discharge_mode.hxd.outlet_2.flow_mol[0])))
-            print(' Delta T in HXD (kg): {:.4f}'.format(
-                value(discharge_mode.hxd.delta_temperature_in[0])))
-            print(' Delta T out HXD (kg): {:.4f}'.format(
-                value(discharge_mode.hxd.delta_temperature_out[0])))
-        else:
-            print(' No storage is selected, so storage heat exchangers do not exist!')
-    else:
+    if not gdp_mp:
         print(' HXC Duty (MW): {:.4f}'.format(
             value(charge_mode.hxc.heat_duty[0]) * 1e-6))
-        print(' Salt from HXC (mton): {:.4f}'.format(
-            value(charge_mode.hxc.outlet_2.flow_mass[0]) * 3600 * 1e-3))
-        print(' Split fraction to HXC: {:.4f}'.format(
-            value(charge_mode.ess_hp_split.split_fraction[0, "to_hxc"])))
-        print(' Salt flow HXC (kg/s): {:.4f}'.format(
-            value(charge_mode.hxc.outlet_2.flow_mass[0])))
-        print(' Steam flow HXC (mol/s): {:.4f}'.format(
-            value(charge_mode.hxc.outlet_1.flow_mol[0])))
-        print(' Delta T in HXC (kg): {:.4f}'.format(
-            value(charge_mode.hxc.delta_temperature_in[0])))
-        print(' Delta T out HXC (kg): {:.4f}'.format(
-            value(charge_mode.hxc.delta_temperature_out[0])))
         print(' HXD Duty (MW): {:.4f}'.format(
             value(discharge_mode.hxd.heat_duty[0]) * 1e-6))
-        print(' Salt from HXD (mton): {:.4f}'.format(
-            value(discharge_mode.hxd.outlet_1.flow_mass[0]) * 3600 * 1e-3))
-        print(' Split fraction to HXD: {:.4f}'.format(
-            value(discharge_mode.ess_bfp_split.split_fraction[0, "to_hxd"])))
-        print(' Salt flow HXD (kg/s): {:.4f}'.format(
-            value(discharge_mode.hxd.outlet_1.flow_mass[0])))
-        print(' Steam flow HXD (mol/s): {:.4f}'.format(
-            value(discharge_mode.hxd.outlet_2.flow_mol[0])))
-        print(' Delta T in HXD (kg): {:.4f}'.format(
-            value(discharge_mode.hxd.delta_temperature_in[0])))
-        print(' Delta T out HXD (kg): {:.4f}'.format(
+        print(' Salt from HXC (kg/s) [mton]: {:.4f} [{:.4f}]'.format(
+            value(charge_mode.hxc.outlet_2.flow_mass[0]),
+            value(charge_mode.hxc.outlet_2.flow_mass[0]) * 3600 * factor_mton))
+        print(' Salt from HXD (kg/s) [mton]: {:.4f} [{:.4f}]'.format(
+            value(discharge_mode.hxd.outlet_1.flow_mass[0]),
+            value(discharge_mode.hxd.outlet_1.flow_mass[0]) * 3600 * factor_mton))
+        print(' HXC delta T (K): in: {:.4f}, out: {:.4f}'.format(
+            value(charge_mode.hxc.delta_temperature_in[0]),
+            value(charge_mode.hxc.delta_temperature_out[0])))
+        print(' HXD delta T (K): in: {:.4f}, out: {:.4f}'.format(
+            value(discharge_mode.hxd.delta_temperature_in[0]),
             value(discharge_mode.hxd.delta_temperature_out[0])))
-    c += 1
+    print(' Hot salt inventory (mton): previous: {:.4f}, current: {:.4f}'.format(
+        value(blks[c].usc.previous_salt_inventory_hot) / scaling_factor,
+        value(blks[c].usc.salt_inventory_hot) / scaling_factor))
+    print(' Cold salt inventory (mton): previous: {:.4f}, current: {:.4f}'.format(
+        value(blks[c].usc.previous_salt_inventory_cold) / scaling_factor,
+        value(blks[c].usc.salt_inventory_cold) / scaling_factor))
 
+    c += 1
+print(results)
+
+# Plot results
 n_weeks_to_plot = 1
 hours = np.arange(n_time_points*n_weeks_to_plot)
-# lmp_array = weekly_prices[0:n_weeks_to_plot].flatten()
 lmp_array = np.asarray(lmp[0:n_time_points])
 hot_tank_array = np.asarray(hot_tank_level[0:n_weeks_to_plot]).flatten()
 cold_tank_array = np.asarray(cold_tank_level[0:n_weeks_to_plot]).flatten()
 
 # Convert array to list to include hot tank level at time zero
 lmp_list = [0] + lmp_array.tolist()
-hot_tank_array0 = (value(blks[0].usc.previous_salt_inventory_hot) / scaling_factor) * 1e-3
-cold_tank_array0 = (value(blks[0].usc.previous_salt_inventory_cold) / scaling_factor) * 1e-3
+hot_tank_array0 = (value(blks[0].usc.previous_salt_inventory_hot) / scaling_factor)
+cold_tank_array0 = (value(blks[0].usc.previous_salt_inventory_cold) / scaling_factor)
 hours_list = hours.tolist() + [number_hours]
 hot_tank_list = [hot_tank_array0] + hot_tank_array.tolist()
 cold_tank_list = [cold_tank_array0] + cold_tank_array.tolist()
@@ -614,9 +741,9 @@ ax1.spines["top"].set_visible(False)
 ax1.spines["right"].set_visible(False)
 ax1.grid(linestyle=':', which='both',
          color='gray', alpha=0.30)
-plt.axhline((tank_max / scaling_factor)*1e-3, ls=':', lw=1.75,
+plt.axhline((tank_max / scaling_factor), ls=':', lw=1.75,
             color=color[4])
-plt.text(number_hours / 2 - 1.5, (tank_max/scaling_factor)*1e-3 + 100, 'max salt',
+plt.text(number_hours / 2 - 1.5, (tank_max / scaling_factor) + 100, 'max salt',
          color=color[4])
 ax1.step(# [x + 1 for x in hours], hot_tank_array,
     hours_list, hot_tank_list,
@@ -640,7 +767,7 @@ ax2.step([x + 1 for x in hours], lmp_array,
          color=color[2])
 ax2.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('multiperiod_usc_storage_rts1_salt_tank_level_24h.png')
+plt.savefig('multiperiod_gdp_usc_storage_rts1_salt_tank_level_{}h.png'.format(hours_per_day))
 
 
 font = {'size':18}
@@ -683,7 +810,7 @@ ax4.step([x + 1 for x in hours], lmp_array,
          color=color[2])
 ax4.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('multiperiod_usc_storage_rts1_power_24h.png')
+plt.savefig('multiperiod_gdp_usc_storage_rts1_power_{}h.png'.format(hours_per_day))
 
 
 zero_point = True
@@ -739,6 +866,53 @@ ax6.step([x + 1 for x in hours], lmp_array,
          ls='-', color=color[2])
 ax6.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('multiperiod_usc_storage_rts1_hxduty_24h.png')
+plt.savefig('multiperiod_gdp_usc_storage_rts1_hxduty_{}h.png'.format(hours_per_day))
+
+zero_point = True
+boiler_heat_duty_array = np.asarray(boiler_heat_duty[0:n_weeks_to_plot]).flatten()
+boiler_heat_duty0 = 0 # zero since the plant is not operating
+boiler_heat_duty_list = [boiler_heat_duty0] + boiler_heat_duty_array.tolist()
+discharge_work_array = np.asarray(discharge_work[0:n_weeks_to_plot]).flatten()
+discharge_work0 = 0 # zero since the plant is not operating
+discharge_work_list = [discharge_work0] + discharge_work_array.tolist()
+
+fig4, ax7 = plt.subplots(figsize=(12, 8))
+ax7.set_xlabel('Time Period (hr)')
+ax7.set_ylabel('(MW)',
+               color=color[3])
+ax7.spines["top"].set_visible(False)
+ax7.spines["right"].set_visible(False)
+ax7.grid(linestyle=':', which='both',
+         color='gray', alpha=0.30)
+if zero_point:
+    ax7.step(hours_list, boiler_heat_duty_list,
+             marker='^', ms=4, label='Boiler Heat Duty',
+             color=color[0])
+    ax7.step(hours_list, discharge_work_list,
+             marker='^', ms=4, label='Discharge Work',
+             color=color[1])
+else:
+    ax7.step([x + 1 for x in hours], boiler_heat_duty_array,
+             marker='^', ms=4, lw=1,
+             label='Boiler Heat Duty',
+             color=color[0])
+    ax7.step([x + 1 for x in hours], discharge_work_list,
+             marker='^', ms=4, label='Discharge Work',
+             color=color[1])
+ax7.legend(loc="center right", frameon=False)
+ax7.tick_params(axis='y',
+                labelcolor=color[3])
+ax7.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
+
+ax8 = ax7.twinx()
+ax8.set_ylabel('LMP ($/MWh)',
+               color=color[2])
+ax8.step([x + 1 for x in hours], lmp_array,
+         marker='o', ms=3, alpha=0.5,
+         ls='-', color=color[2])
+ax8.tick_params(axis='y',
+                labelcolor=color[2])
+plt.savefig('multiperiod_gdp_usc_storage_rts1_boilerduty_{}h.png'.format(hours_per_day))
+
 
 plt.show()
