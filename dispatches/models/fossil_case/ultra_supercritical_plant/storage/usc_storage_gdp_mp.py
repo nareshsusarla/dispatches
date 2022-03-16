@@ -32,7 +32,7 @@ Additional main assumptions are as follows:
 (3) Multi-stage turbines are modeled as multiple lumped single stage
     turbines
 
-updated (02/15/2022)
+updated (03/15/2022)
 """
 
 __author__ = "Soraya Rawlings and Naresh Susarla"
@@ -91,9 +91,16 @@ from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
 
-scaling_obj = 1e-3
-max_salt_amount = 6739292 # in kg
+scaling_obj = 1e-2 # hot_empty tank scenario
+# scaling_obj = 1e-3 # hot_full
+max_salt_amount = 6739292 * 1e-3 # in mton
 
+max_power = 436
+min_power = int(0.65 * max_power)
+max_power_storage = 24 # in MW
+min_power_storage = 1 # in MW
+min_storage_heat_duty = 1 # in MW
+max_storage_heat_duty = 150 # in MW
 
 def create_gdp_model(m,
                      method=None,
@@ -111,7 +118,7 @@ def create_gdp_model(m,
 
     # Global data
     m.salt_hot_temperature = 831 # from charge case at max power = 436 MW
-    m.storage_heat_duty = 150 # maximum heat duty in storage heat exchanger
+    m.storage_heat_duty = max_storage_heat_duty # maximum heat duty in storage heat exchanger
     m.max_salt_flow = 500  # in kg/s
 
     # Chemical engineering cost index for 2019
@@ -282,28 +289,35 @@ def create_gdp_model(m,
     # Add global variables
     ###########################################################################
 
-    m.fs.salt_amount = Var(
+    # m.fs.salt_amount = Var(
+    #     initialize=max_salt_amount,
+    #     doc="Solar salt purchase cost in $"
+    # )
+    # m.fs.salt_amount.fix()
+    m.fs.salt_amount = Param(
         initialize=max_salt_amount,
-        doc="Solar salt purchase cost in $"
+        doc="Solar salt amount in mton"
     )
-    m.fs.salt_amount.fix()
 
     m.fs.salt_storage = Var(
         bounds=(-m.max_salt_flow, m.max_salt_flow),
-        initialize=1e-5,
-        doc="Solar salt amount in storage"
+        initialize=1,
+        doc="Hot solar salt amount for storage in kg/s"
     )
     m.fs.cooler_heat_duty = Var(
-        bounds=(-1e12, 0),
-        initialize=1
+        bounds=(0, 1e3),
+        initialize=1,
+        doc="Cooler heat duty in MW"
     )
     m.fs.hx_pump_work = Var(
-        bounds=(0, 1e12),
-        initialize=1
+        bounds=(0, 1e3),
+        initialize=1,
+        doc="Pump work in charge mode in MW"
     )
     m.fs.discharge_turbine_work = Var(
-        bounds=(-1e12, 0),
-        initialize=1
+        bounds=(0, 1e3),
+        initialize=1,
+        doc="Discharge turbine work in MW"
     )
     ###########################################################################
     # Add disjunction
@@ -335,19 +349,24 @@ def _make_constraints(m, method=None, max_power=None):
         return (
             (-1 * sum(b.turbine[p].work_mechanical[t]
                       for p in m.set_turbine)
-             - b.hx_pump_work
+             - b.hx_pump_work * 1e6 # in W
             ) ==
             b.plant_power_out[t] * 1e6 * (pyunits.W/pyunits.MW)
         )
 
     m.fs.net_power = Expression(
         expr=(m.fs.plant_power_out[0]
-              + (-1e-6) * m.fs.discharge_turbine_work)
+              + m.fs.discharge_turbine_work)
     )
 
-    m.fs.boiler_eff = Expression(
-        expr=0.2143 * (m.fs.net_power / max_power)
-        + 0.7357,
+    m.fs.boiler_eff = Var(initialize=0.9,
+                          bounds=(0, 1),
+                          doc="Boiler efficiency")
+    m.fs.boiler_efficiency_eq = Constraint(
+        expr=m.fs.boiler_eff == (
+            0.2143 * (m.fs.net_power / max_power)
+            + 0.7357
+        ),
         doc="Boiler efficiency in fraction"
     )
     m.fs.coal_heat_duty = Var(
@@ -365,11 +384,13 @@ def _make_constraints(m, method=None, max_power=None):
             expr=m.fs.coal_heat_duty == m.fs.plant_heat_duty[0]
         )
 
-    m.fs.cycle_efficiency = Expression(
-        expr=m.fs.net_power / m.fs.coal_heat_duty * 100,
+    m.fs.cycle_efficiency = Var(initialize=0.4,
+                                bounds=(0, 1),
+                                doc="Cycle efficiency")
+    m.fs.cycle_efficiency_eq = Constraint(
+        expr=m.fs.cycle_efficiency * m.fs.coal_heat_duty == m.fs.net_power,
         doc="Cycle efficiency in %"
     )
-
 
 
 def add_disjunction(m):
@@ -646,13 +667,17 @@ def charge_mode_disjunct_equations(disj):
         expr=m.fs.salt_storage == m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0]
     )
     m.fs.charge_mode_disjunct.eq_cooler_heat_duty = Constraint(
-        expr=m.fs.cooler_heat_duty == m.fs.charge_mode_disjunct.cooler.heat_duty[0]
+        expr=m.fs.cooler_heat_duty == (-1e-6) * m.fs.charge_mode_disjunct.cooler.heat_duty[0]
     )
     m.fs.charge_mode_disjunct.eq_hx_pump_work = Constraint(
-        expr=m.fs.hx_pump_work == m.fs.charge_mode_disjunct.hx_pump.control_volume.work[0]
+        expr=m.fs.hx_pump_work == (1e-6) * m.fs.charge_mode_disjunct.hx_pump.control_volume.work[0]
     )
     m.fs.charge_mode_disjunct.eq_discharge_turbine_work = Constraint(
         expr=m.fs.discharge_turbine_work == 0
+    )
+
+    m.fs.charge_mode_disjunct.eq_charge_heat_duty = Constraint(
+        expr=m.fs.charge_mode_disjunct.hxc.heat_duty[0] * (1e-6) <= max_storage_heat_duty
     )
 
 
@@ -832,9 +857,12 @@ def discharge_mode_disjunct_equations(disj):
     m.fs.discharge_mode_disjunct.eq_hx_pump_work = Constraint(
         expr=m.fs.hx_pump_work == 0
     )
-
     m.fs.discharge_mode_disjunct.eq_discharge_turbine_work = Constraint(
-        expr=m.fs.discharge_turbine_work == m.fs.discharge_mode_disjunct.es_turbine.work[0]
+        expr=m.fs.discharge_turbine_work == (-1e-6) * m.fs.discharge_mode_disjunct.es_turbine.work[0]
+    )
+
+    m.fs.discharge_mode_disjunct.eq_discharge_heat_duty = Constraint(
+        expr=m.fs.discharge_mode_disjunct.hxd.heat_duty[0] * (1e-6) <= max_storage_heat_duty
     )
 
 
@@ -928,23 +956,23 @@ def set_scaling_factors(m):
     for k in [m.fs.charge_mode_disjunct.cooler]:
         iscale.set_scaling_factor(k.control_volume.heat, 1e-6)
 
-def set_var_scaling(m):
-    iscale.set_scaling_factor(m.fs.operating_cost, 1e-3)
-    iscale.set_scaling_factor(m.fs.plant_fixed_operating_cost, 1e-3)
-    iscale.set_scaling_factor(m.fs.plant_variable_operating_cost, 1e-3)
-    iscale.set_scaling_factor(m.fs.plant_capital_cost, 1e-3)
+def set_scaling_var(m):
+    iscale.set_scaling_factor(m.fs.operating_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.plant_fixed_operating_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.plant_variable_operating_cost, 1e-6)
+    iscale.set_scaling_factor(m.fs.plant_capital_cost, 1e-6)
 
     iscale.set_scaling_factor(m.fs.salt_amount, 1e-6)
-    iscale.set_scaling_factor(m.fs.salt_inventory_hot, 1e-6)
-    iscale.set_scaling_factor(m.fs.salt_inventory_cold, 1e-6)
-    iscale.set_scaling_factor(m.fs.previous_salt_inventory_hot, 1e-6)
-    iscale.set_scaling_factor(m.fs.previous_salt_inventory_cold, 1e-6)
+    iscale.set_scaling_factor(m.fs.salt_inventory_hot, 1e-3)
+    iscale.set_scaling_factor(m.fs.salt_inventory_cold, 1e-3)
+    iscale.set_scaling_factor(m.fs.previous_salt_inventory_hot, 1e-3)
+    iscale.set_scaling_factor(m.fs.previous_salt_inventory_cold, 1e-3)
 
-    iscale.set_scaling_factor(m.fs.constraint_salt_inventory_hot, 1e-6)
+    iscale.set_scaling_factor(m.fs.constraint_salt_inventory_hot, 1e-3)
 
-    iscale.set_scaling_factor(m.fs.cooler_heat_duty, 1e-6)
-    iscale.set_scaling_factor(m.fs.hx_pump_work, 1e-6)
-    iscale.set_scaling_factor(m.fs.discharge_turbine_work, 1e-6)
+    # iscale.set_scaling_factor(m.fs.cooler_heat_duty, 1e-6)
+    # iscale.set_scaling_factor(m.fs.hx_pump_work, 1e-6)
+    # iscale.set_scaling_factor(m.fs.discharge_turbine_work, 1e-6)
 
 
 def initialize(m,
@@ -991,7 +1019,7 @@ def initialize(m,
                                                  optarg=solver.options)
 
     # Fix value of global variable
-    m.fs.hx_pump_work.fix(m.fs.charge_mode_disjunct.hx_pump.control_volume.work[0].value)
+    m.fs.hx_pump_work.fix(m.fs.charge_mode_disjunct.hx_pump.control_volume.work[0].value * 1e-6)
 
     propagate_state(m.fs.charge_mode_disjunct.bfp_to_recyclemix)
     propagate_state(m.fs.charge_mode_disjunct.hxpump_to_recyclemix)
@@ -1008,7 +1036,7 @@ def initialize(m,
     m.fs.discharge_mode_disjunct.es_turbine.initialize(outlvl=outlvl,
                                                        optarg=solver.options)
     # Fix value of global variable
-    m.fs.discharge_turbine_work.fix(m.fs.discharge_mode_disjunct.es_turbine.work[0].value)
+    m.fs.discharge_turbine_work.fix(m.fs.discharge_mode_disjunct.es_turbine.work[0].value * (-1e-6))
 
     if not deact_arcs_after_init:
         # Reinitialize FWH8 using bfp outlet
@@ -1135,6 +1163,7 @@ def build_costing(m):
         rule=op_variable_plant_cost_rule)
 
     return m
+
 
 def initialize_with_costing(m):
 
@@ -1519,9 +1548,9 @@ def print_results(m, results):
         value(m.fs.net_power)))
     print('Plant Power (MW): {:.4f}'.format(
         value(m.fs.plant_power_out[0])))
-    print('ES turbine Power (MW): {:.4f}'.format(
-        value(m.fs.discharge_turbine_work) * (-1e-6)))
-        # value(m.fs.discharge_mode_disjunct.es_turbine.work_mechanical[0]) * (-1e-6)))
+    print('Discharge turbine power (MW) [ES turbine Power]: {:.4f} [{:.4f}]'.format(
+        value(m.fs.discharge_turbine_work),
+        value(m.fs.discharge_mode_disjunct.es_turbine.work_mechanical[0]) * (-1e-6)))
     print('HX pump work (MW): {:.4f}'.format(
         value(m.fs.hx_pump_work) * 1e-6))
         # value(m.fs.hx_pump.control_volume.work[0]) * 1e-6))
@@ -1540,7 +1569,7 @@ def print_results(m, results):
     print('Boiler efficiency (%): {:.4f}'.format(
         value(m.fs.boiler_eff) * 100))
     print('Cycle efficiency (%): {:.4f}'.format(
-        value(m.fs.cycle_efficiency)))
+        value(m.fs.cycle_efficiency) * 100))
     print()
     if m.fs.charge_mode_disjunct.binary_indicator_var.value == 1:
         print("***************** Charge Heat Exchanger (HXC) ******************")
@@ -1597,91 +1626,6 @@ def print_results(m, results):
     print('==============================================================')
 
 
-def print_reports(m):
-
-    print('')
-    for unit_k in [m.fs.boiler, m.fs.reheater[1],
-                   m.fs.reheater[2],
-                   m.fs.bfp, m.fs.bfpt,
-                   m.fs.booster,
-                   m.fs.condenser_mix,
-                   m.fs.charge.hxc]:
-        unit_k.display()
-
-    for k in RangeSet(11):
-        m.fs.turbine[k].report()
-    for k in RangeSet(11):
-        m.fs.turbine[k].display()
-    for j in RangeSet(9):
-        m.fs.fwh[j].report()
-    for j in m.set_fwh_mixer:
-        m.fs.fwh_mixer[j].display()
-
-def print_model(nlp_model, nlp_data):
-
-    print('       ___________________________________________')
-    if nlp_model.fs.charge_mode_disjunct.indicator_var.value == 1:
-        print('        Disjunction 1: Charge mode is selected')
-        print('         HXC heat duty (MW): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.heat_duty[0])))
-        print('         HXC Salt flow (kg/s): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0])))
-        print('         HXC Salt temperature in (K): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.inlet_2.temperature[0])))
-        print('         HXC Salt temperature out (K): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.outlet_2.temperature[0])))
-        print('         HXC Delta temperature at inlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.delta_temperature_in[0])))
-        print('         HXC Delta temperature at outlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.delta_temperature_out[0])))
-    elif nlp_model.fs.discharge_mode_disjunct.indicator_var.value == 1:
-        print('        Disjunction 1: Discharge mode is selected')
-        print('         HXD heat duty (MW): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.heat_duty[0])))
-        print('         HXD Salt flow (kg/s): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass[0])))
-        print('         HXD Salt temperature in (K): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0])))
-        print('         HXD Salt temperature out (K): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.outlet_1.temperature[0])))
-        print('         HXD Delta temperature at inlet (K): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.delta_temperature_in[0])))
-        print('         HXD Delta temperature at outlet (K): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.delta_temperature_out[0])))
-    elif nlp_model.fs.no_storage_mode_disjunct.indicator_var.value == 1:
-        print('        Disjunction 1: No storage mode is selected')
-    else:
-        print('        No other operation alternative!')
-
-    print()
-    print('        Obj (M$/year): {:.4f}'.format(value(nlp_model.obj) / scaling_obj))
-    print('        Net Power (MW): {:.4f}'.format(value(nlp_model.fs.net_power)))
-    print('        Plant Power (MW): {:.4f}'.format(value(nlp_model.fs.plant_power_out[0])))
-    print('        ES turbine Power (MW): {:.4f}'.format(
-        value(nlp_model.fs.discharge_turbine_work) * 1e-6))
-    print('        HX pump work (MW): {:.4f}'.format(
-        value(nlp_model.fs.hx_pump_work) * 1e-6))
-    print('        Cooling duty (MW_th): {:.4f}'.format(
-        value(nlp_model.fs.cooler_heat_duty) * 1e-6))
-    print('        Boiler efficiency (%): {:.4f}'.format(value(nlp_model.fs.boiler_eff) * 100))
-    print('        Cycle efficiency (%): {:.4f}'.format(value(nlp_model.fs.cycle_efficiency)))
-    print('        Hot Previous Salt Inventory (kg): {:.4f}'.format(
-        value(nlp_model.fs.previous_salt_inventory_hot)))
-    print('        Cold Previous Salt Inventory (kg): {:.4f}'.format(
-        value(nlp_model.fs.previous_salt_inventory_cold)))
-    print('        Salt to storage (kg/s) [kg]: {:.4f} [{:.4f}]'.format(
-        value(nlp_model.fs.salt_storage),
-        value(nlp_model.fs.salt_storage) * 3600))
-    print('        Hot Salt Inventory (kg): {:.4f}'.format(
-        value(nlp_model.fs.salt_inventory_hot)))
-    print('        Cold Salt Inventory (kg): {:.4f}'.format(
-        value(nlp_model.fs.salt_inventory_cold)))
-
-    print('       ___________________________________________')
-
-    log_close_to_bounds(nlp_model)
-    # log_infeasible_constraints(nlp_model)
-
 def run_nlps(m,
              solver=None,
              operation_mode=None):
@@ -1689,28 +1633,30 @@ def run_nlps(m,
     solve NLP problems
 
     """
-
+    
     print()
     print('>>> You are solving an NLP problem by fixing the operation disjuncts!')
     if operation_mode == "charge":
         print('           ** Solving for charge mode')
-        m.fs.charge_mode_disjunct.indicator_var.fix(True)
-        m.fs.discharge_mode_disjunct.indicator_var.fix(False)
-        m.fs.no_storage_mode_disjunct.indicator_var.fix(False)
+        m.fs.charge_mode_disjunct.binary_indicator_var.fix(1)
+        m.fs.discharge_mode_disjunct.binary_indicator_var.fix(0)
+        m.fs.no_storage_mode_disjunct.binary_indicator_var.fix(0)
     elif operation_mode == "discharge":
         print('           ** Solving for discharge mode')
-        m.fs.charge_mode_disjunct.indicator_var.fix(False)
-        m.fs.discharge_mode_disjunct.indicator_var.fix(True)
-        m.fs.no_storage_mode_disjunct.indicator_var.fix(False)
+        m.fs.charge_mode_disjunct.binary_indicator_var.fix(0)
+        m.fs.discharge_mode_disjunct.binary_indicator_var.fix(1)
+        m.fs.no_storage_mode_disjunct.binary_indicator_var.fix(0)
     elif operation_mode == "no_storage":
         print('           ** Solving for no storage mode')
-        m.fs.charge_mode_disjunct.indicator_var.fix(False)
-        m.fs.discharge_mode_disjunct.indicator_var.fix(False)
-        m.fs.no_storage_mode_disjunct.indicator_var.fix(True)
+        m.fs.charge_mode_disjunct.binary_indicator_var.fix(0)
+        m.fs.discharge_mode_disjunct.binary_indicator_var.fix(0)
+        m.fs.no_storage_mode_disjunct.binary_indicator_var.fix(1)
     else:
         print('<(x.x)> Unrecognized operation mode! Try charge, discharge, or no_storage')
     print()
     print()
+    print('>>> You are solving NLP model with fixed operation mode using GDPopt')
+    print('    {} DOFs before solving NLP model '.format(degrees_of_freedom(m)))
 
     TransformationFactory('gdp.fix_disjuncts').apply_to(m)
     print("The degrees of freedom after gdp transformation ",
@@ -1722,7 +1668,7 @@ def run_nlps(m,
         symbolic_solver_labels=True,
         options={
             "linear_solver": "ma27",
-            "max_iter": 150
+            "max_iter": 100
         }
     )
 
@@ -1732,7 +1678,6 @@ def run_nlps(m,
     print_results(m, results)
 
     return m, results
-
 
 def run_gdp(m):
 
@@ -1760,7 +1705,7 @@ def run_gdp(m):
             symbolic_solver_labels=True,
             options={
                 "linear_solver": "ma27",
-                "max_iter": 150
+                "max_iter": 100
             }
         )
     )
@@ -1769,6 +1714,95 @@ def run_gdp(m):
     # print_reports(m)
 
     return results
+
+
+def print_reports(m):
+
+    print('')
+    for unit_k in [m.fs.boiler, m.fs.reheater[1],
+                   m.fs.reheater[2],
+                   m.fs.bfp, m.fs.bfpt,
+                   m.fs.booster,
+                   m.fs.condenser_mix,
+                   m.fs.charge.hxc]:
+        unit_k.display()
+
+    for k in RangeSet(11):
+        m.fs.turbine[k].report()
+    for k in RangeSet(11):
+        m.fs.turbine[k].display()
+    for j in RangeSet(9):
+        m.fs.fwh[j].report()
+    for j in m.set_fwh_mixer:
+        m.fs.fwh_mixer[j].display()
+
+
+def print_model(nlp_model, nlp_data):
+
+    print('       ___________________________________________')
+    if nlp_model.fs.charge_mode_disjunct.indicator_var.value == 1:
+        print('        Charge mode is selected')
+        print('         HXC heat duty (MW): {:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6))
+        print('         HXC Salt flow (kg/s): {:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0])))
+        print('         HXC Salt temperature in (K): {:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.inlet_2.temperature[0])))
+        print('         HXC Salt temperature out (K): {:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.outlet_2.temperature[0])))
+        print('         HXC Delta temperature at inlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.delta_temperature_in[0])))
+        print('         HXC Delta temperature at outlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.delta_temperature_out[0])))
+    elif nlp_model.fs.discharge_mode_disjunct.indicator_var.value == 1:
+        print('        Discharge mode is selected')
+        print('         HXD heat duty (MW): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6))
+        print('         HXD Salt flow (kg/s): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass[0])))
+        print('         HXD Salt temperature in (K): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0])))
+        print('         HXD Salt temperature out (K): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.outlet_1.temperature[0])))
+        print('         HXD Delta temperature at inlet (K): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.delta_temperature_in[0])))
+        print('         HXD Delta temperature at outlet (K): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.delta_temperature_out[0])))
+        print('         ES turbine work (MW): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.es_turbine.work_mechanical[0]) * 1e-6))
+    elif nlp_model.fs.no_storage_mode_disjunct.indicator_var.value == 1:
+        print('        No storage mode is selected')
+    else:
+        print('        No other operation alternative!')
+
+    print()
+    print('        Obj (M$/year): {:.4f}'.format(value(nlp_model.obj) / scaling_obj))
+    print('        Net Power (MW): {:.4f}'.format(value(nlp_model.fs.net_power)))
+    print('        Plant Power (MW): {:.4f}'.format(value(nlp_model.fs.plant_power_out[0])))
+    print('        Discharge turbine work (MW): {:.4f}'.format(
+        value(nlp_model.fs.discharge_turbine_work)))
+    print('        HX pump work (MW): {:.4f}'.format(
+        value(nlp_model.fs.hx_pump_work)))
+    print('        Cooling duty (MW_th): {:.4f}'.format(
+        value(nlp_model.fs.cooler_heat_duty)))
+    print('        Boiler efficiency (%): {:.4f}'.format(value(nlp_model.fs.boiler_eff) * 100))
+    print('        Cycle efficiency (%): {:.4f}'.format(value(nlp_model.fs.cycle_efficiency) * 100))
+    print('        Hot Previous Salt Inventory (mton): {:.4f}'.format(
+        value(nlp_model.fs.previous_salt_inventory_hot)))
+    print('        Cold Previous Salt Inventory (mton): {:.4f}'.format(
+        value(nlp_model.fs.previous_salt_inventory_cold)))
+    print('        Hot salt to storage (kg/s) [mton]: {:.4f} [{:.4f}]'.format(
+        value(nlp_model.fs.salt_storage),
+        value(nlp_model.fs.salt_storage) * 3600 * 1e-3))
+    print('        Hot Salt Inventory (mton): {:.4f}'.format(
+        value(nlp_model.fs.salt_inventory_hot)))
+    print('        Cold Salt Inventory (mton): {:.4f}'.format(
+        value(nlp_model.fs.salt_inventory_cold)))
+
+    print('       ___________________________________________')
+
+    log_close_to_bounds(nlp_model)
+    # log_infeasible_constraints(nlp_model)
 
 
 def model_analysis(m,
@@ -1783,15 +1817,7 @@ def model_analysis(m,
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
-    # Add constraints and bounds for plant and discharge produced
-    # power
-    min_power = int(0.65 * max_power)
-    max_power_storage = 24 # in MW
-    min_power_storage = 0 # in MW
-    min_storage_heat_duty = 0 # in MW
-    max_storage_heat_duty = m.storage_heat_duty # in MW
 
-    # Fix variables in the flowsheet
     if fix_power:
         m.fs.power_demand_eq = Constraint(
             expr=m.fs.net_power == power
@@ -1804,10 +1830,10 @@ def model_analysis(m,
             expr=m.fs.plant_power_out[0] <= max_power
         )
         # m.fs.storage_power_min = Constraint(
-        #     expr=m.fs.discharge_turbine_work * (-1e-6) >= min_power_storage
+        #     expr=m.fs.discharge_turbine_work >= min_power_storage
         # )
         m.fs.storage_power_max = Constraint(
-            expr=m.fs.discharge_turbine_work * (-1e-6) <= max_power_storage
+            expr=m.fs.discharge_turbine_work <= max_power_storage
         )
 
     # Fix/unfix boiler data
@@ -1818,7 +1844,7 @@ def model_analysis(m,
     m.fs.charge_mode_disjunct.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
     m.fs.discharge_mode_disjunct.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()
 
-    # Comment for now
+    # Unfix global variables
     m.fs.hx_pump_work.unfix()
     m.fs.discharge_turbine_work.unfix()
 
@@ -1849,7 +1875,7 @@ def model_analysis(m,
 
 
     # Add salt inventory variables
-    max_inventory = 1e7
+    max_inventory = 1e7 * 1e-3 # in mton
     m.fs.previous_salt_inventory_hot = Var(
         domain=NonNegativeReals,
         initialize=1,
@@ -1879,9 +1905,7 @@ def model_analysis(m,
     def constraint_salt_inventory_hot(b):
         return b.salt_inventory_hot == (
             b.previous_salt_inventory_hot
-            + 3600 * m.fs.salt_storage
-            # + 3600 * b.charge_mode_disjunct.binary_indicator_var * m.fs.salt_storage
-            # - 3600 * b.discharge_mode_disjunct.binary_indicator_var * m.fs.salt_storage
+            + (3600 * m.fs.salt_storage) * 1e-3 # in mton
         )
 
     @m.fs.Constraint(doc="Maximum previous salt inventory at any time")
@@ -1892,8 +1916,8 @@ def model_analysis(m,
         )
 
     # Fix the previous salt inventory based on the tank scenario
-    min_tank = 1
-    max_tank = max_salt_amount - min_tank # in kg
+    min_tank = 1 * 1e-3 # in mton
+    max_tank = max_salt_amount - min_tank # in mton
     if tank_scenario == "hot_empty":
         m.fs.previous_salt_inventory_hot.fix(min_tank)
         m.fs.previous_salt_inventory_cold.fix(max_tank)
@@ -1917,7 +1941,7 @@ def model_analysis(m,
     # Fix LMP data according to the case we want to solve. When
     # solving GDP model, a random value is selected
     if operation_mode == "charge":
-        m_chg.fs.lmp[0].fix(20)
+        m_chg.fs.lmp[0].fix(22.9684)
     elif operation_mode == "discharge":
         m_chg.fs.lmp[0].fix(200)
     elif operation_mode == "no_storage":
@@ -1934,7 +1958,7 @@ def model_analysis(m,
         doc="Revenue function in $/h assuming 1 hr operation"
     )
 
-    set_var_scaling(m)
+    set_scaling_var(m)
 
     # Objective function: total costs
     m.obj = Objective(
@@ -1985,15 +2009,14 @@ if __name__ == "__main__":
     #                         create_gdp_model and turbine 3 and FWH8 inlets are fixed during
     #                         initialization.
 
-    max_power = 436
     power_demand = 400
     load_init_file = False
     path_init_file = 'initialized_usc_storage_gdp_mp.json'
     fix_power = False
     method = "with_efficiency"
-    tank_scenario = "hot_empty"
+    tank_scenario = "hot_full"
     operation_mode = None
-    deact_arcs_after_init = False # when False, cost initialization takes about 20 sec more
+    deact_arcs_after_init = True # when False, cost initialization takes about 20 sec more
 
     m_chg = main(method=method,
                  max_power=max_power,
