@@ -760,7 +760,9 @@ def set_model_input(m):
     m.fs.hxc.inlet_2.pressure.fix(101325)  # Pa
 
     m.fs.hxd.inlet_1.flow_mass.fix(250)  # 250
-    m.fs.hxd.inlet_1.temperature.fix(853.15)
+    # m.fs.hxd.inlet_1.temperature.fix(853.15)
+    m.fs.hxd.inlet_1.temperature.fix(831)
+    # m.fs.hxd.outlet_1.temperature.fix(513)
     m.fs.hxd.inlet_1.pressure.fix(101325)
 
     # Cooler outlet enthalpy is fixed during model build to ensure the
@@ -776,7 +778,7 @@ def set_model_input(m):
     # m.main_steam_pressure * 1.1231)
 
     m.fs.es_turbine.ratioP.fix(0.0286)
-    m.fs.es_turbine.efficiency_isentropic.fix(0.8)
+    m.fs.es_turbine.efficiency_isentropic.fix(0.5)
     ###########################################################################
     #  ESS VHP and HP splitters                                               #
     ###########################################################################
@@ -1511,7 +1513,7 @@ def add_bounds(m):
     # Pa, flow in mol/s, massic flow in kg/s, and heat and heat duty
     # in W
 
-    m.flow_max = m.main_flow * 3  # in mol/s
+    m.flow_max = m.main_flow * 1.5  # in mol/s
     m.salt_flow_max = 500  # in kg/s
     m.fs.heat_duty_max = 200e6  # in MW
     m.factor = 2
@@ -1901,7 +1903,7 @@ def model_analysis(m, solver, cycle=None):
     """
 
     # Fix variables in the flowsheet
-    m.fs.plant_power_out.fix(400)
+    m.fs.plant_power_out.fix(436)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
     # -------- modified by esrawli
@@ -1953,6 +1955,8 @@ def model_analysis(m, solver, cycle=None):
         m.fs.discharge_mode_disjunct.indicator_var.fix(True)
     else:
         print('**^^** Unrecognized operation mode! Try charge or discharge')
+
+    m.fs.hxd.outlet_1.temperature.fix(513.15)
 
     # if cycle == "charge":
     #     # m.fs.if_charge.value = 1
