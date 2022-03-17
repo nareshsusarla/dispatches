@@ -16,8 +16,7 @@ import copy
 # from random import random
 from idaes.core.util.model_statistics import degrees_of_freedom
 
-from dispatches.models.fossil_case.ultra_supercritical_plant.storage import (
-    usc_storage_nlp_mp as usc)
+import usc_storage_nlp_mp_new_area as usc
 
 # For plots
 from matplotlib import pyplot as plt
@@ -29,7 +28,7 @@ method = "with_efficiency" # options: with_efficiency and without_efficiency
 max_power = 436 # in MW
 min_power = int(0.65 * max_power) # 283 in MW
 max_power_storage = 22.4 # in MW
-min_power_storage = 5 # in MW
+min_power_storage = 2 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
 min_storage_heat_duty = 10 # in MW
@@ -101,8 +100,8 @@ def create_ss_rankine_model():
 
     m.rankine.fs.hxc.heat_duty.setlb(min_storage_heat_duty * 1e6)
     m.rankine.fs.hxd.heat_duty.setlb(min_storage_heat_duty * 1e6)
-    m.rankine.fs.hxc.heat_duty.setub(max_storage_heat_duty * 1e6)
-    m.rankine.fs.hxd.heat_duty.setub(max_storage_heat_duty * 1e6 * (1 - 0.01))
+    # m.rankine.fs.hxc.heat_duty.setub(max_storage_heat_duty * 1e6)
+    # m.rankine.fs.hxd.heat_duty.setub(max_storage_heat_duty * 1e6 * (1 - 0.01))
 
     # Unfix data
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()
@@ -145,7 +144,7 @@ def create_mp_rankine_block():
     b1.previous_power = Var(
         domain=NonNegativeReals,
         initialize=400,
-        bounds=(min_power_total, max_power_total),
+        bounds=(min_power, max_power_total),
         doc="Previous period power (MW)"
         )
 
