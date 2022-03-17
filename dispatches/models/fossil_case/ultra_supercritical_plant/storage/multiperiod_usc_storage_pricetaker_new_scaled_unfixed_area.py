@@ -28,7 +28,7 @@ plt.rc('axes', titlesize=24)
 method = "with_efficiency" # options: with_efficiency and without_efficiency
 max_power = 436 # in MW
 min_power = int(0.65 * max_power) # 283 in MW
-max_power_storage = 24 # in MW
+max_power_storage = 22.4 # in MW
 min_power_storage = 1 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
@@ -107,7 +107,7 @@ def create_ss_rankine_model():
     m.rankine.fs.hxc.heat_duty.setlb(min_storage_heat_duty * 1e6)
     m.rankine.fs.hxd.heat_duty.setlb(min_storage_heat_duty * 1e6)
     m.rankine.fs.hxc.heat_duty.setub(max_storage_heat_duty * 1e6)
-    m.rankine.fs.hxd.heat_duty.setub(max_storage_heat_duty * 1e6)
+    m.rankine.fs.hxd.heat_duty.setub(max_storage_heat_duty * 1e6 * (1 - 0.01))
 
     # Unfix data
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()
@@ -158,7 +158,7 @@ def create_mp_rankine_block():
     b1.previous_power = Var(
         domain=NonNegativeReals,
         initialize=400,
-        bounds=(min_power_total, max_power_total),
+        bounds=(min_power, max_power_total),
         doc="Previous period power (MW)"
         )
 
@@ -611,7 +611,7 @@ else:
              marker='v', ms=4, lw=1,
              label='Discharge',
              color=color[1])
-ax5.legend(loc="center right", frameon=False)
+ax5.legend(loc="upper left", frameon=False)
 ax5.tick_params(axis='y',
                 labelcolor=color[3])
 ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))

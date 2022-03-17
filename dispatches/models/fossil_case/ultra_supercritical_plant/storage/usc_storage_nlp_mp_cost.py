@@ -1396,7 +1396,7 @@ def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fi
     # Add constraints and bounds for plant and discharge produced
     # power
     min_power = int(0.65 * max_power)
-    max_power_storage = 24 # in MW
+    max_power_storage = 22.4 # in MW
     min_power_storage = 1 # in MW
 
     if fix_power:
@@ -1441,7 +1441,7 @@ def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fi
     # Fix storage heat exchangers area and salt temperatures
     m.fs.salt_hot_temperature = 831
     m.fs.hxc.area.fix(1904)
-    m.fs.hxd.area.fix(1095)
+    m.fs.hxd.area.fix(1762)
     m.fs.hxc.outlet_2.temperature.fix(m.fs.salt_hot_temperature)
     m.fs.hxd.inlet_1.temperature.fix(m.fs.salt_hot_temperature)
     m.fs.hxd.outlet_1.temperature.fix(513.15)
@@ -1539,7 +1539,7 @@ def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fi
     )
 
     # Objective function: total costs
-    scaling_factor = 1e-2
+    scaling_factor = 1e-3
     m.obj = Objective(
         expr=(
             m.fs.revenue
@@ -1581,7 +1581,7 @@ if __name__ == "__main__":
     solver = get_solver('ipopt', optarg)
 
     # Tank scenarios: "hot_empty", "hot_full", "hot_half_full"
-    max_power = 437.542126
+    max_power = 436
     power_demand = 436 # in MW
     method = "with_efficiency"
     tank_scenario = "hot_empty"
