@@ -67,8 +67,7 @@ import idaes.logger as idaeslog
 # Import ultra supercritical power plant model
 from dispatches.models.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
-from dispatches.models.fossil_case.ultra_supercritical_plant.storage import (
-    solarsalt_properties)
+from dispatches.models.fossil_case.properties import solarsalt_properties
 
 
 from IPython import embed
