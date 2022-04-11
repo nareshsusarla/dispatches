@@ -59,6 +59,8 @@ def create_ss_rankine_model():
         expr=m.rankine.fs.es_turbine.work[0] * (-1e-6) <= max_power_storage
     )
 
+    m.rankine.fs.hxc.heat_duty.setlb(1e7)
+    m.rankine.fs.hxd.heat_duty.setlb(1e7)
     # Unfix data
     m.rankine.fs.boiler.inlet.flow_mol[0].unfix()
 
@@ -225,7 +227,7 @@ def get_rankine_periodic_variable_pairs(b1, b2):
     #         #  b2.rankine.previous_power)]
 
 
-number_hours = 24*7
+number_hours = 24*1
 n_time_points = 1*number_hours  # hours in a week
 
 # Create the multiperiod model object. You can pass arguments to your
@@ -282,7 +284,7 @@ for blk in blks:
     count += 1
 
 if number_hours >= 10:
-    scaling_obj = 1e-5
+    scaling_obj = 1
 else:
     scaling_obj = 1e-3
 
@@ -404,7 +406,7 @@ font = {'size':16}
 plt.rc('font', **font)
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 
-color = ['r', 'b', 'tab:green']
+color = ['r', 'b', 'tab:green', 'k']
 ax1.set_xlabel('Time Period (hr)')
 ax1.set_ylabel('Hot Tank Level (kg)',
                color=color[0])
@@ -429,7 +431,7 @@ ax2.step(# [x + 1 for x in hours], lmp_array,
     ls=':', color=color[1])
 ax2.tick_params(axis='y',
                 labelcolor=color[1])
-plt.savefig('multiperiod_usc_storage_new_hot_tank_level.png')
+plt.savefig('multiperiod_usc_storage_newrts_hot_tank_level_168h.png')
 
 
 power_array = np.asarray(net_power[0:n_weeks_to_plot]).flatten()
@@ -463,7 +465,7 @@ ax4.step(# [x + 1 for x in hours], lmp_array,
 )
 ax4.tick_params(axis='y',
                 labelcolor=color[1])
-plt.savefig('multiperiod_usc_storage_new_power.png')
+plt.savefig('multiperiod_usc_storage_newrts_power_168h.png')
 
 hxc_array = np.asarray(hxc_duty[0:n_weeks_to_plot]).flatten()
 hxd_array = np.asarray(hxd_duty[0:n_weeks_to_plot]).flatten()
@@ -474,7 +476,7 @@ hxd_duty_list = [hxd_duty1] + hxd_array.tolist()
 
 fig3, ax5 = plt.subplots(figsize=(12, 8))
 ax5.set_xlabel('Time Period (hr)')
-ax5.set_ylabel('HXC Duty (MW)',
+ax5.set_ylabel('Storage Heat Duty (MW)',
                color=color[2])
 ax5.spines["top"].set_visible(False)
 ax5.spines["right"].set_visible(False)
@@ -484,20 +486,24 @@ ax5.step(# [x + 1 for x in hours], power_array,
     hours_list, hxc_duty_list,
     marker='o', ms=8,
     color=color[0])
+ax5.step(# [x + 1 for x in hours], power_array,
+    hours_list, hxd_duty_list,
+    marker='*', ms=8,
+    color=color[2])
 ax5.tick_params(axis='y',
-                labelcolor=color[0])
+                labelcolor=color[3])
 ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=10))
 
 ax6 = ax5.twinx()
-ax6.set_ylabel('HXD Duty (MW)',
+ax6.set_ylabel('LMP ($/MWh)',
                color=color[1])
 ax6.step(# [x + 1 for x in hours], lmp_array,
-    hours_list, hxd_duty_list,
+    hours_list, lmp_list,
     marker='o', ms=7, alpha=0.75,
-    ls=':', color=color[2]
+    ls=':', color=color[1]
 )
 ax6.tick_params(axis='y',
-                labelcolor=color[2])
-plt.savefig('multiperiod_usc_storage_new_hxduty.png')
+                labelcolor=color[1])
+plt.savefig('multiperiod_usc_storage_newrts_hxduty_168h.png')
 
 plt.show()
