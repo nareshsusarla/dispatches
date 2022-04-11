@@ -1143,11 +1143,16 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
 def add_bounds(m):
 
     m.flow_max = m.main_flow * 3  # number from Naresh
-    m.salt_flow_max = 1000  # in kg/s
+    # m.salt_flow_max = 1000  # in kg/s
 
-    for unit_k in [m.fs.boiler, m.fs.reheater[1],
-                   m.fs.reheater[2], m.fs.cond_pump,
-                   m.fs.bfp, m.fs.bfpt]:
+    for unit_k in [
+            m.fs.boiler,
+            m.fs.reheater[1],
+            m.fs.reheater[2],
+            m.fs.cond_pump,
+            m.fs.bfp,
+            m.fs.bfpt
+            ]:
         unit_k.inlet.flow_mol[:].setlb(0)  # mol/s
         unit_k.inlet.flow_mol[:].setub(m.flow_max)  # mol/s
         unit_k.outlet.flow_mol[:].setlb(0)  # mol/s
