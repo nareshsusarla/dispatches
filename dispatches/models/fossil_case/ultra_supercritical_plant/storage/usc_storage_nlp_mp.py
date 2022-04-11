@@ -527,9 +527,14 @@ def _make_constraints(m, method=None, max_power=None):
         doc="Coal heat duty supplied to boiler (MW)")
 
     if method == "with_efficiency":
+        # def coal_heat_duty_rule(b):
+        #     return m.fs.coal_heat_duty * m.fs.boiler_eff == (
+        #         m.fs.plant_heat_duty[0])
         def coal_heat_duty_rule(b):
             return m.fs.coal_heat_duty * m.fs.boiler_eff == (
-                m.fs.plant_heat_duty[0])
+                (m.fs.plant_power_out[0] / 0.465) +
+                m.fs.hxc.heat_duty[0] -
+                m.fs.hxd.heat_duty[0])
         m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
 
     else:
