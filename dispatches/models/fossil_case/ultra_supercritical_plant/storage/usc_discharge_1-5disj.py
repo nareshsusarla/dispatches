@@ -168,7 +168,7 @@ def _solar_salt_ohtc_calculation(m):
 
     # m = disj.model()
 
-   # Calculate heat transfer coefficient for solar salt heat
+    # Calculate heat transfer coefficient for solar salt heat
     # exchanger
     m.fs.discharge.data_hxd_solar = {
         'tube_thickness': 0.004,
@@ -767,7 +767,7 @@ def initialize(m, solver=None,
 
     propagate_state(m.fs.discharge.hxd_to_esturbine)
     m.fs.discharge.es_turbine.initialize(outlvl=outlvl,
-                                          optarg=solver.options)
+                                         optarg=solver.options)
     m.fs.discharge.es_turbine.constraint_esturbine_temperature_out.activate()
     m.fs.discharge.es_turbine.outlet.pressure.unfix()
     print('DOFs before init solution =', degrees_of_freedom(m))
@@ -777,7 +777,7 @@ def initialize(m, solver=None,
 
     print("Discharge Model Initialization = ",
           res.solver.termination_condition)
-    print("***************   Discharge Model Initialized   ********************")
+    print("*************   Discharge Model Initialized   ******************")
 
 
 def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
@@ -1396,7 +1396,7 @@ def run_gdp(m):
             }
         )
     )
-    
+
     return results
 
 
@@ -1410,7 +1410,6 @@ def print_results(m, results):
                                       active=True,
                                       sort=True, descend_into=True):
         if abs(d.binary_indicator_var.value - 1) < 1e-6:
-        # if d.indicator_var:
             print(d.name, ' should be selected!')
     print('')
     est = m.fs.discharge.es_turbine
@@ -1487,6 +1486,7 @@ def print_results(m, results):
     # for v in m.component_data_objects(Var):
     #     if v.ub is None:
     #         print(v, value(v))
+
 
 def print_reports(m):
 
