@@ -68,6 +68,12 @@ from idaes.generic_models.unit_models import (
 )
 from idaes.generic_models.unit_models.separator import (Separator,
                                                         SplittingType)
+from idaes.power_generation.unit_models.helm import (
+    HelmMixer,
+    HelmIsentropicCompressor,
+    HelmTurbineStage,
+    HelmSplitter
+)
 from idaes.generic_models.unit_models.heat_exchanger import (
     delta_temperature_underwood_callback, HeatExchangerFlowPattern)
 from idaes.generic_models.unit_models.pressure_changer import (
@@ -77,10 +83,10 @@ import idaes.logger as idaeslog
 from idaes.core.util.misc import svg_tag
 
 # Import ultra supercritical power plant model
-# from dispatches.models.fossil_case.ultra_supercritical_plant import (
-#     ultra_supercritical_powerplant as usc)
 from dispatches.models.fossil_case.ultra_supercritical_plant import (
-    ultra_supercritical_powerplant_w_ccs as usc)
+    ultra_supercritical_powerplant as usc)
+# from dispatches.models.fossil_case.ultra_supercritical_plant import (
+#     ultra_supercritical_powerplant_w_ccs as usc)
 
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
@@ -112,28 +118,41 @@ def create_charge_model(m):
     ###########################################################################
     # Declared to divert some steam from high pressure inlet and
     # intermediate pressure inlet to charge the storage heat exchanger
-    m.fs.charge.ess_vhp_split = Separator(
+    m.fs.charge.ess_vhp_split = HelmSplitter(
         default={
             "property_package": m.fs.prop_water,
-            "material_balance_type": MaterialBalanceType.total,
-            "split_basis": SplittingType.totalFlow,
-            "ideal_separation": False,
             "outlet_list": ["to_hxc", "to_turbine"],
-            "has_phase_equilibrium": False
         }
     )
     # -------- added by esrawli
-    m.fs.charge.ess_hp_split = Separator(
+    m.fs.charge.ess_hp_split = HelmSplitter(
         default={
             "property_package": m.fs.prop_water,
-            "material_balance_type": MaterialBalanceType.total,
-            "split_basis": SplittingType.totalFlow,
-            "ideal_separation": False,
             "outlet_list": ["to_hxc", "to_turbine"],
-            "has_phase_equilibrium": False
         }
     )
 
+    # m.fs.charge.ess_vhp_split = Separator(
+    #     default={
+    #         "property_package": m.fs.prop_water,
+    #         "material_balance_type": MaterialBalanceType.total,
+    #         "split_basis": SplittingType.totalFlow,
+    #         "ideal_separation": False,
+    #         "outlet_list": ["to_hxc", "to_turbine"],
+    #         "has_phase_equilibrium": False
+    #     }
+    # )
+    # # -------- added by esrawli
+    # m.fs.charge.ess_hp_split = Separator(
+    #     default={
+    #         "property_package": m.fs.prop_water,
+    #         "material_balance_type": MaterialBalanceType.total,
+    #         "split_basis": SplittingType.totalFlow,
+    #         "ideal_separation": False,
+    #         "outlet_list": ["to_hxc", "to_turbine"],
+    #         "has_phase_equilibrium": False
+    #     }
+    # )
     ###########################################################################
     #  Add a dummy heat exchanger                                  #
     ###########################################################################
@@ -174,6 +193,14 @@ def create_charge_model(m):
     ###########################################################################
     #  Add recycle mixer                                                      #
     ###########################################################################
+    # m.fs.charge.recycle_mixer = HelmMixer(
+    #     default={
+    #         # "momentum_mixing_type": MomentumMixingType.none,
+    #         "inlet_list": ["from_bfw_out", "from_hx_pump"],
+    #         "property_package": m.fs.prop_water,
+    #     }
+    # )
+
     m.fs.charge.recycle_mixer = Mixer(
         default={
             "momentum_mixing_type": MomentumMixingType.none,
@@ -182,7 +209,6 @@ def create_charge_model(m):
             "property_package": m.fs.prop_water,
         }
     )
-
     ###########################################################################
     #  Declare disjuncts
     ###########################################################################
@@ -2594,7 +2620,7 @@ def add_bounds(m):
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79.9)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9)
     # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(81.5) # works for 100MW hxc
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(82.3) # works for 150MW hxc
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(82) # works for 150MW hxc
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.6)
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:

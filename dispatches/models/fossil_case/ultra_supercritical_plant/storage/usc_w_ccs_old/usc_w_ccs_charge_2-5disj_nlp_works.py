@@ -1113,7 +1113,7 @@ def set_model_input(m):
     # -------- from Andres's model (Begin) --------
     # m.fs.charge.thermal_oil_disjunct.hxc.
     # overall_heat_transfer_coefficient.fix(432.677)
-    m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.flow_mass[0].fix(600)
+    m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.flow_mass[0].fix(700)
     m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.temperature[0].fix(353.15)
     m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.pressure[0].fix(101325)
     # -------- from Andres's model (End) --------
@@ -1286,7 +1286,7 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     m.fs.charge.solar_salt_disjunct.hxc.inlet_1.pressure.fix()
     m.fs.charge.solar_salt_disjunct.hxc.initialize(outlvl=outlvl,
                                                    optarg=solver.options)
-    m.fs.charge.solar_salt_disjunct.hxc.report()
+    # m.fs.charge.solar_salt_disjunct.hxc.report()
     # raise Exception("Check HXC")
     # Hitec salt charge heat exchanger initialization
     # _set_port(m.fs.charge.hitec_salt_disjunct.hxc.inlet_1,
@@ -1301,7 +1301,7 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     m.fs.charge.hitec_salt_disjunct.hxc.initialize(
         outlvl=outlvl, optarg=solver.options)
     # m.fs.charge.hitec_salt_disjunct.hxc.display()
-    # m.fs.charge.hitec_salt_disjunct.hxc.report()
+    m.fs.charge.hitec_salt_disjunct.hxc.report()
     # raise Exception("Check HXC")
 
     # Thermal oil charge heat exchanger initialization
@@ -3238,6 +3238,7 @@ def model_analysis(m, solver, heat_duty=None):
     results = run_nlps(m,
                        solver=solver,
                        fluid="solar_salt",
+                       # fluid="hitec_salt",
                        # fluid="thermal_oil",
                        source="hp")
 
@@ -3259,13 +3260,11 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
-    m_usc = usc.build_usc_w_ccs(solver)
-    # usc.initialize(m_usc)
-
-    m_chg, solver = main(m_usc)
-
-    heat_duty_data = [200]
+    heat_duty_data = [100, 150, 200]
     for k in heat_duty_data:
+        m_usc = usc.build_usc_w_ccs(solver)
+        # usc.initialize(m_usc)
+        m_chg, solver = main(m_usc)
         print('Charge heat duty (MW):', k)
         m = model_analysis(m_chg, solver, heat_duty=k)
         # log_infeasible_constraints(m)

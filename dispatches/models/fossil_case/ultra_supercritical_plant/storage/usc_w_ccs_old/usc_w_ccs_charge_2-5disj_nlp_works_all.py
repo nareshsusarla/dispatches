@@ -1225,12 +1225,8 @@ def set_scaling_factors(m):
     iscale.set_scaling_factor(m.fs.ccs_reformer.control_volume.heat, 1e-6)
 
 
-def initialize(m, solver=None,
-               outlvl=idaeslog.NOTSET,
-               optarg={"tol": 1e-8,
-                       "max_iter": 300},
-               fluid=None,
-               source=None):
+def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
+               optarg={"tol": 1e-8, "max_iter": 300}):
     """Initialize the units included in the charge model
     """
 
@@ -1321,16 +1317,9 @@ def initialize(m, solver=None,
     # raise Exception("Check HXC")
 
     # Initialize cooler
-    if fluid == 'solar_salt':
-        # Initialize cooler
-        propagate_state(m.fs.charge.solar_salt_disjunct.hxc_to_cooler)
-        print('initializing using solar salt hxc')
-    elif fluid == 'hitec_salt':
-        propagate_state(m.fs.charge.hitec_salt_disjunct.hxc_to_cooler)
-        print('initializing using hitec salt hxc')
-    elif fluid == 'thermal_oil':
-        propagate_state(m.fs.charge.thermal_oil_disjunct.hxc_to_cooler)
-        print('initializing using thermal oil hxc')
+    # _set_port(m.fs.charge.cooler.inlet,
+    #           m.fs.charge.solar_salt_disjunct.hxc.outlet_1)
+    propagate_state(m.fs.charge.solar_salt_disjunct.hxc_to_cooler)
     m.fs.charge.cooler.inlet.fix()
     m.fs.charge.cooler.initialize(outlvl=outlvl,
                                   optarg=solver.options)
@@ -2334,9 +2323,11 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # cost depending on the salt selected.
     m.fs.charge.capital_cost = pyo.Var(
         initialize=1000000,
+        # bounds=(0, 1e7),
         doc="Annualized capital cost")
     m.fs.charge.solar_salt_disjunct.capital_cost = Var(
         initialize=1000000,
+        # bounds=(0, 1e7),
         doc="Annualized capital cost for solar salt")
 
     # Annualize capital cost for the solar salt
@@ -2537,7 +2528,103 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     print('')
 
 
-def add_bounds(m, source=None):
+def view_result(outfile, m):
+    tags = {}
+
+    # usc.view_result(outfile, m)
+
+    # Boiler
+    # tags['obj'] = ("%4.2f" % value(m.obj))
+
+    # ESS VHP Splitter
+    tags['essvhp_Fout1'] = ("%4.3f" % (value(
+        m.fs.charge.ess_vhp_split.to_turbine.flow_mol[0])*1e-3))
+    tags['essvhp_Tout1'] = ("%4.2f" % (value(
+        m.fs.charge.ess_vhp_split.to_turbine_state[0].temperature)))
+    tags['essvhp_Pout1'] = ("%4.1f" % (value(
+        m.fs.charge.ess_vhp_split.to_turbine.pressure[0])*1e-6))
+    tags['essvhp_Hout1'] = ("%4.1f" % (value(
+        m.fs.charge.ess_vhp_split.to_turbine.enth_mol[0])*1e-3))
+    tags['essvhp_xout1'] = ("%4.4f" % (value(
+        m.fs.charge.ess_vhp_split.to_turbine_state[0].vapor_frac)))
+    tags['essvhp_Fout2'] = ("%4.3f" % (value(
+        m.fs.charge.ess_vhp_split.to_hxc.flow_mol[0])*1e-3))
+    tags['essvhp_Tout2'] = ("%4.2f" % (value(
+        m.fs.charge.ess_vhp_split.to_hxc_state[0].temperature)))
+    tags['essvhp_Pout2'] = ("%4.1f" % (value(
+        m.fs.charge.ess_vhp_split.to_hxc.pressure[0])*1e-6))
+    tags['essvhp_Hout2'] = ("%4.1f" % (value(
+        m.fs.charge.ess_vhp_split.to_hxc.enth_mol[0])*1e-3))
+    tags['essvhp_xout2'] = ("%4.4f" % (value(
+        m.fs.charge.ess_vhp_split.to_hxc_state[0].vapor_frac)))
+
+    # Recycle mixer
+    tags['rmix_Fout'] = ("%4.3f" % (value(
+        m.fs.charge.recycle_mixer.outlet.flow_mol[0])*1e-3))
+    tags['rmix_Tout'] = ("%4.2f" % (value(
+        m.fs.charge.recycle_mixer.mixed_state[0].temperature)))
+    tags['rmix_Pout'] = ("%4.1f" % (value(
+        m.fs.charge.recycle_mixer.outlet.pressure[0])*1e-6))
+    tags['rmix_Hout'] = ("%4.1f" % (value(
+        m.fs.charge.recycle_mixer.outlet.enth_mol[0])*1e-3))
+    tags['rmix_xout'] = ("%4.4f" % (value(
+        m.fs.charge.recycle_mixer.mixed_state[0].vapor_frac)))
+
+    # Charge heat exchanger
+    # if m.fs.charge.solar_salt_disjunct.indicator_var == 1:
+    #     tags['hxsteam_Fout'] = ("%4.4f" % (value(
+    #         m.fs.charge.solar_salt_disjunct.hxc.outlet_1.flow_mol[0])*1e-3))
+    #     tags['hxsteam_Tout'] = ("%4.4f" % (value(
+    #         m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_out[0].temperature)))
+    #     tags['hxsteam_Pout'] = ("%4.4f" % (
+    #         value(m.fs.charge.solar_salt_disjunct.hxc.outlet_1.pressure[0])*1e-6))
+    #     tags['hxsteam_Hout'] = ("%4.2f" % (
+    #         value(m.fs.charge.solar_salt_disjunct.hxc.outlet_1.enth_mol[0])))
+    #     tags['hxsteam_xout'] = ("%4.4f" % (
+    #         value(m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_out[0].vapor_frac)))
+    # else:
+    #     tags['hxsteam_Fout'] = ("%4.4f" % (value(
+    #         m.fs.charge.hitec_salt_disjunct.hxc.outlet_1.flow_mol[0])*1e-3))
+    #     tags['hxsteam_Tout'] = ("%4.4f" % (value(
+    #         m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_out[0].temperature)))
+    #     tags['hxsteam_Pout'] = ("%4.4f" % (
+    #         value(m.fs.charge.hitec_salt_disjunct.hxc.outlet_1.pressure[0])*1e-6))
+    #     tags['hxsteam_Hout'] = ("%4.2f" % (
+    #         value(m.fs.charge.hitec_salt_disjunct.hxc.outlet_1.enth_mol[0])))
+    #     tags['hxsteam_xout'] = ("%4.4f" % (
+    #         value(m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_out[0].vapor_frac)))
+
+    # (sub)Cooler
+    tags['cooler_Fout'] = ("%4.4f" % (value(
+        m.fs.charge.cooler.outlet.flow_mol[0])*1e-3))
+    tags['cooler_Tout'] = ("%4.4f" % (value(
+        m.fs.charge.cooler.control_volume.properties_out[0].temperature)))
+    tags['cooler_Pout'] = ("%4.4f" % (
+        value(m.fs.charge.cooler.outlet.pressure[0])*1e-6))
+    tags['cooler_Hout'] = ("%4.2f" % (
+        value(m.fs.charge.cooler.outlet.enth_mol[0])))
+    tags['cooler_xout'] = ("%4.4f" % (
+        value(m.fs.charge.cooler.control_volume.properties_out[0].vapor_frac)))
+
+    # HX pump
+    tags['hxpump_Fout'] = ("%4.4f" % (value(
+        m.fs.charge.hx_pump.outlet.flow_mol[0])*1e-3))
+    tags['hxpump_Tout'] = ("%4.4f" % (value(
+        m.fs.charge.hx_pump.control_volume.properties_out[0].temperature)))
+    tags['hxpump_Pout'] = ("%4.4f" % (value(
+        m.fs.charge.hx_pump.outlet.pressure[0])*1e-6))
+    tags['hxpump_Hout'] = ("%4.2f" % (value(
+        m.fs.charge.hx_pump.outlet.enth_mol[0])))
+    tags['hxpump_xout'] = ("%4.4f" % (value(
+        m.fs.charge.hx_pump.control_volume.properties_out[0].vapor_frac)))
+
+    original_svg_file = os.path.join(
+        this_file_dir(), "pfd_usc_gdp_w_ccs_2-5disj.svg")
+    with open(original_svg_file, "r") as f:
+        svg_tag(tags, f, outfile=outfile)
+
+
+def add_bounds(m):
     """Add bounds to units in charge model
 
     """
@@ -2589,18 +2676,24 @@ def add_bounds(m, source=None):
         salt_hxc.costing.base_cost_per_unit.setub(1e6)
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
+        # salt_hxc.delta_temperature_in.setlb(10)  # K
+        # salt_hxc.delta_temperature_out.setlb(10)  # K
+    # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(80)
+    # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(10)
+    # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.4)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(9)
 
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79.9)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(80)
-    if source == 'vhp':
-        m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.5)
-    elif source == 'hp':
-        m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.6)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79.9)  # 79.9)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9)  # 79.9)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(83.925)
+    # m.fs.charge.hitec_salt_disjunct.hxc.shell.heat[0.0].setub(200e6)
+    # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
         oil_hxc.inlet_1.flow_mol.setlb(0)
@@ -2626,13 +2719,11 @@ def add_bounds(m, source=None):
         oil_hxc.overall_heat_transfer_coefficient.setlb(0)
         oil_hxc.overall_heat_transfer_coefficient.setub(10000)
         oil_hxc.area.setlb(0)
+        oil_hxc.area.setub(7000)  # TODO: Check this value
         oil_hxc.delta_temperature_in.setlb(10)  # K
-        if source == 'vhp':
-            oil_hxc.area.setub(8000)  # TODO: Check this value
-            oil_hxc.delta_temperature_in.setub(558)  # works for esrawli
-        elif source == 'hp':
-            oil_hxc.area.setub(7000)  # TODO: Check this value
-            oil_hxc.delta_temperature_in.setub(555)  # works for esrawli
+        # oil_hxc.delta_temperature_in.setub(556)
+        # oil_hxc.delta_temperature_out.setlb(10)  # K
+        oil_hxc.delta_temperature_in.setub(550)  # works for esrawli
         oil_hxc.delta_temperature_out.setlb(10)  # works for esrawli
         oil_hxc.delta_temperature_out.setub(500)
         # Bounds added based on the results from Andres's model
@@ -2709,6 +2800,8 @@ def add_bounds(m, source=None):
                   m.fs.charge.ess_hp_split]:
         split.to_hxc.flow_mol[:].setlb(0)
         split.to_hxc.flow_mol[:].setub(0.2 * m.flow_max)
+        # split.to_turbine.flow_mol[:].setlb(0)
+        # split.to_turbine.flow_mol[:].setub(m.flow_max)
         split.split_fraction[0.0, "to_hxc"].setlb(0)
         split.split_fraction[0.0, "to_hxc"].setub(1)
         split.split_fraction[0.0, "to_turbine"].setlb(0)
@@ -2730,6 +2823,9 @@ def add_bounds(m, source=None):
     m.fs.charge.hx_pump.control_volume.work[0].setlb(0)
     m.fs.charge.hx_pump.control_volume.work[0].setub(1e10)
 
+    # -------- added by esrawli
+    # Add missing lower and upper bounds to see if helps to reduce NLP
+    # solution time
     m.fs.plant_power_out[0].setlb(300)
     m.fs.plant_power_out[0].setub(700)
 
@@ -2738,6 +2834,7 @@ def add_bounds(m, source=None):
         unit_k.inlet.flow_mol[:].setub(m.flow_max)  # mol/s
         unit_k.outlet.flow_mol[:].setlb(0)  # mol/s
         unit_k.outlet.flow_mol[:].setub(m.flow_max)  # mol/s
+    # --------
 
     # Add bounds to plant capital cost
     m.fs.charge.plant_capital_cost.setlb(0)
@@ -2754,10 +2851,11 @@ def add_bounds(m, source=None):
         expr=m.fs.charge.capital_cost <= 1e11
     )
 
+
     return m
 
 
-def main(m_usc, fluid=None, source=None):
+def main(m_usc):
 
     # Create a flowsheet, add properties, unit models, and arcs
     m = create_charge_model(m_usc)
@@ -2771,14 +2869,14 @@ def main(m_usc, fluid=None, source=None):
     # Initialize the model with a sequential initialization and custom
     # routines
     print('DOF before initialization: ', degrees_of_freedom(m))
-    initialize(m, fluid=fluid, source=source)
+    initialize(m)
     print('DOF after initialization: ', degrees_of_freedom(m))
 
     # Add cost correlations
     build_costing(m, solver=solver)
 
     # Add bounds
-    add_bounds(m, source=source)
+    add_bounds(m)
 
     # Add disjunctions
     add_disjunction(m)
@@ -2789,9 +2887,7 @@ def main(m_usc, fluid=None, source=None):
 def run_nlps(m,
              solver=None,
              fluid=None,
-             source=None,
-             heat_duty=None,
-             save_nl_files=None):
+             source=None):
     """This function fixes the indicator variables of the disjuncts so to
     solve NLP problems
 
@@ -2827,25 +2923,21 @@ def run_nlps(m,
     print("The degrees of freedom after gdp transformation ",
           degrees_of_freedom(m))
 
-    if save_nl_files:
-        # Save nl files
-        print('Saving nl file for {} {} {}'.format(fluid, source, heat_duty))
-        m.write('nlp_suproblem_{}_{}_{}.nl'.format(fluid, source, heat_duty))
-        return m
-    else:
-        results = solver.solve(
-            m,
-            tee=True,
-            symbolic_solver_labels=True,
-            options={
-                "linear_solver": "ma27",
-                "max_iter": 150,
-                # "bound_push": 1e-12,
-                # "mu_init": 1e-8
-            }
-        )
-        # log_close_to_bounds(m)
-        return m, results
+    # strip_bounds = pyo.TransformationFactory('contrib.strip_var_bounds')
+    # strip_bounds.apply_to(m, reversible=True)
+
+    results = solver.solve(
+        m,
+        tee=True,
+        symbolic_solver_labels=True,
+        options={
+            "linear_solver": "ma27",
+            "max_iter": 150
+        }
+    )
+    log_close_to_bounds(m)
+
+    return m, results
 
 
 def print_model(nlp_model, nlp_data):
@@ -2928,8 +3020,8 @@ def run_gdp(m):
     # opt.CONFIG.max_slack = 1e4
     opt.CONFIG.call_after_subproblem_solve = print_model
     # opt.CONFIG.mip_solver = 'glpk'
-    opt.CONFIG.mip_solver = 'cbc'
-    # opt.CONFIG.mip_solver = 'gurobi_direct'
+    # opt.CONFIG.mip_solver = 'cbc'
+    opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
@@ -3141,7 +3233,7 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver, heat_duty=None, fluid=None, source=None, save_nl_files=None):
+def model_analysis(m, solver, heat_duty=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
@@ -3193,23 +3285,21 @@ def model_analysis(m, solver, heat_duty=None, fluid=None, source=None, save_nl_f
     print('DOF before solution = ', degrees_of_freedom(m))
 
     # # Solve the design optimization model
-    results = run_nlps(m,
-                       solver=solver,
-                       fluid=fluid,
-                       source=source,
-                       heat_duty=heat_duty,
-                       save_nl_files=save_nl_files)
+    # results = run_nlps(m,
+    #                    solver=solver,
+    #                    # fluid="solar_salt",
+    #                    fluid="hitec_salt",
+    #                    # fluid="thermal_oil",
+    #                    source="hp")
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.thermal_oil_disjunct.indicator_var.fix(1)
 
-    # results = run_gdp(m)
-    if save_nl_files:
-        print('No results since nl files are being saved')
-    else:
-        print_results(m, results)
-        # print_reports(m)
+    results = run_gdp(m)
+
+    print_results(m, results)
+    # print_reports(m)
 
 
 if __name__ == "__main__":
@@ -3220,21 +3310,20 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
-    save_nl_files_data = False
-    if save_nl_files_data:
-        source_data = ['vhp', 'hp']
-        fluid_data = ['solar_salt', 'hitec_salt', 'thermal_oil']
-        heat_duty_data = [100, 150, 200]
-    else:
-        source_data = ['hp']
-        fluid_data = ['solar_salt']
-        heat_duty_data = [100, 150, 200]
-    for i in source_data:
-        for j in fluid_data:
-            for k in heat_duty_data:
-                m_usc = usc.build_usc_w_ccs(solver)
+    # heat_duty_data = [100, 150, 200]
+    heat_duty_data = [150]
+    for k in heat_duty_data:
+        m_usc = usc.build_usc_w_ccs(solver)
+        # usc.initialize(m_usc)
 
-                m_chg, solver = main(m_usc, fluid=j, source=i)
+        m_chg, solver = main(m_usc)
 
-                print('Charge heat duty (MW):', k)
-                m = model_analysis(m_chg, solver, heat_duty=k, fluid=j, source=i, save_nl_files=save_nl_files_data)
+        print('Charge heat duty (MW):', k)
+        m = model_analysis(m_chg, solver, heat_duty=k)
+        # log_infeasible_constraints(m)
+        # log_close_to_bounds(m)
+
+    # View results in a process flow diagram
+    # view_result("pfd_usc_gdp_2.5_results.svg", m)
+
+    # log_close_to_bounds(m)

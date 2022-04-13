@@ -1301,7 +1301,7 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     m.fs.charge.hitec_salt_disjunct.hxc.initialize(
         outlvl=outlvl, optarg=solver.options)
     # m.fs.charge.hitec_salt_disjunct.hxc.display()
-    # m.fs.charge.hitec_salt_disjunct.hxc.report()
+    m.fs.charge.hitec_salt_disjunct.hxc.report()
     # raise Exception("Check HXC")
 
     # Thermal oil charge heat exchanger initialization
@@ -1313,7 +1313,7 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     m.fs.charge.thermal_oil_disjunct.hxc.inlet_1.enth_mol[0].fix()
     m.fs.charge.thermal_oil_disjunct.hxc.initialize(outlvl=outlvl)
     # m.fs.charge.thermal_oil_disjunct.hxc.display()
-    # m.fs.charge.thermal_oil_disjunct.hxc.report()
+    m.fs.charge.thermal_oil_disjunct.hxc.report()
     # raise Exception("Check HXC")
 
     # Initialize cooler
@@ -2027,18 +2027,12 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Tank size and dimension computation
     m.fs.charge.hitec_salt_disjunct.tank_volume = Var(
         initialize=1000,
-        #-------- modified by esrawli
-        # bounds=(1, 10000),
         bounds=(1, 20000),
-        #--------
         units=pyunits.m**3,
         doc="Volume of the Salt Tank w/20% excess capacity")
     m.fs.charge.hitec_salt_disjunct.tank_surf_area = Var(
         initialize=1000,
-        #-------- modified by esrawli
-        # bounds=(1, 5000),
-        bounds=(1, 6000),
-        #--------
+        bounds=(1, 5000),
         units=pyunits.m**2,
         doc="surface area of the Salt Tank")
     m.fs.charge.hitec_salt_disjunct.tank_diameter = Var(
@@ -2174,18 +2168,12 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Tank size and dimension computation
     m.fs.charge.thermal_oil_disjunct.tank_volume = Var(
         initialize=1000,
-        #-------- modified by esrawli
-        # bounds=(1, 10000),
-        bounds=(1, 15000),
-        #--------
+        bounds=(1, 50000),
         units=pyunits.m**3,
         doc="Volume of the Salt Tank w/20% excess capacity")
     m.fs.charge.thermal_oil_disjunct.tank_surf_area = Var(
         initialize=1000,
-        #-------- modified by esrawli
-        # bounds=(1, 5000),
-        bounds=(1, 6000),
-        #--------
+        bounds=(1, 5000),
         units=pyunits.m**2,
         doc="surface area of the Salt Tank")
     m.fs.charge.thermal_oil_disjunct.tank_diameter = Var(
@@ -2676,6 +2664,7 @@ def add_bounds(m):
         salt_hxc.costing.material_factor.setub(10)
         # salt_hxc.delta_temperature_in.setlb(10)  # K
         # salt_hxc.delta_temperature_out.setlb(10)  # K
+
     # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79)
     # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(80)
     # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
@@ -2684,13 +2673,13 @@ def add_bounds(m):
     # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.4)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(9)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(9.87)
 
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(79.9)  # 79.9)
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(79.9)  # 79.9)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(79)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(83.925)
-    # m.fs.charge.hitec_salt_disjunct.hxc.shell.heat[0.0].setub(200e6)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(80.509)
+    # m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.61)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.61)
     # ----- Tin & Tout upper bound value works for esrawli (Begin) -----
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
@@ -2721,8 +2710,8 @@ def add_bounds(m):
         oil_hxc.delta_temperature_in.setlb(10)  # K
         # oil_hxc.delta_temperature_in.setub(556)
         # oil_hxc.delta_temperature_out.setlb(10)  # K
-        oil_hxc.delta_temperature_in.setub(550)  # works for esrawli
-        oil_hxc.delta_temperature_out.setlb(10)  # works for esrawli
+        oil_hxc.delta_temperature_in.setub(557)  # works for esrawli
+        oil_hxc.delta_temperature_out.setlb(9.728)  # works for esrawli
         oil_hxc.delta_temperature_out.setub(500)
         # Bounds added based on the results from Andres's model
         oil_hxc.tube.properties_in[0].cp_mass.setlb(0)
@@ -2745,7 +2734,7 @@ def add_bounds(m):
         oil_hxc.costing.pressure_factor.setlb(0)  # no unit
         oil_hxc.costing.pressure_factor.setub(1e5)  # no unit
         oil_hxc.costing.purchase_cost.setlb(0)  # no unit
-        oil_hxc.costing.purchase_cost.setub(1e7)  # no unit
+        oil_hxc.costing.purchase_cost.setub(1.2e7)  # no unit
         oil_hxc.costing.base_cost_per_unit.setlb(0)
         oil_hxc.costing.base_cost_per_unit.setub(1e6)
         oil_hxc.costing.material_factor.setlb(0)
@@ -2763,36 +2752,23 @@ def add_bounds(m):
 
     # Add bounds to cost-related terms
     m.fs.charge.capital_cost.setlb(0)  # no units
-    m.fs.charge.capital_cost.setub(1e7)
+    m.fs.charge.capital_cost.setub(1.2e7)
     m.fs.charge.hx_pump.costing.purchase_cost.setlb(0)
     m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)
 
-    for salt_cost in [m.fs.charge.solar_salt_disjunct]:
+    for salt_cost in [m.fs.charge.solar_salt_disjunct,
+                      m.fs.charge.hitec_salt_disjunct,
+                      m.fs.charge.thermal_oil_disjunct]:
         salt_cost.salt_purchase_cost.setlb(0)
         salt_cost.salt_purchase_cost.setub(1e7)
         salt_cost.capital_cost.setlb(0)
         salt_cost.capital_cost.setub(1e7)
         salt_cost.spump_purchase_cost.setlb(0)
         salt_cost.spump_purchase_cost.setub(1e7)
-    # m.fs.charge.thermal_oil_disjunct.salt_purchase_cost.setub(2e7)
-    # m.fs.charge.hitec_salt_disjunct.salt_purchase_cost.setub(2e7)
-
-    for salt_cost in [m.fs.charge.hitec_salt_disjunct]:
-        salt_cost.salt_purchase_cost.setlb(0)
-        salt_cost.salt_purchase_cost.setub(1e10)
-        salt_cost.capital_cost.setlb(0)
-        salt_cost.capital_cost.setub(1e10)
-        salt_cost.spump_purchase_cost.setlb(0)
-        salt_cost.spump_purchase_cost.setub(1e10)
-
-    for fluid_cost in [m.fs.charge.thermal_oil_disjunct]:
-        fluid_cost.salt_purchase_cost.setlb(0)
-        fluid_cost.salt_purchase_cost.setub(1e10)
-        fluid_cost.capital_cost.setlb(0)
-        fluid_cost.capital_cost.setub(1e10)
-        fluid_cost.spump_purchase_cost.setlb(0)
-        fluid_cost.spump_purchase_cost.setub(1e10)
-
+    m.fs.charge.hitec_salt_disjunct.salt_purchase_cost.setub(1.5e7)
+    m.fs.charge.thermal_oil_disjunct.salt_purchase_cost.setub(2e7)
+    # m.fs.charge.hitec_salt_disjunct.capital_cost.setub(2e7)
+    # m.fs.charge.thermal_oil_disjunct.capital_cost.setub(2e7)
     # Add bounds needed in VHP and HP source disjuncts
     for split in [m.fs.charge.ess_vhp_split,
                   m.fs.charge.ess_hp_split]:
@@ -2837,18 +2813,6 @@ def add_bounds(m):
     # Add bounds to plant capital cost
     m.fs.charge.plant_capital_cost.setlb(0)
     m.fs.charge.plant_capital_cost.setub(1e12)
-
-    m.fs.charge.capital_cost.setub(None)
-    m.fs.charge.solar_salt_disjunct.capital_cost_upper_bound = Constraint(
-        expr=m.fs.charge.capital_cost <= 1e7
-    )
-    m.fs.charge.hitec_salt_disjunct.capital_cost_upper_bound = Constraint(
-        expr=m.fs.charge.capital_cost <= 1e10
-    )
-    m.fs.charge.thermal_oil_disjunct.capital_cost_upper_bound = Constraint(
-        expr=m.fs.charge.capital_cost <= 1e11
-    )
-
 
     return m
 
@@ -3099,7 +3063,7 @@ def print_results(m, results):
         print('Delta temperature at inlet (K): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.hxc.
                   delta_temperature_in[0])))
-        print('Delta temperature at outlet (K): {:.6f}'.format(
+        print('elta temperature at outlet (K): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.hxc.
                   delta_temperature_out[0])))
         print('Salt cost ($/y): {:.6f}'.format(
@@ -3189,9 +3153,6 @@ def print_results(m, results):
         print('Delta temperature at outlet (K): {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.
                   delta_temperature_out[0])))
-        print()
-        print('Oil storage tank volume in m3: {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.tank_volume)))
         print('Oil density: {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.
                   tube.properties_in[0].density)))
@@ -3280,18 +3241,18 @@ def model_analysis(m, solver, heat_duty=None):
     print('DOF before solution = ', degrees_of_freedom(m))
 
     # # Solve the design optimization model
-    results = run_nlps(m,
-                       solver=solver,
-                       # fluid="solar_salt",
-                       fluid="hitec_salt",
-                       # fluid="thermal_oil",
-                       source="hp")
+    # results = run_nlps(m,
+    #                    solver=solver,
+    #                     # fluid="solar_salt",
+    #                     fluid="hitec_salt",
+    #                     # fluid="thermal_oil",
+    #                    source="hp")
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.thermal_oil_disjunct.indicator_var.fix(1)
 
-    # results = run_gdp(m)
+    results = run_gdp(m)
 
     print_results(m, results)
     # print_reports(m)
@@ -3309,9 +3270,7 @@ if __name__ == "__main__":
     for k in heat_duty_data:
         m_usc = usc.build_usc_w_ccs(solver)
         # usc.initialize(m_usc)
-
         m_chg, solver = main(m_usc)
-
         print('Charge heat duty (MW):', k)
         m = model_analysis(m_chg, solver, heat_duty=k)
         # log_infeasible_constraints(m)
