@@ -579,12 +579,20 @@ def discharge_mode_disjunct_equations(disj):
 
     m.fs.if_charge.value = 0
 
+    # m.fs.discharge_mode_disjunct.hxc_heat_duty = Constraint(
+    #     expr=m.fs.hxc.heat_duty[0] == 0.5*1e6
+    # )
+
+    # m.fs.discharge_mode_disjunct.hxd_heat_duty = Constraint(
+    #     expr=m.fs.hxd.heat_duty[0] == 148.5*1e6
+    # )
+
     m.fs.discharge_mode_disjunct.hxc_heat_duty = Constraint(
-        expr=m.fs.hxc.heat_duty[0] == 0.5*1e6
+        expr=m.fs.hxc.heat_duty[0] >= 0
     )
 
     m.fs.discharge_mode_disjunct.hxd_heat_duty = Constraint(
-        expr=m.fs.hxd.heat_duty[0] == 148.5*1e6
+        expr=m.fs.hxd.heat_duty[0] <= 200*1e6
     )
 
     # m.fs.charge_mode_disjunct.hxd_area_constraint = Constraint(
@@ -1409,7 +1417,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     #  Annual operating cost
     ###########################################################################
     m.fs.operating_hours = Expression(
-        expr=365 * 3600 * m.fs.hours_per_day,
+        expr=365 * 3600 * 24,
         doc="Number of operating hours per year")
     m.fs.operating_cost = Var(
         initialize=1000000,
@@ -1904,6 +1912,7 @@ def model_analysis(m, solver, cycle=None):
 
     # Fix variables in the flowsheet
     m.fs.plant_power_out.fix(436)
+    # m.fs.plant_power_out.setub(436)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
     # -------- modified by esrawli
@@ -2028,9 +2037,14 @@ def model_analysis(m, solver, cycle=None):
     # )
     #--------
 
+    m.fs.net_power = Expression(
+        expr=(m.fs.plant_power_out[0] + (m.fs.es_turbine.work[0] * -1e-6)),
+        doc="Net power equal plant + storage power"
+    )
+
     m.fs.revenue = Expression(
         expr=(m.fs.lmp[0] *
-              m.fs.plant_power_out[0]),
+              m.fs.net_power),
         doc="Revenue function in $/h assuming 1 hr operation"
     )
 
@@ -2064,8 +2078,8 @@ def model_analysis(m, solver, cycle=None):
     opt.CONFIG.max_slack = 1e4
     opt.CONFIG.call_after_subproblem_solve = print_model
     # opt.CONFIG.mip_solver = 'glpk'
-    # opt.CONFIG.mip_solver = 'cbc'
-    opt.CONFIG.mip_solver = 'gurobi_direct'
+    opt.CONFIG.mip_solver = 'cbc'
+    # opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
@@ -2097,6 +2111,7 @@ def model_analysis(m, solver, cycle=None):
     m.fs.condenser_mix.makeup.display()
     print_results(m, results)
     # print_reports(m)
+    return m
 
 
 if __name__ == "__main__":
@@ -2118,15 +2133,15 @@ if __name__ == "__main__":
     m_chg.fs.lmp = Var(
         m_chg.fs.time,
         domain=Reals,
-        initialize=80,
+        initialize=30,
         doc="Hourly LMP in $/MWh"
         )
 
     operation_mode = "discharge"
     if operation_mode == "charge":
-        m_chg.fs.lmp[0].fix(80)
+        m_chg.fs.lmp[0].fix(30)
     elif operation_mode == "discharge":
-        m_chg.fs.lmp[0].fix(120)
+        m_chg.fs.lmp[0].fix(30)
     else:
         print('**^^** Unrecognized operation mode! Try charge or discharge')
     m = model_analysis(m_chg,

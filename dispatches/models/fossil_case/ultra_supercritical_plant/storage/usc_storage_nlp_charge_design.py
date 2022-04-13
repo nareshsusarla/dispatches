@@ -1866,7 +1866,7 @@ def model_analysis(m, solver, cycle=None):
     """
 
     # Fix variables in the flowsheet
-    m.fs.plant_power_out.fix(400)
+    m.fs.plant_power_out.fix(436)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
     #-------- modified by esrawli
@@ -1964,17 +1964,17 @@ def model_analysis(m, solver, cycle=None):
             + 3600*b.hxc.inlet_2.flow_mass[t]
             - 3600*b.hxd.inlet_1.flow_mass[t])
 
-    @m.fs.Constraint(m.fs.time,
-                      doc="Maximum salt inventory at any time")
-    def constraint_salt_max_inventory1(b, t):
-        return (
-            b.salt_inventory[t] <= b.salt_amount)
+    # @m.fs.Constraint(m.fs.time,
+    #                   doc="Maximum salt inventory at any time")
+    # def constraint_salt_max_inventory1(b, t):
+    #     return (
+    #         b.salt_inventory[t] <= b.salt_amount)
 
-    @m.fs.Constraint(m.fs.time,
-                      doc="Maximum previous salt inventory at any time")
-    def constraint_salt_max_inventory2(b, t):
-        return (
-            b.previous_salt_inventory[t] <= b.salt_amount)
+    # @m.fs.Constraint(m.fs.time,
+    #                   doc="Maximum previous salt inventory at any time")
+    # def constraint_salt_max_inventory2(b, t):
+    #     return (
+    #         b.previous_salt_inventory[t] <= b.salt_amount)
 
     m.fs.revenue = Expression(
         expr=(m.fs.lmp[0] *
@@ -1991,7 +1991,7 @@ def model_analysis(m, solver, cycle=None):
                 + m.fs.plant_capital_cost
                 + m.fs.plant_fixed_operating_cost
                 + m.fs.plant_variable_operating_cost) / (365 * 24))
-        ),
+        ) * 1e-2,
         sense=maximize
     )
     # m.obj = Objective(
@@ -2012,8 +2012,8 @@ def model_analysis(m, solver, cycle=None):
     opt.CONFIG.max_slack = 1e4
     # opt.CONFIG.call_after_subproblem_solve = print_model
     # opt.CONFIG.mip_solver = 'glpk'
-    # opt.CONFIG.mip_solver = 'cbc'
-    opt.CONFIG.mip_solver = 'gurobi_direct'
+    opt.CONFIG.mip_solver = 'cbc'
+    # opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
@@ -2045,6 +2045,7 @@ def model_analysis(m, solver, cycle=None):
     m.fs.condenser_mix.makeup.display()
     print_results(m, results)
     # print_reports(m)
+    return m
 
 
 if __name__ == "__main__":
