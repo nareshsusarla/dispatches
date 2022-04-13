@@ -1711,7 +1711,7 @@ def add_bounds(m):
     m.fs.hxd.delta_temperature_in.setlb(10)
     m.fs.hxd.delta_temperature_out.setlb(10)
     m.fs.hxd.delta_temperature_in.setub(300)
-    m.fs.hxd.delta_temperature_out.setub(300)
+    m.fs.hxd.delta_temperature_out.setub(500)
 
     # Add bounds for the HX pump and Cooler
     for unit_k in [m.fs.hx_pump,
@@ -1768,7 +1768,7 @@ def add_bounds(m):
     m.fs.hx_pump.control_volume.work[0].setlb(0)
     m.fs.hx_pump.control_volume.work[0].setub(1e10)
 
-    m.fs.plant_power_out[0].setlb(300)
+    m.fs.plant_power_out[0].setlb(200)
     m.fs.plant_power_out[0].setub(700)
 
     for unit_k in [m.fs.booster]:
@@ -1918,6 +1918,8 @@ def print_results(m, results):
         value(m.fs.hxc.delta_temperature_in[0])))
     print('HXC Delta temperature at outlet (K): {:.6f}'.format(
         value(m.fs.hxc.delta_temperature_out[0])))
+    print('HXC Inlet Density (K): {:.6f}'.format(
+        value(m.fs.hxc.side_2.properties_in[0].density["Liq"])))
     print('')
     print('')
     print("*************** Discharge Heat Exchanger (HXD) ****************")
@@ -1942,6 +1944,8 @@ def print_results(m, results):
         value(m.fs.hxd.delta_temperature_in[0])))
     print('HXD Delta temperature at outlet (K): {:.6f}'.format(
         value(m.fs.hxd.delta_temperature_out[0])))
+    print('HXD Inlet Density (K): {:.6f}'.format(
+        value(m.fs.hxd.side_1.properties_in[0].density["Liq"])))
     print('ES Turbine work (MW): {:.6f}'.format(
         value(m.fs.es_turbine.work[0]) * -1e-6))
     print('')
@@ -2012,7 +2016,7 @@ def model_analysis(m, solver, cycle=None):
     """
 
     # Fix variables in the flowsheet
-    m.fs.plant_power_out.fix(400)
+    m.fs.plant_power_out.fix(436)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
 
     # -------- modified by esrawli
@@ -2236,7 +2240,7 @@ if __name__ == "__main__":
         doc="Hourly LMP in $/MWh"
         )
     # lmp = [80, 100, 70, 140, 120]
-    operation_mode = "nostorage"
+    operation_mode = "discharge"
     if operation_mode == "charge":
         m_chg.fs.lmp[0].fix(80)
     elif operation_mode == "discharge":
