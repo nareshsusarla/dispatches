@@ -1,9 +1,9 @@
 
 # import multiperiod object and rankine example
-from idaes.apps.multiperiod.multiperiod import MultiPeriodModel
-from idaes.apps.multiperiod.examples.simple_rankine_cycle import (
-    create_model, set_inputs, initialize_model,
-    close_flowsheet_loop, add_operating_cost)
+from multiperiod import MultiPeriodModel
+# from idaes.apps.multiperiod.examples.simple_rankine_cycle import (
+#     create_model, set_inputs, initialize_model,
+#     close_flowsheet_loop, add_operating_cost)
 
 import pyomo.environ as pyo
 from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
@@ -27,11 +27,11 @@ plt.rc('axes', titlesize=24)
 method = "with_efficiency" # options: with_efficiency and without_efficiency
 max_power = 436 # in MW
 min_power = int(0.65 * max_power) # 283 in MW
-max_power_storage = 22.4 # in MW
+max_power_storage = 29 # in MW
 min_power_storage = 2 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
-min_storage_heat_duty = 10 # in MW
+min_storage_heat_duty = 0.01 # in MW
 max_storage_heat_duty = 150 # in MW
 load_from_file = 'initialized_usc_storage_mlp_mp.json'
 
@@ -46,8 +46,8 @@ if lx:
     scaling_obj = 1
     scaling_factor = 1e-3
 else:
-    scaling_obj = 1
-    scaling_factor = 1
+    scaling_obj = 1e-3
+    scaling_factor = 1e-3
 
 print()
 print('Scaling_factor:', scaling_factor)
@@ -56,6 +56,12 @@ tank_scenario = "hot_empty" # scenarios: "hot_empty", "hot_full", "hot_half_full
 tank_min = 1 * scaling_factor# in kg
 tank_max = 6739292 * scaling_factor# in kg
 
+power_dispatch = [400, 386, 430, 410,
+         450, 395, 380, 325,
+         300, 0, 0, 0,
+         0, 0, 0, 0,
+         320, 360, 415, 450,
+         455, 440, 445, 430]
 # Select lmp source data and scaling factor according to that
 use_rts_data = False
 use_mod_rts_data = True
@@ -65,12 +71,19 @@ if use_rts_data:
         dispatch = np.load(f)
         price = np.load(f)
 elif use_mod_rts_data:
+    # price = [22.9684, 21.1168, 20.4, 20.419,
+    #          20.419, 21.2877, 23.07, 25,
+    #          18.4634, 0, 0, 0,
+    #          0, 0, 0, 0,
+    #          19.0342, 23.07, 200, 200,
+    #          200, 200, 200, 200]
     price = [22.9684, 21.1168, 20.4, 20.419,
              20.419, 21.2877, 23.07, 25,
              18.4634, 0, 0, 0,
              0, 0, 0, 0,
-             19.0342, 23.07, 200, 200,
-             200, 200, 200, 200]
+             19.0342, 23.07, 22.9684, 21.1168,
+             19.0342, 23.07, 22.9684, 21.1168]
+             # 100, 100, 100, 100]
 else:
     print('>>>>>> Using NREL lmp data')
     price = np.load("nrel_scenario_average_hourly.npy")
@@ -100,7 +113,7 @@ def create_ss_rankine_model():
 
     m.rankine.fs.hxc.heat_duty.setlb(min_storage_heat_duty * 1e6)
     m.rankine.fs.hxd.heat_duty.setlb(min_storage_heat_duty * 1e6)
-    # m.rankine.fs.hxc.heat_duty.setub(max_storage_heat_duty * 1e6)
+    m.rankine.fs.hxc.heat_duty.setub(max_storage_heat_duty * 1e6)
     # m.rankine.fs.hxd.heat_duty.setub(max_storage_heat_duty * 1e6 * (1 - 0.01))
 
     # Unfix data
@@ -125,7 +138,7 @@ def create_ss_rankine_model():
 
     # Fix storage heat exchangers area and salt temperatures
     m.rankine.fs.hxc.area.fix(1904)
-    m.rankine.fs.hxd.area.fix(1762)
+    m.rankine.fs.hxd.area.fix(2830)
     m.rankine.fs.hxc.outlet_2.temperature[0].fix(831)
     m.rankine.fs.hxd.inlet_1.temperature[0].fix(831)
     m.rankine.fs.hxd.outlet_1.temperature[0].fix(513.15)
@@ -278,6 +291,9 @@ for blk in blks:
         ) * scaling_factor
     )
     blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost))
+    blk_rankine.fs.plant_power_dispatch_eq = pyo.Constraint(
+        expr=blk.rankine.fs.net_power >= power_dispatch[count]
+    )
     count += 1
 
 m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
