@@ -1,9 +1,10 @@
 
 # import multiperiod object and rankine example
-from idaes.apps.multiperiod.multiperiod import MultiPeriodModel
-from idaes.apps.multiperiod.examples.simple_rankine_cycle import (
-    create_model, set_inputs, initialize_model,
-    close_flowsheet_loop, add_operating_cost)
+# from idaes.apps.multiperiod.multiperiod import MultiPeriodModel
+from multiperiod import MultiPeriodModel
+# from idaes.apps.multiperiod.examples.simple_rankine_cycle import (
+#     create_model, set_inputs, initialize_model,
+#     close_flowsheet_loop, add_operating_cost)
 
 import pyomo.environ as pyo
 from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
@@ -28,7 +29,7 @@ plt.rc('axes', titlesize=24)
 method = "with_efficiency" # options: with_efficiency and without_efficiency
 max_power = 436 # in MW
 min_power = int(0.65 * max_power) # 283 in MW
-max_power_storage = 24 # in MW
+max_power_storage = 22.5 # in MW
 min_power_storage = 1 # in MW
 max_power_total = max_power + max_power_storage
 min_power_total = min_power + min_power_storage
@@ -60,12 +61,13 @@ if use_rts_data:
         dispatch = np.load(f)
         price = np.load(f)
 elif use_mod_rts_data:
+    # price = [22.9684, 0, 200, 200] * number_days
     price = [22.9684, 21.1168, 20.4, 20.419,
-             20.419, 21.2877, 23.07, 25,
-             18.4634, 0, 0, 0,
-             0, 0, 0, 0,
-             19.0342, 23.07, 200, 200,
-             200, 200, 200, 200]
+              20.419, 21.2877, 23.07, 25,
+              18.4634, 0, 0, 0,
+              0, 0, 0, 0,
+              19.0342, 23.07, 200, 200,
+              200, 200, 200, 200] * number_days
 else:
     print('>>>>>> Using NREL lmp data')
     price = np.load("nrel_scenario_average_hourly.npy")
@@ -126,7 +128,7 @@ def create_ss_rankine_model():
     # Fix storage heat exchangers area and salt temperatures
     # m.rankine.fs.hxc.inlet_1.flow_mol.fix(2000)
     m.rankine.fs.hxc.area.fix(1904)
-    m.rankine.fs.hxd.area.fix(1095)
+    m.rankine.fs.hxd.area.fix(1762)
     m.rankine.fs.hxc.outlet_2.temperature[0].fix(831)
     m.rankine.fs.hxd.inlet_1.temperature[0].fix(831)
     m.rankine.fs.hxd.outlet_1.temperature[0].fix(513.15)
@@ -473,7 +475,7 @@ ax1.step(# [x + 1 for x in hours], hot_tank_array,
 ax1.legend(loc="center right", frameon=False)
 ax1.tick_params(axis='y')#,
                 # labelcolor=color[3])
-ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
+ax1.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=12))
 
 ax2 = ax1.twinx()
 ax2.set_ylabel('LMP ($/MWh)',
@@ -484,7 +486,7 @@ ax2.step([x + 1 for x in hours], lmp_array,
          color=color[2])
 ax2.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('multiperiod_usc_storage_rts1_salt_tank_level_24h.png')
+plt.savefig('multiperiod_usc_storage_rts1_salt_tank_level_168h.png')
 
 
 font = {'size':18}
@@ -516,7 +518,7 @@ ax3.step(hours_list, power_list,
          lw=1, color=color[1])
 ax3.tick_params(axis='y',
                 labelcolor=color[1])
-ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
+ax3.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=12))
 
 ax4 = ax3.twinx()
 ax4.set_ylabel('LMP ($/MWh)',
@@ -527,7 +529,7 @@ ax4.step([x + 1 for x in hours], lmp_array,
          color=color[2])
 ax4.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('multiperiod_usc_storage_rts1_power_24h.png')
+plt.savefig('multiperiod_usc_storage_rts1_power_168h.png')
 
 
 zero_point = True
@@ -573,7 +575,7 @@ else:
 ax5.legend(loc="center right", frameon=False)
 ax5.tick_params(axis='y',
                 labelcolor=color[3])
-ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=2))
+ax5.set_xticks(np.arange(0, n_time_points*n_weeks_to_plot + 1, step=12))
 
 ax6 = ax5.twinx()
 ax6.set_ylabel('LMP ($/MWh)',
@@ -583,6 +585,6 @@ ax6.step([x + 1 for x in hours], lmp_array,
          ls='-', color=color[2])
 ax6.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('multiperiod_usc_storage_rts1_hxduty_24h.png')
+plt.savefig('multiperiod_usc_storage_rts1_hxduty_168h.png')
 
 plt.show()
