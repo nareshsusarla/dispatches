@@ -93,7 +93,7 @@ from pyomo.util.infeasible import (log_infeasible_constraints,
                                     log_close_to_bounds)
 import solarsalt_properties
 import hitecsalt_properties
-import thermal_oil
+import thermal_oil_updated
 
 from pyomo.network.plugins import expand_arcs
 
@@ -111,7 +111,7 @@ def create_charge_model(m):
     # Add molten salt properties (Solar and Hitec salt)
     m.fs.solar_salt_properties = solarsalt_properties.SolarsaltParameterBlock()
     m.fs.hitec_salt_properties = hitecsalt_properties.HitecsaltParameterBlock()
-    m.fs.therminol66_properties = thermal_oil.ThermalOilParameterBlock()
+    m.fs.therminol66_properties = thermal_oil_updated.ThermalOilParameterBlock()
 
     ###########################################################################
     #  Add hp and ip splitters                                                #
@@ -876,16 +876,16 @@ def thermal_oil_disjunct_equations(disj):
     # steam side of thermal oil charge heat exchanger
     m.fs.charge.thermal_oil_disjunct.hxc.oil_in_dynamic_viscosity = Expression(
         expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.
-        properties_in[0].visc_kin *
+        properties_in[0].visc_kin["Liq"] *
         m.fs.charge.thermal_oil_disjunct.hxc.side_2.
-        properties_in[0].density * 1e-4)
+        properties_in[0].density["Liq"] * 1e-6)
 
     m.fs.charge.thermal_oil_disjunct.hxc.\
         oil_out_dynamic_viscosity = Expression(
             expr=(m.fs.charge.thermal_oil_disjunct.hxc.side_2.
-                  properties_out[0].visc_kin *
+                  properties_out[0].visc_kin["Liq"] *
                   m.fs.charge.thermal_oil_disjunct.hxc.side_2.
-                  properties_out[0].density * 1e-4))
+                  properties_out[0].density["Liq"] * 1e-6))
 
     m.fs.charge.thermal_oil_disjunct.hxc.oil_reynolds_number = Expression(
         expr=(
@@ -899,18 +899,18 @@ def thermal_oil_disjunct_equations(disj):
     m.fs.charge.thermal_oil_disjunct.hxc.oil_prandtl_number = Expression(
         expr=(
             m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].
-            cp_mass
+            cp_mass["Liq"]
             * m.fs.charge.thermal_oil_disjunct.hxc.oil_in_dynamic_viscosity
             / m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].
-            therm_cond),
+            therm_cond["Liq"]),
         doc="Salt Prandtl Number")
     m.fs.charge.thermal_oil_disjunct.hxc.oil_prandtl_wall = Expression(
         expr=(
             m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].
-            cp_mass
+            cp_mass["Liq"]
             * m.fs.charge.thermal_oil_disjunct.hxc.oil_out_dynamic_viscosity
             / m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].
-            therm_cond
+            therm_cond["Liq"]
         ),
         doc="Salt Wall Prandtl Number"
     )
@@ -970,7 +970,7 @@ def thermal_oil_disjunct_equations(disj):
     m.fs.charge.thermal_oil_disjunct.hxc.h_oil = Expression(
         expr=(
             m.fs.charge.thermal_oil_disjunct.hxc.
-            side_2.properties_in[0].therm_cond *
+            side_2.properties_in[0].therm_cond["Liq"] *
             m.fs.charge.thermal_oil_disjunct.hxc.oil_nusselt_number /
             m.fs.charge.thermal_oil_disjunct.hxc.tube_outer_dia
         ),
@@ -1800,12 +1800,12 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
               properties_in[0].flow_mass *
               264.17 * 60 /
               (m.fs.charge.thermal_oil_disjunct.hxc.side_2.
-               properties_in[0].density)),
+               properties_in[0].density["Liq"])),
         doc="Conversion of solar salt flow mass to vol flow [gal per min]"
     )
     m.fs.charge.thermal_oil_disjunct.dens_lbft3 = pyo.Expression(
         expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].
-        density * 0.062428,
+        density["Liq"] * 0.062428,
         doc="pump size factor"
     )  # density in lb per ft3
     m.fs.charge.thermal_oil_disjunct.spump_sf = pyo.Expression(
@@ -2215,7 +2215,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         return (
             m.fs.charge.thermal_oil_disjunct.tank_volume *
             m.fs.charge.thermal_oil_disjunct.hxc.
-            side_2.properties_in[0].density ==
+            side_2.properties_in[0].density["Liq"] ==
             m.fs.charge.thermal_oil_disjunct.oil_amount * 1.10
         )
     m.fs.charge.thermal_oil_disjunct.tank_volume_eq = Constraint(
@@ -2734,12 +2734,12 @@ def add_bounds(m):
         oil_hxc.delta_temperature_in.setlb(10)  # 10
         oil_hxc.delta_temperature_in.setub(391)  # 561
         oil_hxc.delta_temperature_out.setlb(10)  # 9
-        oil_hxc.delta_temperature_out.setub(245)  # 500
+        oil_hxc.delta_temperature_out.setub(250)  # 500
 
-        # oil_hxc.inlet_2.temperature.setlb(300)
-        # oil_hxc.inlet_2.temperature.setub(616)
-        # oil_hxc.outlet_2.temperature.setlb(300)
-        # oil_hxc.outlet_2.temperature.setub(616)
+        oil_hxc.inlet_2.temperature.setlb(300)
+        oil_hxc.inlet_2.temperature.setub(616)
+        oil_hxc.outlet_2.temperature.setlb(300)
+        oil_hxc.outlet_2.temperature.setub(616)
 
         # # NS: works for 150 MW
         # # for 100 MW: TO-VHP & TO-HP is MaxIter
@@ -2750,22 +2750,22 @@ def add_bounds(m):
         # oil_hxc.delta_temperature_out.setub(500)
 
         # Bounds added based on the results from Andres's model
-        oil_hxc.tube.properties_in[0].cp_mass.setlb(0)
-        oil_hxc.tube.properties_in[0].cp_mass.setub(1e6)
-        oil_hxc.tube.properties_in[0].therm_cond.setlb(0)
-        oil_hxc.tube.properties_in[0].therm_cond.setub(100)
-        oil_hxc.tube.properties_in[0].visc_kin.setlb(0)
-        oil_hxc.tube.properties_in[0].visc_kin.setub(100)
-        oil_hxc.tube.properties_in[0].density.setlb(0)
-        oil_hxc.tube.properties_in[0].density.setub(1e5)
-        oil_hxc.tube.properties_out[0].cp_mass.setlb(0)
-        oil_hxc.tube.properties_out[0].cp_mass.setub(1e6)
-        oil_hxc.tube.properties_out[0].therm_cond.setlb(0)
-        oil_hxc.tube.properties_out[0].therm_cond.setub(100)
-        oil_hxc.tube.properties_out[0].visc_kin.setlb(0)
-        oil_hxc.tube.properties_out[0].visc_kin.setub(100)
-        oil_hxc.tube.properties_out[0].density.setlb(0)
-        oil_hxc.tube.properties_out[0].density.setub(1e5)
+        # oil_hxc.tube.properties_in[0].cp_mass["Liq"].setlb(0)
+        # oil_hxc.tube.properties_in[0].cp_mass["Liq"].setub(1e6)
+        # oil_hxc.tube.properties_in[0].therm_cond["Liq"].setlb(0)
+        # oil_hxc.tube.properties_in[0].therm_cond["Liq"].setub(100)
+        # oil_hxc.tube.properties_in[0].visc_kin["Liq"].setlb(0)
+        # oil_hxc.tube.properties_in[0].visc_kin["Liq"].setub(100)
+        # oil_hxc.tube.properties_in[0].density["Liq"].setlb(0)
+        # oil_hxc.tube.properties_in[0].density["Liq"].setub(1e5)
+        # oil_hxc.tube.properties_out[0].cp_mass["Liq"].setlb(0)
+        # oil_hxc.tube.properties_out[0].cp_mass["Liq"].setub(1e6)
+        # oil_hxc.tube.properties_out[0].therm_cond["Liq"].setlb(0)
+        # oil_hxc.tube.properties_out[0].therm_cond["Liq"].setub(100)
+        # oil_hxc.tube.properties_out[0].visc_kin["Liq"].setlb(0)
+        # oil_hxc.tube.properties_out[0].visc_kin["Liq"].setub(100)
+        # oil_hxc.tube.properties_out[0].density["Liq"].setlb(0)
+        # oil_hxc.tube.properties_out[0].density["Liq"].setub(1e5)
         # bounds for costing
         oil_hxc.costing.pressure_factor.setlb(0)  # no unit
         oil_hxc.costing.pressure_factor.setub(1e5)  # no unit
@@ -3173,7 +3173,7 @@ def print_results(m, results):
                   delta_temperature_out[0])))
         print('Oil density: {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.
-                  tube.properties_in[0].density)))
+                  tube.properties_in[0].density['Liq'])))
         print('HXC heat duty: {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0]) * 1e-6))
     print('')
@@ -3258,12 +3258,12 @@ def model_analysis(m, solver, heat_duty=None):
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
-    # Solve the design optimization model
+    # # Solve the design optimization model
     # results = run_nlps(m,
-    #                    solver=solver,
-    #                    # fluid="solar_salt",
-    #                    fluid="thermal_oil",
-    #                    source="vhp")
+    #                     solver=solver,
+    #                     # fluid="solar_salt",
+    #                     fluid="thermal_oil",
+    #                     source="vhp")
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
