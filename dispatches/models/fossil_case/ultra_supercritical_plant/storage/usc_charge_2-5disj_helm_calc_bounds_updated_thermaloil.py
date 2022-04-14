@@ -1084,14 +1084,14 @@ def set_model_input(m):
     ###########################################################################
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
-    m.fs.charge.solar_salt_disjunct.hxc.area.fix(100)  # m2
+    m.fs.charge.solar_salt_disjunct.hxc.area.fix(2500)  # m2
     m.fs.charge.hitec_salt_disjunct.hxc.area.fix(100)  # m2
     m.fs.charge.thermal_oil_disjunct.hxc.area.fix(2500)  # from Andres's model
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass.fix(100)   # kg/s
+    m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass.fix(150)   # kg/s
     m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature.fix(513.15)  # K
     m.fs.charge.solar_salt_disjunct.hxc.inlet_2.pressure.fix(101325)  # Pa
 
@@ -1126,8 +1126,8 @@ def set_model_input(m):
     # The model is built for a fixed flow of steam through the
     # charger.  This flow of steam to the charger is unfixed and
     # determine during design optimization
-    m.fs.charge.ess_vhp_split.split_fraction[0, "to_hxc"].fix(0.01)
-    m.fs.charge.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.01)
+    m.fs.charge.ess_vhp_split.split_fraction[0, "to_hxc"].fix(0.1)
+    m.fs.charge.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.1)
 
     ###########################################################################
     #  Connector                                                         #
@@ -1204,7 +1204,6 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     m.fs.charge.solar_salt_disjunct.hxc.inlet_1.fix()
     m.fs.charge.solar_salt_disjunct.hxc.initialize(outlvl=outlvl,
                                                    optarg=solver.options)
-
     # Hitec salt charge heat exchanger initialization
     propagate_state(m.fs.charge.hitec_salt_disjunct.connector_to_hxc)
     # Fixing the charge steam inlet during initialization as note that
@@ -1213,6 +1212,8 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.fix()
     m.fs.charge.hitec_salt_disjunct.hxc.initialize(
         outlvl=outlvl, optarg=solver.options)
+    # m.fs.charge.hitec_salt_disjunct.hxc.display()
+    # raise Exception()
 
     # Thermal oil charge heat exchanger initialization
     propagate_state(m.fs.charge.thermal_oil_disjunct.connector_to_hxc)
@@ -1797,7 +1798,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.charge.solar_salt_disjunct.tank_surf_area = pyo.Var(
         initialize=1000,
         #-------- modified by esrawli
-        bounds=(1, 5000),
+        bounds=(1, 6000),
         # bounds=(0, 5000),
         #--------
         units=pyunits.m**2,
@@ -2777,9 +2778,9 @@ def add_bounds(m):
     # Pa, flow in mol/s, massic flow in kg/s, and heat and heat duty
     # in W
 
-    m.flow_max = m.main_flow * 1.2  # in mol/s
+    m.flow_max = m.main_flow * 3  # in mol/s
     m.salt_flow_max = 1000  # in kg/s
-    m.fs.heat_duty_max = 200e6 # in MW
+    m.fs.heat_duty_max = 200e6  # in MW
     m.factor = 2
     # Charge heat exchanger section
     for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
@@ -2803,34 +2804,45 @@ def add_bounds(m):
         salt_hxc.tube.heat.setlb(0)
         salt_hxc.tube.heat.setub(m.fs.heat_duty_max)
         #-------- modified by esrawli
-        # salt_hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
-        # salt_hxc.tube.properties_in[0].enthalpy_mass.setub(1.5e6)
-        # salt_hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
-        # salt_hxc.tube.properties_out[0].enthalpy_mass.setub(1.5e6)
+        salt_hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
+        salt_hxc.tube.properties_in[0].enthalpy_mass.setub(1.5e6)
+        salt_hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
+        salt_hxc.tube.properties_out[0].enthalpy_mass.setub(1.5e6)
         # Add calculated bounds
-        salt_hxc.tube.properties_in[:].enthalpy_mass.setlb(m.fs.charge.salt_enthalpy_mass_min / m.factor)
-        salt_hxc.tube.properties_in[:].enthalpy_mass.setub(m.fs.charge.salt_enthalpy_mass_max * m.factor)
-        salt_hxc.tube.properties_out[:].enthalpy_mass.setlb(m.fs.charge.salt_enthalpy_mass_min / m.factor)
-        salt_hxc.tube.properties_out[:].enthalpy_mass.setub(m.fs.charge.salt_enthalpy_mass_max * m.factor)
+        # salt_hxc.tube.properties_in[:].enthalpy_mass.setlb(m.fs.charge.salt_enthalpy_mass_min / m.factor)
+        # salt_hxc.tube.properties_in[:].enthalpy_mass.setub(m.fs.charge.salt_enthalpy_mass_max * m.factor)
+        # salt_hxc.tube.properties_out[:].enthalpy_mass.setlb(m.fs.charge.salt_enthalpy_mass_min / m.factor)
+        # salt_hxc.tube.properties_out[:].enthalpy_mass.setub(m.fs.charge.salt_enthalpy_mass_max * m.factor)
         #--------
         salt_hxc.overall_heat_transfer_coefficient.setlb(0)
         salt_hxc.overall_heat_transfer_coefficient.setub(10000)
         salt_hxc.area.setlb(0)
-        salt_hxc.area.setub(5000)  # TODO: Check this value
+        salt_hxc.area.setub(6000)  # 5000
         salt_hxc.costing.pressure_factor.setlb(0)  # no unit
-        salt_hxc.costing.pressure_factor.setub(1e5)  # no unit
+        salt_hxc.costing.pressure_factor.setub(1000)  # no unit
         salt_hxc.costing.purchase_cost.setlb(0)  # no unit
         salt_hxc.costing.purchase_cost.setub(1e7)  # no unit
         salt_hxc.costing.base_cost_per_unit.setlb(0)
         salt_hxc.costing.base_cost_per_unit.setub(1e6)
         salt_hxc.costing.material_factor.setlb(0)
         salt_hxc.costing.material_factor.setub(10)
-        salt_hxc.delta_temperature_in.setlb(10)  # K
-        salt_hxc.delta_temperature_out.setlb(10)  # K
+        # salt_hxc.delta_temperature_in.setlb(10)  # K
+        # salt_hxc.delta_temperature_out.setlb(10)  # K
+
+    # Testing for NS
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(10)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(9.4)
+
+    # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(353)
+    # m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(353)
+
     # Works for 150MW
+
     m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(81.5)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(80)
-    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(81)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(81)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setlb(10)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(80.5)
+    m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setlb(9)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(81.5)
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
@@ -2857,11 +2869,11 @@ def add_bounds(m):
         oil_hxc.overall_heat_transfer_coefficient.setlb(0)
         oil_hxc.overall_heat_transfer_coefficient.setub(10000)
         oil_hxc.area.setlb(0)
-        oil_hxc.area.setub(8000)  # TODO: Check this value
-        oil_hxc.delta_temperature_in.setlb(10)
-        oil_hxc.delta_temperature_in.setub(555)
+        oil_hxc.area.setub(5000)  # TODO: Check this value
+        # oil_hxc.delta_temperature_in.setlb(10)
+        # oil_hxc.delta_temperature_in.setub(555)
         oil_hxc.delta_temperature_out.setlb(9)
-        oil_hxc.delta_temperature_out.setub(224)
+        oil_hxc.delta_temperature_out.setub(251) # 224
         #-------- modified by esrawli
         # Add calculated bounds
         oil_hxc.tube.properties_in[:].enthalpy_mass.setlb(m.fs.charge.thermal_oil_enthalpy_mass_min / m.factor)
@@ -2990,10 +3002,11 @@ def main(m_usc):
 
     # Add cost correlations
     build_costing(m, solver=solver)
+    print('DOF after costing: ', degrees_of_freedom(m))
 
     # Add bounds
     add_bounds(m)
-
+    print('DOF after bounds: ', degrees_of_freedom(m))
     # Add disjunctions
     add_disjunction(m)
 
@@ -3065,8 +3078,8 @@ def print_model(nlp_model, nlp_data):
                   delta_temperature_out[0])))
         print('        Heat exchanger area (m): {:.4f}'.format(
             value(nlp_model.fs.charge.solar_salt_disjunct.hxc.area)))
-        nlp_model.fs.charge.solar_salt_disjunct.hxc.display()
-        nlp_model.fs.charge.solar_salt_disjunct.hxc.report()
+        # nlp_model.fs.charge.solar_salt_disjunct.hxc.display()
+        # nlp_model.fs.charge.solar_salt_disjunct.hxc.report()
     elif nlp_model.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: Hitec salt is selected')
         print('        Delta temperature at inlet (K): {:.4f}'.format(
@@ -3077,8 +3090,8 @@ def print_model(nlp_model, nlp_data):
                   delta_temperature_out[0])))
         print('        Heat exchanger area (m): {:.4f}'.format(
             value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.area)))
-        nlp_model.fs.charge.hitec_salt_disjunct.hxc.display()
-        nlp_model.fs.charge.hitec_salt_disjunct.hxc.report()
+        # nlp_model.fs.charge.hitec_salt_disjunct.hxc.display()
+        # nlp_model.fs.charge.hitec_salt_disjunct.hxc.report()
     else:
         print('        Disjunction 1: Thermal oil is selected')
         print('        Delta temperature at inlet (K): {:.4f}'.format(
@@ -3089,8 +3102,8 @@ def print_model(nlp_model, nlp_data):
                   delta_temperature_out[0])))
         print('        Heat exchanger area (m): {:.4f}'.format(
             value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.area)))
-        nlp_model.fs.charge.thermal_oil_disjunct.hxc.display()
-        nlp_model.fs.charge.thermal_oil_disjunct.hxc.report()
+        # nlp_model.fs.charge.thermal_oil_disjunct.hxc.display()
+        # nlp_model.fs.charge.thermal_oil_disjunct.hxc.report()
 
     if nlp_model.fs.charge.vhp_source_disjunct.indicator_var.value == 1:
         print('        Disjunction 2: VHP source is selected')
@@ -3122,8 +3135,8 @@ def run_gdp(m):
     # opt.CONFIG.OA_penalty_factor = 1e4
     # opt.CONFIG.max_slack = 1e4
     opt.CONFIG.call_after_subproblem_solve = print_model
-    # opt.CONFIG.mip_solver = 'glpk'
-    opt.CONFIG.mip_solver = 'gurobi_direct'
+    opt.CONFIG.mip_solver = 'glpk'
+    # opt.CONFIG.mip_solver = 'gurobi_direct'
     opt.CONFIG.nlp_solver = 'ipopt'
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
@@ -3297,7 +3310,7 @@ def print_results(m, results):
                   delta_temperature_out[0])))
         print('Oil density: {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.
-                  tube.properties_in[0].density)))
+                  tube.properties_in[0].density["Liq"])))
         print('HXC heat duty: {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0]) * 1e-6))
     print('')
@@ -3331,13 +3344,13 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver, heat_duty=None):
+def model_analysis(m, solver, heat_duty=None, fluid=None, source=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
 
     # Fix variables in the flowsheet
-    m.fs.plant_power_out.fix(400)
+    m.fs.plant_power_out.fix(436)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
     #-------- modified by esrawli
     m.fs.charge.solar_salt_disjunct.hxc.heat_duty.fix(heat_duty*1e6)  # in W
@@ -3391,12 +3404,11 @@ def model_analysis(m, solver, heat_duty=None):
 
     print('DOF before solution = ', degrees_of_freedom(m))
 
-    # Solve the design optimization model
+    # # Solve the design optimization model
     # results = run_nlps(m,
     #                    solver=solver,
-    #                    # fluid="solar_salt",
-    #                    fluid="thermal_oil",
-    #                    source="vhp")
+    #                    fluid=fluid,
+    #                    source=source)
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
@@ -3416,11 +3428,30 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
+    source_data = ['hp']  # , 'hp']
+    fluid_data = ['solar_salt']
+    # fluid_data = ['solar_salt', 'hitec_salt', 'thermal_oil']
     heat_duty_data = [150]
-    for k in heat_duty_data:
-        m_usc = usc.build_plant_model()
-        usc.initialize(m_usc)
 
-        m_chg, solver = main(m_usc)
+    for i in source_data:
+        for j in fluid_data:
+            for k in heat_duty_data:
 
-        m = model_analysis(m_chg, solver, heat_duty=k)
+                print('----------------------------')
+                print('                   ')
+                print('Steam Source:', i)
+                print('Salt Type:', j)
+                print('Charge heat duty (MW):', k)
+                print('                   ')
+                print('----------------------------')
+
+                m_usc = usc.build_plant_model()
+                usc.initialize(m_usc)
+
+                m_chg, solver = main(m_usc)
+
+                m = model_analysis(m_chg,
+                                   solver,
+                                   heat_duty=k,
+                                   fluid=j,
+                                   source=i)
