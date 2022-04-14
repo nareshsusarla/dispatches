@@ -42,3 +42,5 @@ auto-save-list
 
 # log
 *.log
+
+dispatches/models/fossil_case/ultra_supercritical_plant/storage/results*
