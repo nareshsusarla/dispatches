@@ -894,8 +894,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         )
     m.fs.hx_pump.costing.CE_index = m.CE_index
 
-    # Initialize HX pump cost correlation
-    icost.initialize(m.fs.hx_pump.costing)
+    # # Initialize HX pump cost correlation
+    # icost.initialize(m.fs.hx_pump.costing)
 
     # --------------------------------------------
     #  Salt-pump costing
@@ -1230,27 +1230,27 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # --------------------------------------------
     # Capital cost var at flowsheet level to handle the salt capital
     # cost depending on the salt selected.
-    m.fs.capital_cost = Var(
-        initialize=1000000,
-        bounds=(0, 1e9),
-        doc="Annualized capital cost for solar salt")
+    # m.fs.capital_cost = Var(
+    #     initialize=1000000,
+    #     bounds=(0, 1e9),
+    #     doc="Annualized capital cost for solar salt")
 
-    # Annualize capital cost for the solar salt
-    def solar_cap_cost_rule(b):
-        return m.fs.capital_cost == (
-            m.fs.salt_purchase_cost
-            + 2*m.fs.spump_purchase_cost
-            + (
-                m.fs.hxc.costing.purchase_cost
-                + m.fs.hxd.costing.purchase_cost
-                + m.fs.hx_pump.costing.purchase_cost
-                + m.fs.no_of_tanks *
-                m.fs.solar_costing.total_tank_cost
-            )
-            / m.fs.num_of_years
-        )
-    m.fs.cap_cost_eq = Constraint(
-        rule=solar_cap_cost_rule)
+    # # Annualize capital cost for the solar salt
+    # def solar_cap_cost_rule(b):
+    #     return m.fs.capital_cost == (
+    #         m.fs.salt_purchase_cost
+    #         + 2*m.fs.spump_purchase_cost
+    #         + (
+    #             m.fs.hxc.costing.purchase_cost
+    #             + m.fs.hxd.costing.purchase_cost
+    #             + m.fs.hx_pump.costing.purchase_cost
+    #             + m.fs.no_of_tanks *
+    #             m.fs.solar_costing.total_tank_cost
+    #         )
+    #         / m.fs.num_of_years
+    #     )
+    # m.fs.cap_cost_eq = Constraint(
+    #     rule=solar_cap_cost_rule)
 
     ###########################################################################
     #  Annual operating cost
@@ -1475,11 +1475,12 @@ def add_bounds(m):
         unit_k.inlet.flow_mol.setub(0.2*m.flow_max)
         unit_k.outlet.flow_mol.setlb(0)
         unit_k.outlet.flow_mol.setub(0.2*m.flow_max)
+    # m.fs.cooler.heat_duty.setlb(-1e-8)
     m.fs.cooler.heat_duty.setub(0)
 
     # Add bounds to cost-related terms
-    m.fs.hx_pump.costing.purchase_cost.setlb(0)
-    m.fs.hx_pump.costing.purchase_cost.setub(1e7)
+    # m.fs.hx_pump.costing.purchase_cost.setlb(-1)
+    # m.fs.hx_pump.costing.purchase_cost.setub(1e7)
 
     # Add bounds needed HP splitter
     for split in [m.fs.ess_hp_split]:
@@ -1515,13 +1516,13 @@ def add_bounds(m):
         mix.outlet.flow_mol.setub(m.flow_max)
 
     for k in m.set_turbine:
-        m.fs.turbine[k].work.setlb(-1e10)
+        m.fs.turbine[k].work.setlb(-1e9)
         m.fs.turbine[k].work.setub(0)
     m.fs.hx_pump.control_volume.work[0].setlb(0)
-    m.fs.hx_pump.control_volume.work[0].setub(1e10)
+    m.fs.hx_pump.control_volume.work[0].setub(1e9)
 
-    m.fs.plant_power_out[0].setlb(300)
-    m.fs.plant_power_out[0].setub(700)
+    # m.fs.plant_power_out[0].setlb(300)
+    # m.fs.plant_power_out[0].setub(700)
 
     for unit_k in [m.fs.booster]:
         unit_k.inlet.flow_mol[:].setlb(0)  # mol/s
@@ -1738,20 +1739,22 @@ def model_analysis(m, solver, cycle=None):
 
     if cycle == "charge":
         m.fs.if_charge.value = 1
-        m.fs.hxc.heat_duty.fix(150*1e6)  # in W
+        m.fs.hxc.heat_duty.fix(0.5*1e6)  # in W
         m.fs.hxd.heat_duty.fix(0.1*1e6)  # in W
         m.fs.hxd.area.unfix()
         # m.fs.hxd.area.fix(0.01)
         print('DOF before unfix = ', degrees_of_freedom(m))
 
-        m.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
+        m.fs.ess_hp_split.split_fraction[0, "to_hxc"].fix(0.001)
         m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].fix(0.001)  # 0.1
         m.fs.hxd.inlet_1.flow_mass.fix(1)
+        m.fs.hxc.inlet_2.flow_mass.fix(1)
 
-        m.fs.previous_salt_inventory[0].fix(10)
+        # m.fs.cooler.heat_duty[0].fix(-1e4)  # 1 DOF
+        m.fs.previous_salt_inventory[0].fix(10000)
         for salt_hxc in [m.fs.hxc]:
             salt_hxc.inlet_1.unfix()
-            salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
+            # salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
             salt_hxc.area.unfix()  # 1 DOF
 
     elif cycle == "discharge":
@@ -1810,8 +1813,9 @@ def model_analysis(m, solver, cycle=None):
     m.obj = Objective(
         expr=(
             m.fs.revenue
-            - ((m.fs.capital_cost
-                + m.fs.operating_cost
+            - ((
+                # 0*m.fs.capital_cost +
+                m.fs.operating_cost
                 + m.fs.plant_capital_cost
                 + m.fs.plant_fixed_operating_cost
                 + m.fs.plant_variable_operating_cost) / (365 * 24))
@@ -1846,7 +1850,7 @@ if __name__ == "__main__":
 
     optarg = {
         "max_iter": 300,
-        # "halt_on_ampl_error": "yes",
+        "halt_on_ampl_error": "yes",
     }
     solver = get_solver('ipopt', optarg)
 
@@ -1862,8 +1866,8 @@ if __name__ == "__main__":
         initialize=80,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(120)  # 80
-    m_chg.cycle = 'discharge'
+    m_chg.fs.lmp[0].fix(80)  # 80
+    m_chg.cycle = 'charge'
     m = model_analysis(m_chg,
                        solver,
                        cycle=m_chg.cycle)
