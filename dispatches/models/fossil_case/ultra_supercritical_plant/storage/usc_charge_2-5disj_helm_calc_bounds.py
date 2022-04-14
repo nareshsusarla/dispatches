@@ -93,7 +93,7 @@ from pyomo.util.infeasible import (log_infeasible_constraints,
                                     log_close_to_bounds)
 import solarsalt_properties
 import hitecsalt_properties
-import thermal_oil
+import thermal_oil_updated
 
 from pyomo.network.plugins import expand_arcs
 
@@ -111,7 +111,7 @@ def create_charge_model(m):
     # Add molten salt properties (Solar and Hitec salt)
     m.fs.solar_salt_properties = solarsalt_properties.SolarsaltParameterBlock()
     m.fs.hitec_salt_properties = hitecsalt_properties.HitecsaltParameterBlock()
-    m.fs.therminol66_properties = thermal_oil.ThermalOilParameterBlock()
+    m.fs.therminol66_properties = thermal_oil_updated.ThermalOilParameterBlock()
 
     ###########################################################################
     #  Add hp and ip splitters                                                #
@@ -3415,17 +3415,17 @@ def model_analysis(m, solver, heat_duty=None):
     print('DOF before solution = ', degrees_of_freedom(m))
 
     # Solve the design optimization model
-    # results = run_nlps(m,
-    #                    solver=solver,
-    #                    # fluid="solar_salt",
-    #                    fluid="thermal_oil",
-    #                    source="vhp")
+    results = run_nlps(m,
+                        solver=solver,
+                        # fluid="solar_salt",
+                        fluid="thermal_oil",
+                        source="vhp")
 
     # m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
     # m.fs.charge.thermal_oil_disjunct.indicator_var.fix(1)
 
-    results = run_gdp(m)
+    # results = run_gdp(m)
 
     print_results(m, results)
     # print_reports(m)
