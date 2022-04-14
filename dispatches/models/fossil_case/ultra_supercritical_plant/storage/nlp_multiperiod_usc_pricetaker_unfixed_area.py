@@ -16,7 +16,7 @@ import copy
 # from random import random
 from idaes.core.util.model_statistics import degrees_of_freedom
 
-import usc_storage_nlp_mp_cost as usc
+import usc_storage_nlp_mp_unfixed_area as usc
 
 
 # For plots
