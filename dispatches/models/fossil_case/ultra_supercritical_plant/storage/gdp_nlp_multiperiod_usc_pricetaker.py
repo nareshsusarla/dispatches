@@ -465,7 +465,8 @@ def _mkdir(dir):
         print('Directory {} not created'.format(dir))
         pass
 
-_mkdir('results_gdp_nlp_mp_{}h'.format(number_hours))
+_mkdir('results')
+_mkdir('results/gdp_nlp_mp_{}h'.format(number_hours))
 
 def print_model(mdl, mdl_data, csvfile):
     
@@ -491,6 +492,7 @@ def print_model(mdl, mdl_data, csvfile):
         if mdl.blocks[blk].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var.value == 1:
             print('         Period {}: No storage'.format(blk))
 
+    print()
     for blk in mdl.blocks:
         print('       Time period {} '.format(blk+1))
         print('        Charge: {}'.format(
@@ -636,7 +638,7 @@ def print_model(mdl, mdl_data, csvfile):
     ax2.tick_params(axis='y',
                     labelcolor=color[2])
     plt.savefig(
-        'results_gdp_nlp_mp_{}h/salt_tank_level_master_iter{}.png'.
+        'results/gdp_nlp_mp_{}h/salt_tank_level_master_iter{}.png'.
         format(number_hours, mdl_data.master_iteration))
     plt.close(fig1)
 
@@ -645,7 +647,7 @@ def print_model(mdl, mdl_data, csvfile):
 
 
 def create_csv_header():
-    csvfile = open('results_gdp_nlp_mp_{}h/results_subnlps__master_iterations.csv'.format(number_hours),
+    csvfile = open('results/gdp_nlp_mp_{}h/results_subnlps__master_iterations.csv'.format(number_hours),
                    'w', newline='')
     writer = csv.writer(csvfile)
     writer.writerow(
@@ -903,7 +905,7 @@ ax2.step([x + 1 for x in hours], lmp_array,
          color=color[2])
 ax2.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('results_gdp_nlp_mp_{}h/optimal_salt_tank_level.png'.format(number_hours))
+plt.savefig('results/gdp_nlp_mp_{}h/optimal_salt_tank_level.png'.format(number_hours))
 
 
 font = {'size':18}
@@ -946,7 +948,7 @@ ax4.step([x + 1 for x in hours], lmp_array,
          color=color[2])
 ax4.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('results_gdp_nlp_mp_{}h/optimal_power.png'.format(number_hours))
+plt.savefig('results/gdp_nlp_mp_{}h/optimal_power.png'.format(number_hours))
 
 
 zero_point = True
@@ -1002,7 +1004,7 @@ ax6.step([x + 1 for x in hours], lmp_array,
          ls='-', color=color[2])
 ax6.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('results_gdp_nlp_mp_{}h/optimal_hxduty.png'.format(number_hours))
+plt.savefig('results/gdp_nlp_mp_{}h/optimal_hxduty.png'.format(number_hours))
 
 zero_point = True
 boiler_heat_duty_array = np.asarray(boiler_heat_duty[0:n_weeks_to_plot]).flatten()
@@ -1048,7 +1050,7 @@ ax8.step([x + 1 for x in hours], lmp_array,
          ls='-', color=color[2])
 ax8.tick_params(axis='y',
                 labelcolor=color[2])
-plt.savefig('results_gdp_nlp_mp_{}h/optimal_boilerduty.png'.format(number_hours))
+plt.savefig('results/gdp_nlp_mp_{}h/optimal_boilerduty.png'.format(number_hours))
 
 
 plt.show()
