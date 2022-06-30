@@ -187,120 +187,119 @@ def create_gdp_model(m,
 
 def add_data(m):
 
+    # Add global data
+    m.hxc_area = design_data_dict["hxc_area"] # in MW
+    m.hxd_area = design_data_dict["hxd_area"] # in MW
+    m.min_power = design_data_dict["plant_min_power"] # in MW
+    m.ramp_rate = design_data_dict["ramp_rate"]
+    m.min_power_storage = design_data_dict["min_discharge_turbine_power"] # in MW
+    m.max_power_storage = design_data_dict["max_discharge_turbine_power"] # in MW
+    m.hot_salt_temp = design_data_dict["max_solar_salt_temperature"] # in K
+    m.min_area = design_data_dict["min_storage_area_design"] # in MW
+    m.max_area = design_data_dict["max_storage_area_design"] # in MW
+    m.cold_salt_temp = design_data_dict["cold_salt_temperature"] # in K
+    m.min_storage_heat_duty = design_data_dict["min_storage_heat_duty"] # in MW
+    m.max_storage_heat_duty = design_data_dict["max_storage_heat_duty"] # in MW
+    m.min_salt_temp = design_data_dict["min_solar_salt_temperature"] # in K
+    m.max_salt_temp = design_data_dict["max_solar_salt_temperature"] # in K
+    m.max_salt_flow = design_data_dict["max_salt_flow"] # in kg/s
+    m.factor_mton = design_data_dict["factor_mton"] # factor to convert kg to metric ton
+    m.max_salt_amount = design_data_dict["max_salt_amount"] * m.factor_mton # in mton
+    m.storage_nhours_per_day = design_data_dict["storage_number_hours_per_day"]
+    m.number_of_years = design_data_dict["number_of_years"]
 
-        m.hxc_area = design_data_dict["hxc_area"] # in MW
-        m.hxd_area = design_data_dict["hxd_area"] # in MW
-        m.min_power = design_data_dict["plant_min_power"] # in MW
-        m.ramp_rate = design_data_dict["ramp_rate"]
-        m.min_power_storage = design_data_dict["min_discharge_turbine_power"] # in MW
-        m.max_power_storage = design_data_dict["max_discharge_turbine_power"] # in MW
-        m.max_salt_amount = design_data_dict["max_storage_salt_amount"] # in kg
-        m.hot_salt_temp = design_data_dict["max_solar_salt_temperature"] # in K
-        m.min_area = design_data_dict["min_storage_area_design"] # in MW
-        m.max_area = design_data_dict["max_storage_area_design"] # in MW
-        m.cold_salt_temp = design_data_dict["cold_salt_temperature"] # in K
-        m.min_storage_heat_duty = design_data_dict["min_storage_heat_duty"] # in MW
-        m.max_storage_heat_duty = design_data_dict["max_storage_heat_duty"] # in MW
-        m.min_salt_temp = design_data_dict["min_solar_salt_temperature"] # in K
-        m.max_salt_temp = design_data_dict["max_solar_salt_temperature"] # in K
-        m.max_salt_amount = design_data_dict["max_storage_salt_amount"] * 1e-3 # in mton
+    # Add initial values
+    m.hxc_area_init = m.hxc_area
+    m.hxd_area_init = m.hxd_area
+    m.hot_salt_temp_init = design_data_dict["hot_salt_temperature"] # in K
 
-        # Add initial values
-        m.hxc_area_init = m.hxc_area
-        m.hxd_area_init = m.hxd_area
-        m.hot_salt_temp_init = design_data_dict["hot_salt_temperature"] # in K
+    # Chemical engineering cost index for 2019
+    m.CE_index = 607.5
 
-        m.scaling_obj = 1e-4
+    # Define the number of hours per day to operate the storage system
+    # and the number of years over which the capital costs are
+    # annualized
+    m.fs.hours_per_day = pyo.Param(
+        initialize=m.storage_nhours_per_day,
+        doc='Estimated number of hours of charging per day'
+    )
+    m.fs.num_of_years = pyo.Param(
+        initialize=m.number_of_years,
+        doc='Number of years for capital cost annualization')
 
-        # Global data
-        m.max_salt_flow = 500  # in kg/s
+    # Define the data for the design of the storage heat
+    # exchangers. The design is: Shell-n-tube counter-flow heat
+    # exchanger design parameters. Data to compute overall heat
+    # transfer coefficient for the charge heat exchanger using the
+    # Sieder-Tate Correlation. Parameters for tube diameter and
+    # thickness assumed from the data in (2017) He et al., Energy
+    # Procedia 105, 980-985
+    m.fs.data_storage_hx = {
+        'tube_inner_dia': 0.032,
+        'tube_outer_dia': 0.036,
+        'k_steel': 21.5,
+        'number_tubes': 20,
+        'shell_inner_dia': 1
+    }
 
-        # Chemical engineering cost index for 2019
-        m.CE_index = 607.5
+    m.fs.tube_inner_dia = pyo.Param(
+        initialize=m.fs.data_storage_hx['tube_inner_dia'],
+        units=pyunits.m,
+        doc='Tube inner diameter in m')
+    m.fs.tube_outer_dia = pyo.Param(
+        initialize=m.fs.data_storage_hx['tube_outer_dia'],
+        units=pyunits.m,
+        doc='Tube outer diameter m')
+    m.fs.k_steel = pyo.Param(
+        initialize=m.fs.data_storage_hx['k_steel'],
+        units=pyunits.W / (pyunits.m * pyunits.K),
+        doc='Thermal conductivity of steel in W/m.K')
+    m.fs.n_tubes = pyo.Param(
+        initialize=m.fs.data_storage_hx['number_tubes'],
+        doc='Number of tubes')
+    m.fs.shell_inner_dia = pyo.Param(
+        initialize=m.fs.data_storage_hx['shell_inner_dia'],
+        units=pyunits.m,
+        doc='Shell inner diameter in m')
 
-        #  Operating hours
-        m.number_hours_per_day = 24
-        m.number_of_years = 30
+    # Calculate sectional area of storage heat exchangers
+    m.fs.tube_cs_area = pyo.Expression(
+        expr=(pi / 4) *
+        (m.fs.tube_inner_dia ** 2),
+        doc="Tube cross sectional area in m2")
+    m.fs.tube_out_area = pyo.Expression(
+        expr=(pi / 4) *
+        (m.fs.tube_outer_dia ** 2),
+        doc="Tube cross sectional area including thickness in m2")
+    m.fs.shell_eff_area = pyo.Expression(
+        expr=(
+            (pi / 4) *
+            (m.fs.shell_inner_dia ** 2) -
+            m.fs.n_tubes *
+            m.fs.tube_out_area),
+        doc="Effective shell cross sectional area in m2")
 
-        # Data in flowsheet
-        m.fs.hours_per_day = pyo.Var(
-            initialize=m.number_hours_per_day,
-            bounds=(0, 24),
-            doc='Estimated number of hours of charging per day'
-        )
-        # Fix number of hours
-        m.fs.hours_per_day.fix(m.number_hours_per_day)
+    # Calculate ratios for overall heat transfer coefficients
+    m.fs.tube_dia_ratio = (m.fs.tube_outer_dia / m.fs.tube_inner_dia)
+    m.fs.log_tube_dia_ratio = log(m.fs.tube_dia_ratio)
 
-        # Define number of years over which the capital cost is annualized
-        m.fs.num_of_years = pyo.Param(
-            initialize=m.number_of_years,
-            doc='Number of years for capital cost annualization')
-
-        # Design of Storage Heat Exchanger: Shell-n-tube counter-flow heat
-        # exchanger design parameters. Data to compute overall heat
-        # transfer coefficient for the charge heat exchanger using the
-        # Sieder-Tate Correlation. Parameters for tube diameter and
-        # thickness assumed from the data in (2017) He et al., Energy
-        # Procedia 105, 980-985
-        m.fs.data_storage_hx = {
-            'tube_inner_dia': 0.032,
-            'tube_outer_dia': 0.036,
-            'k_steel': 21.5,
-            'number_tubes': 20,
-            'shell_inner_dia': 1
-        }
-
-        m.fs.tube_inner_dia = pyo.Param(
-            initialize=m.fs.data_storage_hx['tube_inner_dia'],
-            doc='Tube inner diameter in m')
-        m.fs.tube_outer_dia = pyo.Param(
-            initialize=m.fs.data_storage_hx['tube_outer_dia'],
-            doc='Tube outer diameter m')
-        m.fs.k_steel = pyo.Param(
-            initialize=m.fs.data_storage_hx['k_steel'],
-            doc='Thermal conductivity of steel in W/m.K')
-        m.fs.n_tubes = pyo.Param(
-            initialize=m.fs.data_storage_hx['number_tubes'],
-            doc='Number of tubes')
-        m.fs.shell_inner_dia = pyo.Param(
-            initialize=m.fs.data_storage_hx['shell_inner_dia'],
-            doc='Shell inner diameter in m')
-        m.fs.tube_cs_area = pyo.Expression(
-            expr=(pi / 4) *
-            (m.fs.tube_inner_dia ** 2),
-            doc="Tube cross sectional area in m2")
-        m.fs.tube_out_area = pyo.Expression(
-            expr=(pi / 4) *
-            (m.fs.tube_outer_dia ** 2),
-            doc="Tube cross sectional area including thickness in m2")
-        m.fs.shell_eff_area = pyo.Expression(
-            expr=(
-                (pi / 4) *
-                (m.fs.shell_inner_dia ** 2) -
-                m.fs.n_tubes *
-                m.fs.tube_out_area),
-            doc="Effective shell cross sectional area in m2")
-
-        m.fs.tube_dia_ratio = (m.fs.tube_outer_dia / m.fs.tube_inner_dia)
-        m.fs.log_tube_dia_ratio = log(m.fs.tube_dia_ratio)
-
-        # Data for main flowsheet operation. The q baseline_charge
-        # corresponds to heat duty of a plant with no storage and
-        # producing 400 MW power
-        m.data_cost = {
-            'coal_price': 2.11e-9,
-            'cooling_price': 3.3e-9,
-            'solar_salt_price': 0.49
-        }
-        m.fs.coal_price = pyo.Param(
-            initialize=m.data_cost['coal_price'],
-            doc='Coal price based on HHV for Illinois No.6 (NETL Report) in $/J')
-        m.fs.cooling_price = pyo.Param(
-            initialize=m.data_cost['cooling_price'],
-            doc='Cost of chilled water for cooler from Sieder et al. in $/J')
-        m.fs.solar_salt_price = pyo.Param(
-            initialize=m.data_cost['solar_salt_price'],
-            doc='Solar salt price in $/kg')
+    # Data for main flowsheet operation. The q baseline_charge
+    # corresponds to heat duty of a plant with no storage and
+    # producing 400 MW power
+    m.data_cost = {
+        'coal_price': 2.11e-9,
+        'cooling_price': 3.3e-9,
+        'solar_salt_price': 0.49
+    }
+    m.fs.coal_price = pyo.Param(
+        initialize=m.data_cost['coal_price'],
+        doc='Coal price based on HHV for Illinois No.6 (NETL Report) in $/J')
+    m.fs.cooling_price = pyo.Param(
+        initialize=m.data_cost['cooling_price'],
+        doc='Cost of chilled water for cooler from Sieder et al. in $/J')
+    m.fs.solar_salt_price = pyo.Param(
+        initialize=m.data_cost['solar_salt_price'],
+        doc='Solar salt price in $/kg')
 
 
 def _make_constraints(m, method=None, max_power=None):
@@ -411,14 +410,14 @@ def no_storage_mode_disjunct_equations(disj):
 def charge_mode_disjunct_equations(disj):
     m = disj.model()
 
-    # Declare units for the charge storage system. A splitter to
+    # Declare units for the charge storage system: A splitter to
     # divert some steam from high pressure inlet and intermediate
-    # pressure inlet to charge the storage heat exchanger. To ensure
-    # the outlet of charge heat exchanger is a subcooled liquid before
-    # mixing it with the plant, a cooler is added after the heat
-    # exchanger. A pump, if needed, is used to increase the pressure of
-    # the water to allow mixing it at a desired location within the
-    # plant
+    # pressure inlet to charge the storage heat exchanger, a charge
+    # heat exchanger, a cooler, a pump, and a recycle mixer. The
+    # cooler is added to ensure that the outlet of charge heat
+    # exchanger is a subcooled liquid before mixing it with the
+    # plant. A pump is used to increase the pressure of the water to
+    # allow mixing it at a desired location within the plant
     m.fs.charge_mode_disjunct.ess_charge_split = HelmSplitter(
         default={
             "property_package": m.fs.prop_water,
@@ -462,7 +461,110 @@ def charge_mode_disjunct_equations(disj):
         }
     )
 
-    # Add constraint for the minimum pressure in recycle mixer
+    # Calculate the overall heat transfer coefficient for the Solar
+    # salt charge heat exchanger. For that, first calculate Reynolds
+    # number, Prandtl number, and Nusselt number.
+    solar_hxc = m.fs.charge_mode_disjunct.hxc
+    solar_hxc.salt_reynolds_number = pyo.Expression(
+        expr=(
+            (solar_hxc.inlet_2.flow_mass[0] *
+             m.fs.tube_outer_dia) /
+            (m.fs.shell_eff_area *
+             solar_hxc.side_2.properties_in[0].dynamic_viscosity["Liq"])
+        ),
+        doc="Salt Reynolds Number")
+    solar_hxc.salt_prandtl_number = pyo.Expression(
+        expr=(
+            solar_hxc.side_2.properties_in[0].cp_specific_heat["Liq"] *
+            solar_hxc.side_2.properties_in[0].dynamic_viscosity["Liq"] /
+            solar_hxc.side_2.properties_in[0].thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number")
+    solar_hxc.salt_prandtl_wall = pyo.Expression(
+        expr=(
+            solar_hxc.side_2.properties_out[0].cp_specific_heat["Liq"] *
+            solar_hxc.side_2.properties_out[0].dynamic_viscosity["Liq"] /
+            solar_hxc.side_2.properties_out[0].thermal_conductivity["Liq"]
+        ),
+        doc="Salt Prandtl Number at wall")
+    solar_hxc.salt_nusselt_number = pyo.Expression(
+        expr=(
+            0.35 *
+            (solar_hxc.salt_reynolds_number**0.6) *
+            (solar_hxc.salt_prandtl_number**0.4) *
+            ((solar_hxc.salt_prandtl_number /
+              solar_hxc.salt_prandtl_wall) ** 0.25) *
+            (2**0.2)
+        ),
+        doc="Salt Nusslet Number from 2019, App Ener (233-234), 126")
+    solar_hxc.steam_reynolds_number = pyo.Expression(
+        expr=(
+            solar_hxc.inlet_1.flow_mol[0] *
+            solar_hxc.side_1.properties_in[0].mw *
+            m.fs.tube_inner_dia /
+            (m.fs.tube_cs_area *
+             m.fs.n_tubes *
+             solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"])
+        ),
+        doc="Steam Reynolds Number")
+    solar_hxc.steam_prandtl_number = pyo.Expression(
+        expr=(
+            (solar_hxc.side_1.properties_in[0].cp_mol /
+             solar_hxc.side_1.properties_in[0].mw) *
+            solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
+            solar_hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
+        ),
+        doc="Steam Prandtl Number")
+    solar_hxc.steam_nusselt_number = pyo.Expression(
+        expr=(
+            0.023 *
+            (solar_hxc.steam_reynolds_number**0.8) *
+            (solar_hxc.steam_prandtl_number**(0.33)) *
+            ((solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
+              solar_hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
+        ),
+        doc="Steam Nusslet Number from 2001 Zavoico, Sandia")
+
+    # Calculate heat transfer coefficients for the salt and steam
+    # sides of charge heat exchanger
+    solar_hxc.h_salt = pyo.Expression(
+        expr=(
+            solar_hxc.side_2.properties_in[0].thermal_conductivity["Liq"] *
+            solar_hxc.salt_nusselt_number /
+            m.fs.tube_outer_dia
+        ),
+        doc="Salt side convective heat transfer coefficient [W/mK]")
+    solar_hxc.h_steam = pyo.Expression(
+        expr=(
+            solar_hxc.side_1.properties_in[0].therm_cond_phase["Vap"] *
+            solar_hxc.steam_nusselt_number /
+            m.fs.tube_inner_dia
+        ),
+        doc="Steam side convective heat transfer coefficient [W/mK]")
+
+    # Calculate overall heat transfer coefficient for Solar salt
+    # charge heat exchanger
+    @m.fs.charge_mode_disjunct.hxc.Constraint(
+        doc="Solar salt charge heat exchanger overall heat transfer coefficient")
+    def constraint_hxc_ohtc(b):
+        return (
+            solar_hxc.overall_heat_transfer_coefficient[0] *
+            (2 * m.fs.k_steel *
+             solar_hxc.h_steam +
+             m.fs.tube_outer_dia *
+             m.fs.log_tube_dia_ratio *
+             solar_hxc.h_salt *
+             solar_hxc.h_steam +
+             m.fs.tube_dia_ratio *
+             solar_hxc.h_salt *
+             2 * m.fs.k_steel)
+        ) == (2 * m.fs.k_steel *
+              solar_hxc.h_salt *
+              solar_hxc.h_steam)
+
+
+    # Add constraint to ensure that the recyle mixer outlet is at the
+    # minimum pressure
     m.fs.charge_mode_disjunct.recyclemixer_pressure_constraint = pyo.Constraint(
         expr=m.fs.charge_mode_disjunct.recycle_mixer.from_bfw_out_state[0].pressure ==
         m.fs.charge_mode_disjunct.recycle_mixer.mixed_state[0].pressure,
@@ -485,105 +587,9 @@ def charge_mode_disjunct_equations(disj):
         doc="Cooler outlet temperature to be subcooled"
     )
 
-    # Equations to calculate the charge heat exchanger overall heat
-    # transfer coefficient
-    m.fs.charge_mode_disjunct.hxc.salt_reynolds_number = pyo.Expression(
-        expr=(
-            (m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0] *
-             m.fs.tube_outer_dia) /
-            (m.fs.shell_eff_area *
-             m.fs.charge_mode_disjunct.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"])
-        ),
-        doc="Salt Reynolds Number")
-    m.fs.charge_mode_disjunct.hxc.salt_prandtl_number = pyo.Expression(
-        expr=(
-            m.fs.charge_mode_disjunct.hxc.side_2.properties_in[0].cp_specific_heat["Liq"] *
-            m.fs.charge_mode_disjunct.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"] /
-            m.fs.charge_mode_disjunct.hxc.side_2.properties_in[0].thermal_conductivity["Liq"]
-        ),
-        doc="Salt Prandtl Number")
-    m.fs.charge_mode_disjunct.hxc.salt_prandtl_wall = pyo.Expression(
-        expr=(
-            m.fs.charge_mode_disjunct.hxc.side_2.properties_out[0].cp_specific_heat["Liq"] *
-            m.fs.charge_mode_disjunct.hxc.side_2.properties_out[0].dynamic_viscosity["Liq"] /
-            m.fs.charge_mode_disjunct.hxc.side_2.properties_out[0].thermal_conductivity["Liq"]
-        ),
-        doc="Salt Prandtl Number at wall")
-    m.fs.charge_mode_disjunct.hxc.salt_nusselt_number = pyo.Expression(
-        expr=(
-            0.35 *
-            (m.fs.charge_mode_disjunct.hxc.salt_reynolds_number**0.6) *
-            (m.fs.charge_mode_disjunct.hxc.salt_prandtl_number**0.4) *
-            ((m.fs.charge_mode_disjunct.hxc.salt_prandtl_number /
-              m.fs.charge_mode_disjunct.hxc.salt_prandtl_wall) ** 0.25) *
-            (2**0.2)
-        ),
-        doc="Salt Nusslet Number from 2019, App Ener (233-234), 126")
-    m.fs.charge_mode_disjunct.hxc.steam_reynolds_number = pyo.Expression(
-        expr=(
-            m.fs.charge_mode_disjunct.hxc.inlet_1.flow_mol[0] *
-            m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].mw *
-            m.fs.tube_inner_dia /
-            (m.fs.tube_cs_area *
-             m.fs.n_tubes *
-             m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].visc_d_phase["Vap"])
-        ),
-        doc="Steam Reynolds Number")
-    m.fs.charge_mode_disjunct.hxc.steam_prandtl_number = pyo.Expression(
-        expr=(
-            (m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].cp_mol /
-             m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].mw) *
-            m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
-            m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
-        ),
-        doc="Steam Prandtl Number")
-    m.fs.charge_mode_disjunct.hxc.steam_nusselt_number = pyo.Expression(
-        expr=(
-            0.023 *
-            (m.fs.charge_mode_disjunct.hxc.steam_reynolds_number**0.8) *
-            (m.fs.charge_mode_disjunct.hxc.steam_prandtl_number**(0.33)) *
-            ((m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
-              m.fs.charge_mode_disjunct.hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
-        ),
-        doc="Steam Nusslet Number from 2001 Zavoico, Sandia")
 
-    # Calculate heat transfer coefficients for the salt and steam
-    # sides of charge heat exchanger
-    m.fs.charge_mode_disjunct.hxc.h_salt = pyo.Expression(
-        expr=(
-            m.fs.charge_mode_disjunct.hxc.side_2.properties_in[0].thermal_conductivity["Liq"] *
-            m.fs.charge_mode_disjunct.hxc.salt_nusselt_number /
-            m.fs.tube_outer_dia
-        ),
-        doc="Salt side convective heat transfer coefficient [W/mK]")
-    m.fs.charge_mode_disjunct.hxc.h_steam = pyo.Expression(
-        expr=(
-            m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].therm_cond_phase["Vap"] *
-            m.fs.charge_mode_disjunct.hxc.steam_nusselt_number /
-            m.fs.tube_inner_dia
-        ),
-        doc="Steam side convective heat transfer coefficient [W/mK]")
-
-    # Rewrite overall heat transfer coefficient constraint to avoid
-    # denominators
-    m.fs.charge_mode_disjunct.constraint_hxc_ohtc = pyo.Constraint(
-        expr=(
-            m.fs.charge_mode_disjunct.hxc.overall_heat_transfer_coefficient[0] *
-            (2 * m.fs.k_steel *
-             m.fs.charge_mode_disjunct.hxc.h_steam +
-             m.fs.tube_outer_dia *
-             m.fs.log_tube_dia_ratio *
-             m.fs.charge_mode_disjunct.hxc.h_salt *
-             m.fs.charge_mode_disjunct.hxc.h_steam +
-             m.fs.tube_dia_ratio *
-             m.fs.charge_mode_disjunct.hxc.h_salt *
-             2 * m.fs.k_steel)
-        ) == (2 * m.fs.k_steel *
-              m.fs.charge_mode_disjunct.hxc.h_salt *
-              m.fs.charge_mode_disjunct.hxc.h_steam)
-    )
-
-    # Declare arcs to connect storage charge system to the plant
+    # Declare arcs within the disjunct to connect the charge storage
+    # system to the plant
     m.fs.charge_mode_disjunct.rh1_to_esscharg = Arc(
         source=m.fs.reheater[1].outlet,
         destination=m.fs.charge_mode_disjunct.ess_charge_split.inlet,
@@ -664,14 +670,16 @@ def charge_mode_disjunct_equations(disj):
 def discharge_mode_disjunct_equations(disj):
     m = disj.model()
 
+    # Declare units for the discharge storage system: A splitter to
+    # divert some condensate from the feed water heater train to be
+    # heated up in the discharge heat exchanger, a discharge heat
+    # exchanger, and a turbine to produce extra energy.
     m.fs.discharge_mode_disjunct.ess_discharge_split = HelmSplitter(
         default={
             "property_package": m.fs.prop_water,
             "outlet_list": ["to_hxd", "to_fwh8"],
         }
     )
-
-    # Add discharge heat exchanger
     m.fs.discharge_mode_disjunct.hxd = HeatExchanger(
         default={
             "delta_temperature_callback": delta_temperature_underwood_callback,
@@ -683,116 +691,117 @@ def discharge_mode_disjunct_equations(disj):
             }
         }
     )
+    m.fs.discharge_mode_disjunct.es_turbine = HelmTurbineStage(
+        default={
+            "property_package": m.fs.prop_water,
+        }
+    )
 
-    # Discharge heat exchanger salt and steam side constraints to
-    # calculate Reynolds number, Prandtl number, and Nusselt number
-    m.fs.discharge_mode_disjunct.hxd.salt_reynolds_number = pyo.Expression(
+
+    # Calculate the overall heat transfer coefficient for the Solar
+    # salt charge heat exchanger. For that, first calculate Reynolds
+    # number, Prandtl number, and Nusselt number.
+    solar_hxd = m.fs.discharge_mode_disjunct.hxd
+    solar_hxd.salt_reynolds_number = pyo.Expression(
         expr=(
-            m.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass[0]
-            * m.fs.tube_outer_dia
-            / (m.fs.shell_eff_area
-               * m.fs.discharge_mode_disjunct.hxd.side_1.properties_in[0].dynamic_viscosity["Liq"])
+            solar_hxd.inlet_1.flow_mass[0] *
+            m.fs.tube_outer_dia /
+            (m.fs.shell_eff_area *
+             solar_hxd.side_1.properties_in[0].dynamic_viscosity["Liq"])
         ),
         doc="Salt Reynolds Number"
     )
-    m.fs.discharge_mode_disjunct.hxd.salt_prandtl_number = pyo.Expression(
+    solar_hxd.salt_prandtl_number = pyo.Expression(
         expr=(
-            m.fs.discharge_mode_disjunct.hxd.side_1.properties_in[0].cp_specific_heat["Liq"]
-            * m.fs.discharge_mode_disjunct.hxd.side_1.properties_in[0].dynamic_viscosity["Liq"]
-            / m.fs.discharge_mode_disjunct.hxd.side_1.properties_in[0].thermal_conductivity["Liq"]
+            solar_hxd.side_1.properties_in[0].cp_specific_heat["Liq"] *
+            solar_hxd.side_1.properties_in[0].dynamic_viscosity["Liq"] /
+            solar_hxd.side_1.properties_in[0].thermal_conductivity["Liq"]
         ),
         doc="Salt Prandtl Number"
     )
     # Assuming that the wall conditions are same as those at the outlet
-    m.fs.discharge_mode_disjunct.hxd.salt_prandtl_wall = pyo.Expression(
+    solar_hxd.salt_prandtl_wall = pyo.Expression(
         expr=(
-            m.fs.discharge_mode_disjunct.hxd.side_1.properties_out[0].cp_specific_heat["Liq"]
-            * m.fs.discharge_mode_disjunct.hxd.side_1.properties_out[0].dynamic_viscosity["Liq"]
-            / m.fs.discharge_mode_disjunct.hxd.side_1.properties_out[0].thermal_conductivity["Liq"]
+            solar_hxd.side_1.properties_out[0].cp_specific_heat["Liq"] *
+            solar_hxd.side_1.properties_out[0].dynamic_viscosity["Liq"] /
+            solar_hxd.side_1.properties_out[0].thermal_conductivity["Liq"]
         ),
         doc="Wall Salt Prandtl Number"
     )
-    m.fs.discharge_mode_disjunct.hxd.salt_nusselt_number = pyo.Expression(
+    solar_hxd.salt_nusselt_number = pyo.Expression(
         expr=(
-            0.35 * (m.fs.discharge_mode_disjunct.hxd.salt_reynolds_number**0.6)
-            * (m.fs.discharge_mode_disjunct.hxd.salt_prandtl_number**0.4)
-            * ((m.fs.discharge_mode_disjunct.hxd.salt_prandtl_number
-                / m.fs.discharge_mode_disjunct.hxd.salt_prandtl_wall)**0.25)
-            * (2**0.2)
+            0.35 * (solar_hxd.salt_reynolds_number**0.6) *
+            (solar_hxd.salt_prandtl_number**0.4) *
+            ((solar_hxd.salt_prandtl_number /
+              solar_hxd.salt_prandtl_wall)**0.25) *
+            (2**0.2)
         ),
         doc="Solar Salt Nusslet Number from 2019, App Ener (233-234), 126"
     )
-    m.fs.discharge_mode_disjunct.hxd.steam_reynolds_number = pyo.Expression(
+    solar_hxd.steam_reynolds_number = pyo.Expression(
         expr=(
-            m.fs.discharge_mode_disjunct.hxd.inlet_2.flow_mol[0]
-            * m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].mw
-            * m.fs.tube_inner_dia
-            / (m.fs.tube_cs_area
-               * m.fs.n_tubes
-               * m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].visc_d_phase["Liq"])
+            solar_hxd.inlet_2.flow_mol[0] *
+            solar_hxd.side_2.properties_in[0].mw *
+            m.fs.tube_inner_dia /
+            (m.fs.tube_cs_area *
+             m.fs.n_tubes *
+             solar_hxd.side_2.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Steam Reynolds Number"
     )
-    m.fs.discharge_mode_disjunct.hxd.steam_prandtl_number = pyo.Expression(
+    solar_hxd.steam_prandtl_number = pyo.Expression(
         expr=(
-            (m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].cp_mol
-             / m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].mw)
-            * m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].visc_d_phase["Liq"]
-            / m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].therm_cond_phase["Liq"]
+            (solar_hxd.side_2.properties_in[0].cp_mol /
+             solar_hxd.side_2.properties_in[0].mw) *
+            solar_hxd.side_2.properties_in[0].visc_d_phase["Liq"] /
+            solar_hxd.side_2.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Steam Prandtl Number"
     )
-    m.fs.discharge_mode_disjunct.hxd.steam_nusselt_number = pyo.Expression(
+    solar_hxd.steam_nusselt_number = pyo.Expression(
         expr=(
-            0.023 * (m.fs.discharge_mode_disjunct.hxd.steam_reynolds_number ** 0.8)
-            * (m.fs.discharge_mode_disjunct.hxd.steam_prandtl_number ** (0.33))
-            * ((m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].visc_d_phase["Liq"]
-                / m.fs.discharge_mode_disjunct.hxd.side_2.properties_out[0].visc_d_phase["Vap"]
-                ) ** 0.14)
+            0.023 * (solar_hxd.steam_reynolds_number ** 0.8) *
+            (solar_hxd.steam_prandtl_number ** (0.33)) *
+            ((solar_hxd.side_2.properties_in[0].visc_d_phase["Liq"] /
+              solar_hxd.side_2.properties_out[0].visc_d_phase["Vap"]) ** 0.14)
         ),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
     )
 
     # Discharge heat exchanger salt and steam side heat transfer
     # coefficients
-    m.fs.discharge_mode_disjunct.hxd.h_salt = pyo.Expression(
+    solar_hxd.h_salt = pyo.Expression(
         expr=(
-            m.fs.discharge_mode_disjunct.hxd.side_1.properties_in[0].thermal_conductivity["Liq"]
-            * m.fs.discharge_mode_disjunct.hxd.salt_nusselt_number / m.fs.tube_outer_dia
+            solar_hxd.side_1.properties_in[0].thermal_conductivity["Liq"] *
+            solar_hxd.salt_nusselt_number / m.fs.tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]"
     )
-    m.fs.discharge_mode_disjunct.hxd.h_steam = pyo.Expression(
+    solar_hxd.h_steam = pyo.Expression(
         expr=(
-            m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].therm_cond_phase["Liq"]
-            * m.fs.discharge_mode_disjunct.hxd.steam_nusselt_number / m.fs.tube_inner_dia
+            solar_hxd.side_2.properties_in[0].therm_cond_phase["Liq"] *
+            solar_hxd.steam_nusselt_number / m.fs.tube_inner_dia
         ),
         doc="Steam side convective heat transfer coefficient [W/mK]"
     )
 
-    m.fs.discharge_mode_disjunct.constraint_hxd_ohtc = pyo.Constraint(
-        expr=(
-            m.fs.discharge_mode_disjunct.hxd.overall_heat_transfer_coefficient[0] *
+    @m.fs.discharge_mode_disjunct.hxd.Constraint(
+        doc="Solar salt discharge heat exchanger overall heat transfer coefficient")
+    def constraint_hxd_ohtc(b):
+        return (
+            solar_hxd.overall_heat_transfer_coefficient[0] *
             (2 * m.fs.k_steel *
-             m.fs.discharge_mode_disjunct.hxd.h_steam +
+             solar_hxd.h_steam +
              m.fs.tube_outer_dia *
              m.fs.log_tube_dia_ratio *
-             m.fs.discharge_mode_disjunct.hxd.h_salt *
-             m.fs.discharge_mode_disjunct.hxd.h_steam +
+             solar_hxd.h_salt *
+             solar_hxd.h_steam +
              m.fs.tube_dia_ratio *
-             m.fs.discharge_mode_disjunct.hxd.h_salt *
+             solar_hxd.h_salt *
              2 * m.fs.k_steel)
         ) == (2 * m.fs.k_steel *
-              m.fs.discharge_mode_disjunct.hxd.h_salt *
-              m.fs.discharge_mode_disjunct.hxd.h_steam),
-        doc="Overall heat transfer coefficient for hxd"
-    )
-
-    m.fs.discharge_mode_disjunct.es_turbine = HelmTurbineStage(
-        default={
-            "property_package": m.fs.prop_water,
-        }
-    )
+              solar_hxd.h_salt *
+              solar_hxd.h_steam)
 
     # Reconnect reheater 1 to turbine 3 since the arc was disconnected
     # in the global model
@@ -866,31 +875,33 @@ def _deactivate_arcs(m):
 
 def set_model_input(m):
     """Define model inputs and fixed variables or parameter values
+
+    The parameter values in this block, unless otherwise stated
+    explicitly, are either assumed or estimated for a total power out
+    of 437 MW.
+
+    Unless stated otherwise, the units are: temperature in K, pressure
+    in Pa, flow in mol/s, massic flow in kg/s, and heat and heat duty
+    in W
+
     """
 
-    # All the parameter values in this block, unless otherwise stated
-    # explicitly, are either assumed or estimated for a total power
-    # out of 437 MW
-
-    # These inputs will also fix all necessary inputs to the model
-    # i.e. the degrees of freedom = 0
-
     ###########################################################################
-    #  Charge Heat Exchanger section                                          #
+    #  Storage Heat Exchanger section
     ###########################################################################
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
-    m.fs.charge_mode_disjunct.hxc.area.fix(2500)  # m2
-    m.fs.discharge_mode_disjunct.hxd.area.fix(2000)  # m2
+    m.fs.charge_mode_disjunct.hxc.area.fix(2500)
+    m.fs.discharge_mode_disjunct.hxd.area.fix(2000)
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass.fix(140)   # kg/s
-    m.fs.charge_mode_disjunct.hxc.inlet_2.temperature.fix(513.15)  # K
-    m.fs.charge_mode_disjunct.hxc.inlet_2.pressure.fix(101325)  # Pa
+    m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass.fix(140)
+    m.fs.charge_mode_disjunct.hxc.inlet_2.temperature.fix(513.15)
+    m.fs.charge_mode_disjunct.hxc.inlet_2.pressure.fix(101325)
 
-    m.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass.fix(250)  # 250
+    m.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass.fix(250)
     m.fs.discharge_mode_disjunct.hxd.inlet_1.temperature.fix(853.15)
     m.fs.discharge_mode_disjunct.hxd.inlet_1.pressure.fix(101325)
 
@@ -903,19 +914,20 @@ def set_model_input(m):
 
     # HX pump efficiecncy assumption
     m.fs.charge_mode_disjunct.hx_pump.efficiency_pump.fix(0.80)
-    # m.fs.charge.hx_pump.outlet.pressure[0].fix(
-    # m.main_steam_pressure * 1.1231)
+    # m.fs.charge.hx_pump.outlet.pressure[0].fix(m.main_steam_pressure * 1.1231)
 
+    # Discharge turbine
     m.fs.discharge_mode_disjunct.es_turbine.ratioP.fix(0.0286)
     m.fs.discharge_mode_disjunct.es_turbine.efficiency_isentropic.fix(0.5)
+
     ###########################################################################
-    #  ESS VHP and HP splitters                                               #
+    #  Splitters
     ###########################################################################
-    # The model is built for a fixed flow of steam through the
-    # charger.  This flow of steam to the charger is unfixed and
-    # determine during design optimization
+    # The model is built for a fixed flow of steam through the charge
+    # and discharge heat exchanger. This flow of steam and condensate
+    # is unfixed and determined during design optimization
     m.fs.charge_mode_disjunct.ess_charge_split.split_fraction[0, "to_hxc"].fix(0.1)
-    m.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].fix(0.1)  # 0.1
+    m.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].fix(0.1)
 
     # Fix global variables
     # m.fs.hx_pump_work.fix(0)
@@ -1201,6 +1213,12 @@ def build_costing(m):
 
 
 def initialize_with_costing(m, solver=None):
+
+    optarg = {
+        "max_iter": 300,
+        # "halt_on_ampl_error": "yes",
+    }
+    solver = get_solver('ipopt', optarg)
 
     print()
     print('>> Start initialization of costing correlations')
@@ -2025,6 +2043,10 @@ def model_analysis(m,
     # Set scaling factors to variables including during model analysis
     set_scaling_var(m)
 
+    # Add scaling factor for objective function
+    m.scaling_obj = 1e-4
+
+    # Add a total cost function as the objective function
     m.obj = Objective(
         expr=(
             m.fs.revenue
