@@ -526,11 +526,10 @@ def run_pricetaker_analysis(hours_per_day=None,
     m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
 
 
-    # Initial state for linking variables: power and salt tank. Different
-    # tank scenarios are included for the moletn salt tank levels and the previous tank level of the tank is based on that.
-    blks[0].usc.previous_power.fix(400)
-
-
+    # Initial state for linking variables: power and salt
+    # tank. Different tank scenarios are included for the Solar salt
+    # tank levels and the previous tank level of the tank is based on
+    # that.
     if tank_status == "hot_empty":
         blks[0].usc.previous_salt_inventory_hot.fix(tank_min)
         blks[0].usc.previous_salt_inventory_cold.fix(tank_max-tank_min)
@@ -542,6 +541,8 @@ def run_pricetaker_analysis(hours_per_day=None,
         blks[0].usc.previous_salt_inventory_cold.fix(tank_min)
     else:
         print("Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full")
+
+    blks[0].usc.previous_power.fix(400)
 
     # Select solver
     csvfile = create_csv_header(nhours=nhours)
@@ -984,18 +985,21 @@ if __name__ == '__main__':
     save_results = True
 
     # Use GDP design for charge and discharge heat exchanger from 4-12
-    # disjunctions model when True. If False, use the GDP design from 4-5
-    # disjunctions model.
-    new_design = False
+    # disjunctions model when True. If False, use the GDP design from
+    # 4-5 disjunctions model. **Note** This should have the same value
+    # as in the GDP multiperiod model, so when changing this, the one
+    # in GDP multiperiod should be changed too.
+    new_design = True
 
     lx = True
     if lx:
+        scaling_cost = 1e-3
         # scaling_obj = 1e-2 # 12 hrs
         if new_design:
             scaling_obj = 1e-2
+            # scaling_obj = 1e-1
         else:
             scaling_obj = 1e-1
-            scaling_cost = 1e-3
     else:
         scaling_obj = 1
     print()
