@@ -39,7 +39,7 @@ __author__ = "Soraya Rawlings"
 # Use GDP design for charge and discharge heat exchanger from 4-12
 # disjunctions model when True. If False, use the GDP design from 4-5
 # disjunctions model.
-new_design = False
+new_design = True
 if new_design:
     print('>>>>> Solving for new storage design')
     import usc_storage_gdp_mp_unfixed_area_new_storage_design as usc_gdp
