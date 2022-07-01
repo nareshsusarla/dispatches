@@ -45,7 +45,7 @@ import json
 import pyomo.environ as pyo
 from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
                            NonNegativeReals, TransformationFactory, Expression,
-                           maximize, RangeSet, value, log, exp, Var, SolverFactory)
+                           maximize, RangeSet, value, log, Var, SolverFactory)
 from pyomo.gdp import Disjunct, Disjunction
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
@@ -344,7 +344,8 @@ def _make_constraints(m, method=None, max_power=None):
         )
     else:
         m.fs.coal_heat_duty_eq = pyo.Constraint(
-            expr=m.fs.coal_heat_duty == m.fs.plant_heat_duty[0]
+            expr=m.fs.coal_heat_duty ==
+            m.fs.plant_heat_duty[0]
         )
 
     m.fs.cycle_efficiency = pyo.Var(
@@ -768,8 +769,8 @@ def discharge_mode_disjunct_equations(disj):
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
     )
 
-    # Discharge heat exchanger salt and steam side heat transfer
-    # coefficients
+    # Calculate discharge heat exchanger salt and steam side heat
+    # transfer coefficients
     solar_hxd.h_salt = pyo.Expression(
         expr=(
             solar_hxd.side_1.properties_in[0].thermal_conductivity["Liq"] *
@@ -887,7 +888,7 @@ def set_model_input(m):
     """
 
     ###########################################################################
-    #  Storage Heat Exchanger section
+    #  Storage heat exchanger section
     ###########################################################################
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
@@ -939,9 +940,10 @@ def set_scaling_factors(m):
 
     """
 
-    # Include scaling factors for solar, hitec, and thermal oil charge
-    # heat exchangers
-    for fluid in [m.fs.charge_mode_disjunct.hxc, m.fs.discharge_mode_disjunct.hxd]:
+    # Include scaling factors for Solar salt charge and discharge heat
+    # exchanger.
+    for fluid in [m.fs.charge_mode_disjunct.hxc,
+                  m.fs.discharge_mode_disjunct.hxd]:
         iscale.set_scaling_factor(fluid.area, 1e-2)
         iscale.set_scaling_factor(
             fluid.overall_heat_transfer_coefficient, 1e-3)
@@ -997,7 +999,7 @@ def initialize(m,
 
     # Include scaling factors
     set_scaling_factors(m)
-    iscale.calculate_scaling_factors(m)
+    # iscale.calculate_scaling_factors(m)
 
     # Initialize all units in charge mode operation
     propagate_state(m.fs.charge_mode_disjunct.rh1_to_esscharg)
@@ -1008,7 +1010,7 @@ def initialize(m,
                                              optarg=solver.options)
 
     if not deact_arcs_after_init:
-        # Reinitialize and fix turbine 3 inlet since the arcs is
+        # Reinitialize and fix turbine 3 inlet since the arc is
         # disconnected
         propagate_state(m.fs.charge_mode_disjunct.esscharg_to_turb3)
         m.fs.turbine[3].inlet.fix()
@@ -1071,9 +1073,9 @@ def build_costing(m):
 
     This function is used to estimate the capital and operatig cost of
     integrating an thermal energy storage system. It contains cost
-    correlations to estimate: (i) capital cost of charge heat
-    exchanger, salt storage tank, molten salt pump, and salt
-    inventory and (ii) the operating costs for 1 year.
+    correlations to estimate: (i) the capital cost of charge heat
+    exchanger and salt inventory and (ii) the operating costs for 1
+    year.
 
     """
 
@@ -1087,7 +1089,7 @@ def build_costing(m):
     # Add IDAES costing method
     m.fs.costing = SSLWCosting()
 
-    ###### 1. Calculate change and discharge heat exchangers costs
+    ###### 1. Calculate charge and discharge heat exchangers costs
     # Calculate and initialize the Solar salt charge and discharge
     # heat exchangers coss, which are estimated using the IDAES
     # costing method with default options, i.e., a U-tube heat
@@ -1130,7 +1132,7 @@ def build_costing(m):
     m.fs.storage_capital_cost = pyo.Var(
         bounds=(0, 1e10),
         initialize=1000000,
-        doc="Annualized capital cost for solar salt")
+        doc="Annualized capital cost for solar salt in $/year")
 
     m.fs.no_storage_mode_disjunct.capital_cost_eq_constraint = pyo.Constraint(
         expr=m.fs.storage_capital_cost == 0
@@ -1302,7 +1304,7 @@ def add_bounds(m):
 
     m.flow_max = m.main_flow * 1.5     # Units in mol/s
     m.flow_min = 11804                 # Units in mol/s
-    m.fs.heat_duty_max = m.max_storage_heat_duty * 1e6  # in W
+    m.fs.heat_duty_max = m.max_storage_heat_duty * 1e6  # Units in W
     m.factor = 2
     m.flow_max_storage = 0.2 * m.flow_max
     m.flow_min_storage = 1e-3
@@ -1759,8 +1761,6 @@ def run_gdp(m):
     print('>>> You are solving GDP model using GDPopt')
     print('    {} DOFs before solving GDP model '.format(degrees_of_freedom(m)))
 
-        # Solve the design optimization model
-
     opt = SolverFactory('gdpopt')
     opt.CONFIG.strategy = 'RIC'
     opt.CONFIG.OA_penalty_factor = 1e4
@@ -1920,17 +1920,13 @@ def model_analysis(m,
             expr=m.fs.charge_mode_disjunct.hxc.heat_duty[0] * 1e-6 >= m.min_storage_heat_duty
         )
 
-    # Fix/unfix boiler data
+    # Fix and unfix boiler data
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
-    m.fs.boiler.inlet.flow_mol.unfix()  # mol/s
+    m.fs.boiler.inlet.flow_mol.unfix()
 
     # Unfix data fixed during initialization
     m.fs.charge_mode_disjunct.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
     m.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
-
-    # Unfix global variables
-    m.fs.hx_pump_work.unfix()
-    m.fs.discharge_turbine_work.unfix()
 
     if not deact_arcs_after_init:
         m.fs.turbine[3].inlet.unfix()
@@ -1948,46 +1944,50 @@ def model_analysis(m,
 
     for unit in [m.fs.charge_mode_disjunct.cooler]:
         unit.inlet.unfix()
-    m.fs.charge_mode_disjunct.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+    m.fs.charge_mode_disjunct.cooler.outlet.enth_mol[0].unfix()
+
+    # Unfix global variables
+    m.fs.hx_pump_work.unfix()
+    m.fs.discharge_turbine_work.unfix()
+
 
     # No fixed area
     m.fs.charge_mode_disjunct.hxc.outlet_2.temperature[0].fix(m.hot_salt_temp)
     m.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0].fix(m.hot_salt_temp)
     m.fs.discharge_mode_disjunct.hxd.outlet_1.temperature[0].fix(m.cold_salt_temp)
 
-
     # Add salt inventory variables
-    max_inventory = 1e7 * 1e-3 # in mton
+    max_inventory = 1e7 * m.factor_mton # in mton
     m.fs.previous_salt_inventory_hot = pyo.Var(
         domain=NonNegativeReals,
         bounds=(0, max_inventory),
         initialize=1,
-        doc="Hot salt inventory at the beginning of the hour (or time period), kg"
+        doc="Hot salt inventory at the beginning of time period in mton"
         )
     m.fs.salt_inventory_hot = pyo.Var(
         domain=NonNegativeReals,
         bounds=(0, max_inventory),
         initialize=80,
-        doc="Hot salt inventory at the end of the hour (or time period), kg"
+        doc="Hot salt inventory at the end of time period in mton"
         )
     m.fs.previous_salt_inventory_cold = pyo.Var(
         domain=NonNegativeReals,
         bounds=(0, max_inventory),
         initialize=1,
-        doc="Cold salt inventory at the beginning of the hour (or time period), kg"
+        doc="Cold salt inventory at the beginning of time period in mton"
         )
     m.fs.salt_inventory_cold = pyo.Var(
         domain=NonNegativeReals,
         bounds=(0, max_inventory),
         initialize=80,
-        doc="Cold salt inventory at the end of the hour (or time period), kg"
+        doc="Cold salt inventory at the end of time period in mton"
         )
 
     @m.fs.Constraint(doc="Inventory balance at the end of the time period")
     def constraint_salt_inventory_hot(b):
         return b.salt_inventory_hot == (
             b.previous_salt_inventory_hot
-            + (3600 * m.fs.salt_storage) * 1e-3 # in mton
+            + (3600 * m.fs.salt_storage) * m.factor_mton
         )
 
     @m.fs.Constraint(doc="Maximum previous salt inventory at any time")
@@ -1998,7 +1998,7 @@ def model_analysis(m,
         )
 
     # Fix the previous salt inventory based on the tank scenario
-    min_tank = 1 * 1e-3 # in mton
+    min_tank = 1 * m.factor_mton # in mton
     max_tank = m.max_salt_amount - min_tank # in mton
     if tank_scenario == "hot_empty":
         m.fs.previous_salt_inventory_hot.fix(min_tank)
@@ -2043,10 +2043,9 @@ def model_analysis(m,
     # Set scaling factors to variables including during model analysis
     set_scaling_var(m)
 
-    # Add scaling factor for objective function
+    # Add a total cost function as the objective function and a
+    # scaling factor to scale the objective.
     m.scaling_obj = 1e-4
-
-    # Add a total cost function as the objective function
     m.obj = Objective(
         expr=(
             m.fs.revenue
