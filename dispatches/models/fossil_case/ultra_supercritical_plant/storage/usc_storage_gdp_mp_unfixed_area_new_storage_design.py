@@ -199,7 +199,7 @@ def add_data(m):
     m.max_salt_temp = design_data_dict["max_solar_salt_temperature"] # in K
     m.max_salt_flow = design_data_dict["max_salt_flow"] # in kg/s
     m.factor_mton = design_data_dict["factor_mton"] # factor to convert kg to metric ton
-    m.max_salt_amount = design_data_dict["max_salt_amount"] * 1e-3 # in mton
+    m.max_salt_amount = design_data_dict["max_salt_amount"] * m.factor_mton # in mton
     m.storage_nhours_per_day = design_data_dict["storage_number_hours_per_day"]
     m.number_of_years = design_data_dict["number_of_years"]
 
@@ -320,9 +320,11 @@ def _make_constraints(m, method=None, max_power=None):
         )
     )
 
-    m.fs.boiler_eff = pyo.Var(initialize=0.9,
-                          bounds=(0, 1),
-                          doc="Boiler efficiency in fraction")
+    m.fs.boiler_eff = pyo.Var(
+        initialize=0.9,
+        bounds=(0, 1),
+        doc="Boiler efficiency in fraction"
+    )
     m.fs.boiler_efficiency_eq = pyo.Constraint(
         expr=m.fs.boiler_eff == (
             0.2143 * (m.fs.net_power / max_power)
@@ -347,9 +349,11 @@ def _make_constraints(m, method=None, max_power=None):
             m.fs.plant_heat_duty[0]
         )
 
-    m.fs.cycle_efficiency = pyo.Var(initialize=0.4,
-                                bounds=(0, 1),
-                                doc="Cycle efficiency in fraction")
+    m.fs.cycle_efficiency = pyo.Var(
+        initialize=0.4,
+        bounds=(0, 1),
+        doc="Cycle efficiency in fraction"
+    )
     m.fs.cycle_efficiency_eq = pyo.Constraint(
         expr=m.fs.cycle_efficiency * m.fs.coal_heat_duty == m.fs.net_power,
         doc="Cycle efficiency in fraction"
@@ -1080,9 +1084,9 @@ def build_costing(m):
         bounds=(0, 1e7),
         doc="Annualized capital cost for solar salt")
     def charge_solar_cap_cost_rule(b):
-        return 1e-3 * m.fs.charge_mode_disjunct.capital_cost == (
+        return m.fs.charge_mode_disjunct.capital_cost == (
             m.fs.charge_mode_disjunct.hxc.costing.capital_cost / m.fs.num_of_years
-        ) * 1e-3
+        )
     m.fs.charge_mode_disjunct.cap_cost_eq = pyo.Constraint(
         rule=charge_solar_cap_cost_rule)
 
@@ -1091,9 +1095,9 @@ def build_costing(m):
         bounds=(0, 1e7),
         doc="Annualized capital cost for solar salt")
     def discharge_solar_cap_cost_rule(b):
-        return 1e-3 * m.fs.discharge_mode_disjunct.capital_cost == (
+        return m.fs.discharge_mode_disjunct.capital_cost == (
             m.fs.discharge_mode_disjunct.hxd.costing.capital_cost / m.fs.num_of_years
-        ) * 1e-3
+        )
     m.fs.discharge_mode_disjunct.cap_cost_eq = pyo.Constraint(
         rule=discharge_solar_cap_cost_rule)
 
@@ -1122,13 +1126,13 @@ def build_costing(m):
     m.fs.operating_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e12),
-        doc="Operating cost in $/yr")
+        doc="Operating cost in $/year")
 
     def op_cost_rule(b):
-        return 1e-3 * m.fs.operating_cost == (
+        return m.fs.operating_cost == (
             m.fs.operating_hours * m.fs.coal_price *
             (m.fs.coal_heat_duty * 1e6)
-        ) * 1e-3
+        )
     m.fs.op_cost_eq = pyo.Constraint(rule=op_cost_rule)
 
     ###########################################################################
@@ -1150,29 +1154,29 @@ def build_costing(m):
         doc="Plant variable operating cost in $/year")
 
     def plant_cap_cost_rule(b):
-        return 1e-3 * m.fs.plant_capital_cost == (
+        return m.fs.plant_capital_cost == (
             ((2688973 * m.fs.plant_power_out[0]
               + 618968072) /
              m.fs.num_of_years
             ) * (m.CE_index / 575.4)
-        ) * 1e-3
+        )
     m.fs.plant_cap_cost_eq = pyo.Constraint(rule=plant_cap_cost_rule)
 
     def op_fixed_plant_cost_rule(b):
-        return 1e-3 * m.fs.plant_fixed_operating_cost == (
+        return m.fs.plant_fixed_operating_cost == (
             ((16657.5 * m.fs.plant_power_out[0]
               + 6109833.3) /
              m.fs.num_of_years
             ) * (m.CE_index / 575.4)
-        ) * 1e-3
+        )
     m.fs.op_fixed_plant_cost_eq = pyo.Constraint(
         rule=op_fixed_plant_cost_rule)
 
     def op_variable_plant_cost_rule(b):
-        return 1e-3 * m.fs.plant_variable_operating_cost == (
+        return m.fs.plant_variable_operating_cost == (
             (31754.7 * m.fs.plant_power_out[0]
             ) * (m.CE_index / 575.4)
-        ) * 1e-3
+        )
     m.fs.op_variable_plant_cost_eq = pyo.Constraint(
         rule=op_variable_plant_cost_rule)
 
@@ -1270,7 +1274,7 @@ def add_bounds(m):
     m.flow_min = 11804                   # Units in mol/s
     m.heat_duty_max = m.max_storage_heat_duty * 1e6  # Units in MW
     m.factor = 2
-    m.flow_max_storage = 0.25 * m.flow_max
+    m.flow_max_storage = 0.2 * m.flow_max
     m.flow_min_storage = 1e-3
 
     # Turbines
@@ -1750,7 +1754,7 @@ def print_model(nlp_model, nlp_data):
         value(nlp_model.fs.previous_salt_inventory_cold)))
     print('        Salt to storage (kg/s) [mton]: {:.4f} [{:.4f}]'.format(
         value(nlp_model.fs.salt_storage),
-        value(nlp_model.fs.salt_storage) * 3600 * 1e-3))
+        value(nlp_model.fs.salt_storage) * 3600 * nlp_model.factor_mton))
     print('        Hot Salt Inventory (mton): {:.4f}'.format(
         value(nlp_model.fs.salt_inventory_hot)))
     print('        Cold Salt Inventory (mton): {:.4f}'.format(
@@ -2036,7 +2040,7 @@ if __name__ == "__main__":
 
     # How to run this model:
     #   load_init_file: Set to True if you wish to initialize using a .json file and
-    #                   indicate the path of the .json file in path_init_file [WIP]
+    #                   indicate the path of the .json file in path_init_file
     #   fix_power:      Select True if you want to fix the power output of the plant.
     #                   If True, then provide the power value in power_demand
     #   method:         Select between "with_efficiency" or "without_efficiency"
@@ -2055,10 +2059,11 @@ if __name__ == "__main__":
     max_power = design_data_dict["plant_max_power"] # in MW
     power_demand = 400 # in MW
     load_init_file = False
-    path_init_file = 'initialized_usc_storage_gdp_mp.json'
+    if load_init_file:
+        path_init_file = 'initialized_usc_storage_gdp_mp.json'
     fix_power = False
     method = "with_efficiency"
-    tank_scenario = "hot_full"
+    tank_scenario = "hot_empty"
     operation_mode = None
     deact_arcs_after_init = True # when False, cost initialization takes about 20 sec more
     energy_loss = True
