@@ -58,26 +58,25 @@ from pyomo.core.expr.numeric_expr import ExternalFunctionExpression
 # Import IDAES libraries
 from idaes.core import MaterialBalanceType
 from idaes.core.util.initialization import propagate_state
-from idaes.core.util import get_solver
+from idaes.core.solvers.get_solver import get_solver
 from idaes.core.util import model_serializer as ms
 from idaes.core.util.model_statistics import degrees_of_freedom
-from idaes.generic_models.unit_models import (HeatExchanger,
-                                              MomentumMixingType,
-                                              Heater)
-from idaes.generic_models.unit_models import PressureChanger
-from idaes.power_generation.unit_models.helm import (
-    HelmMixer,
-    HelmTurbineStage,
-    HelmSplitter
-)
-from idaes.generic_models.unit_models.heat_exchanger import (
+from idaes.models.unit_models import (HeatExchanger,
+                                      MomentumMixingType,
+                                      Heater)
+from idaes.models.unit_models import PressureChanger
+from idaes.models.unit_models.heat_exchanger import (
     delta_temperature_underwood_callback)
-from idaes.generic_models.unit_models.pressure_changer import (
+from idaes.models.unit_models.pressure_changer import (
     ThermodynamicAssumption)
+from idaes.models_extra.power_generation.unit_models.helm import (HelmMixer,
+                                                                  HelmTurbineStage,
+                                                                  HelmSplitter)
 from idaes.core import UnitModelCostingBlock
 from idaes.models.costing.SSLW import SSLWCosting, SSLWCostingData
 import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
+from idaes.core.util.exceptions import ConfigurationError
 
 # Import ultra supercritical power plant model
 # from dispatches.models.fossil_case.ultra_supercritical_plant import (
@@ -308,9 +307,10 @@ def _make_constraints(m, method=None, max_power=None):
     @m.fs.Constraint(m.fs.time)
     def production_cons_with_storage(b, t):
         return (
-            (-1 * sum(b.turbine[p].work_mechanical[t]
-                      for p in m.set_turbine) * 1e-6
-             - b.hx_pump_work
+            (
+                (-1e-6) * (pyunits.MW / pyunits.W) *
+                sum(b.turbine[p].work_mechanical[t] for p in m.set_turbine)
+                - b.hx_pump_work
             ) ==
             b.plant_power_out[t]
         )
@@ -641,13 +641,13 @@ def charge_mode_disjunct_equations(disj):
     )
     m.fs.charge_mode_disjunct.eq_cooler_heat_duty = pyo.Constraint(
         expr=m.fs.cooler_heat_duty == (
-            (-1e-6) *
+            (-1e-6) * (pyunits.MW / pyunits.W) *
             m.fs.charge_mode_disjunct.cooler.heat_duty[0]
         )
     )
     m.fs.charge_mode_disjunct.eq_hx_pump_work = pyo.Constraint(
         expr=m.fs.hx_pump_work == (
-            (1e-6) *
+            (1e-6) * (pyunits.MW / pyunits.W) *
             m.fs.charge_mode_disjunct.hx_pump.control_volume.work[0]
         )
     )
@@ -656,7 +656,10 @@ def charge_mode_disjunct_equations(disj):
     )
 
     m.fs.charge_mode_disjunct.eq_charge_heat_duty = pyo.Constraint(
-        expr=m.fs.charge_mode_disjunct.hxc.heat_duty[0] * (1e-6) <= m.max_storage_heat_duty
+        expr=(
+            (1e-6) * (pyunits.MW / pyunits.W) *
+            m.fs.charge_mode_disjunct.hxc.heat_duty[0]
+        ) <= m.max_storage_heat_duty
     )
 
     # Save area and hot salt temperature in global variable
@@ -848,13 +851,17 @@ def discharge_mode_disjunct_equations(disj):
     )
     m.fs.discharge_mode_disjunct.eq_discharge_turbine_work = pyo.Constraint(
         expr=m.fs.discharge_turbine_work == (
-            (-1e-6) * m.fs.discharge_mode_disjunct.es_turbine.work[0]
+            (-1e-6) * (pyunits.MW / pyunits.W) *
+            m.fs.discharge_mode_disjunct.es_turbine.work[0]
         )
     )
 
     m.fs.discharge_mode_disjunct.eq_discharge_heat_duty = pyo.Constraint(
-        expr=(m.fs.discharge_mode_disjunct.hxd.heat_duty[0] * (1e-6)
-              + m.fs.energy_loss) <= m.max_storage_heat_duty
+        expr=(
+            (1e-6) * (pyunits.MW / pyunits.W) *
+            m.fs.discharge_mode_disjunct.hxd.heat_duty[0]
+            + m.fs.energy_loss
+        ) <= m.max_storage_heat_duty
     )
 
     m.fs.discharge_mode_disjunct.eq_charge_area = pyo.Constraint(
@@ -995,7 +1002,7 @@ def initialize(m,
     """
     print()
     print('>> Start initialization of charge units in ultra-supercritical plant')
-    print('   {} DOFs before initialization'.format(degrees_of_freedom(m)))
+    # print('   {} DOFs before initialization'.format(degrees_of_freedom(m)))
 
     # Include scaling factors
     set_scaling_factors(m)
@@ -1025,7 +1032,7 @@ def initialize(m,
                                                  optarg=solver.options)
 
     # Fix value of global variable
-    m.fs.hx_pump_work.fix(1e-6 *
+    m.fs.hx_pump_work.fix(1e-6 * (pyunits.MW / pyunits.W) *
                           m.fs.charge_mode_disjunct.hx_pump.control_volume.work[0].value)
 
     propagate_state(m.fs.charge_mode_disjunct.bfp_to_recyclemix)
@@ -1043,7 +1050,7 @@ def initialize(m,
     m.fs.discharge_mode_disjunct.es_turbine.initialize(outlvl=outlvl,
                                                        optarg=solver.options)
     # Fix value of global variable
-    m.fs.discharge_turbine_work.fix((-1e-6) *
+    m.fs.discharge_turbine_work.fix((-1e-6) * (pyunits.MW / pyunits.W) *
                                     m.fs.discharge_mode_disjunct.es_turbine.work[0].value)
 
     if not deact_arcs_after_init:
@@ -1056,14 +1063,23 @@ def initialize(m,
                                optarg=solver.options)
         m.fs.fwh[8].fwh_vfrac_constraint.activate()
 
-    print('   {} DOFs before initialization solution'.format(degrees_of_freedom(m)))
+    # Check and raise an error if the degrees of freedom are not 0
+    # print('   {} DOFs before initialization solution'.format(degrees_of_freedom(m)))
+    if not degrees_of_freedom(m) == 0:
+        raise ConfigurationError(
+            "The degrees of freedom after building the model are not 0. "
+            "You have {} degrees of freedom. "
+            "Please check your inputs to ensure a square problem "
+            "before initializing the model.".format(degrees_of_freedom(m))
+            )
+
     res = solver.solve(m,
                        tee=False,
                        symbolic_solver_labels=True)
 
     print("   **Solver termination for Charge Model Initialization:",
           res.solver.termination_condition)
-    print('   {} DOFs after initialization solution'.format(degrees_of_freedom(m)))
+    # print('   {} DOFs after initialization solution'.format(degrees_of_freedom(m)))
     print('>> End initialization of charge units in ultra-supercritical plant')
     print()
 
@@ -1222,9 +1238,9 @@ def initialize_with_costing(m, solver=None):
     }
     solver = get_solver('ipopt', optarg)
 
-    print()
-    print('>> Start initialization of costing correlations')
-    print('   {} DOFs before cost initialization'.format(degrees_of_freedom(m)))
+    # Fix operating cost variable to initialize cost in a square
+    # problem
+    m.fs.operating_cost.fix(1e6)
 
     # Initialize capital costs for charge and discharge heat
     # exchangers
@@ -1252,6 +1268,19 @@ def initialize_with_costing(m, solver=None):
     calculate_variable_from_constraint(
         m.fs.plant_variable_operating_cost,
         m.fs.op_variable_plant_cost_eq)
+
+    print()
+    print('>> Start initialization of costing correlations')
+
+    # Check and raise an error if the degrees of freedom are not 0
+    # print('   {} DOFs before cost initialization solution'.format(degrees_of_freedom(m)))
+    if not degrees_of_freedom(m) == 0:
+        raise ConfigurationError(
+            "The degrees of freedom after building the model are not 0. "
+            "You have {} degrees of freedom. "
+            "Please check your inputs to ensure a square problem "
+            "before initializing the model.".format(degrees_of_freedom(m))
+        )
 
     res = solver.solve(m,
                        tee=False,
@@ -1710,7 +1739,7 @@ def run_nlps(m,
     solve NLP problems
 
     """
-    
+
     print()
     print('>>> You are solving an NLP problem by fixing the operation disjuncts!')
     if operation_mode == "charge":
@@ -1914,10 +1943,16 @@ def model_analysis(m,
             expr=m.fs.plant_power_out[0] <= max_power
         )
         m.fs.discharge_mode_disjunct.storage_lower_bound_eq = pyo.Constraint(
-            expr=m.fs.discharge_mode_disjunct.hxd.heat_duty[0] * 1e-6 >= m.min_storage_heat_duty
+            expr=(
+                (1e-6) * (pyunits.MW / pyunits.W) *
+                m.fs.discharge_mode_disjunct.hxd.heat_duty[0]
+            ) >= m.min_storage_heat_duty
         )
         m.fs.charge_mode_disjunct.storage_lower_bound_eq = pyo.Constraint(
-            expr=m.fs.charge_mode_disjunct.hxc.heat_duty[0] * 1e-6 >= m.min_storage_heat_duty
+            expr=(
+                (1e-6) * (pyunits.MW / pyunits.W) *
+                m.fs.charge_mode_disjunct.hxc.heat_duty[0]
+            ) >= m.min_storage_heat_duty
         )
 
     # Fix and unfix boiler data
@@ -1925,6 +1960,7 @@ def model_analysis(m,
     m.fs.boiler.inlet.flow_mol.unfix()
 
     # Unfix data fixed during initialization
+    m.fs.operating_cost.unfix()
     m.fs.charge_mode_disjunct.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
     m.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
 
