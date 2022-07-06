@@ -467,21 +467,21 @@ def charge_mode_disjunct_equations(disj):
             (solar_hxc.inlet_2.flow_mass[0] *
              m.fs.tube_outer_dia) /
             (m.fs.shell_eff_area *
-             solar_hxc.side_2.properties_in[0].dynamic_viscosity["Liq"])
+             solar_hxc.side_2.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number")
     solar_hxc.salt_prandtl_number = pyo.Expression(
         expr=(
-            solar_hxc.side_2.properties_in[0].cp_specific_heat["Liq"] *
-            solar_hxc.side_2.properties_in[0].dynamic_viscosity["Liq"] /
-            solar_hxc.side_2.properties_in[0].thermal_conductivity["Liq"]
+            solar_hxc.side_2.properties_in[0].cp_mass["Liq"] *
+            solar_hxc.side_2.properties_in[0].visc_d_phase["Liq"] /
+            solar_hxc.side_2.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number")
     solar_hxc.salt_prandtl_wall = pyo.Expression(
         expr=(
-            solar_hxc.side_2.properties_out[0].cp_specific_heat["Liq"] *
-            solar_hxc.side_2.properties_out[0].dynamic_viscosity["Liq"] /
-            solar_hxc.side_2.properties_out[0].thermal_conductivity["Liq"]
+            solar_hxc.side_2.properties_out[0].cp_mass["Liq"] *
+            solar_hxc.side_2.properties_out[0].visc_d_phase["Liq"] /
+            solar_hxc.side_2.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number at wall")
     solar_hxc.salt_nusselt_number = pyo.Expression(
@@ -526,7 +526,7 @@ def charge_mode_disjunct_equations(disj):
     # sides of charge heat exchanger
     solar_hxc.h_salt = pyo.Expression(
         expr=(
-            solar_hxc.side_2.properties_in[0].thermal_conductivity["Liq"] *
+            solar_hxc.side_2.properties_in[0].therm_cond_phase["Liq"] *
             solar_hxc.salt_nusselt_number /
             m.fs.tube_outer_dia
         ),
@@ -687,24 +687,24 @@ def discharge_mode_disjunct_equations(disj):
             solar_hxd.inlet_1.flow_mass[0]
             * m.fs.tube_outer_dia
             / (m.fs.shell_eff_area
-               * solar_hxd.side_1.properties_in[0].dynamic_viscosity["Liq"])
+               * solar_hxd.side_1.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number"
     )
     solar_hxd.salt_prandtl_number = pyo.Expression(
         expr=(
-            solar_hxd.side_1.properties_in[0].cp_specific_heat["Liq"]
-            * solar_hxd.side_1.properties_in[0].dynamic_viscosity["Liq"]
-            / solar_hxd.side_1.properties_in[0].thermal_conductivity["Liq"]
+            solar_hxd.side_1.properties_in[0].cp_mass["Liq"]
+            * solar_hxd.side_1.properties_in[0].visc_d_phase["Liq"]
+            / solar_hxd.side_1.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number"
     )
     # Assuming that the wall conditions are same as those at the outlet
     solar_hxd.salt_prandtl_wall = pyo.Expression(
         expr=(
-            solar_hxd.side_1.properties_out[0].cp_specific_heat["Liq"]
-            * solar_hxd.side_1.properties_out[0].dynamic_viscosity["Liq"]
-            / solar_hxd.side_1.properties_out[0].thermal_conductivity["Liq"]
+            solar_hxd.side_1.properties_out[0].cp_mass["Liq"]
+            * solar_hxd.side_1.properties_out[0].visc_d_phase["Liq"]
+            / solar_hxd.side_1.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Wall Salt Prandtl Number"
     )
@@ -753,7 +753,7 @@ def discharge_mode_disjunct_equations(disj):
     # transfer coefficients
     solar_hxd.h_salt = pyo.Expression(
         expr=(
-            solar_hxd.side_1.properties_in[0].thermal_conductivity["Liq"]
+            solar_hxd.side_1.properties_in[0].therm_cond_phase["Liq"]
             * solar_hxd.salt_nusselt_number / m.fs.tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]"
@@ -1239,25 +1239,25 @@ def calculate_bounds(m):
     m.fs.solar_salt_temperature_max = 853.15 + m.fs.temperature_degrees # in K
     m.fs.solar_salt_temperature_min = 513.15 - m.fs.temperature_degrees # in K
     # Note: min/max interchanged because at max temperature we obtain the min value
-    m.fs.solar_salt_enthalpy_mass_max = (
+    m.fs.solar_salt_enth_mass_max = (
         (m.fs.solar_salt_properties.cp_param_1.value *
          (m.fs.solar_salt_temperature_max - 273.15))
         + (m.fs.solar_salt_properties.cp_param_2.value * 0.5 * \
            (m.fs.solar_salt_temperature_max - 273.15)**2)
     )
-    m.fs.solar_salt_enthalpy_mass_min = (
+    m.fs.solar_salt_enth_mass_min = (
         (m.fs.solar_salt_properties.cp_param_1.value *
          (m.fs.solar_salt_temperature_min - 273.15))
         + (m.fs.solar_salt_properties.cp_param_2.value * 0.5 * \
            (m.fs.solar_salt_temperature_min - 273.15)**2)
     )
 
-    m.fs.salt_enthalpy_mass_max = m.fs.solar_salt_enthalpy_mass_max
-    m.fs.salt_enthalpy_mass_min = m.fs.solar_salt_enthalpy_mass_min
+    m.fs.salt_enth_mass_max = m.fs.solar_salt_enth_mass_max
+    m.fs.salt_enth_mass_min = m.fs.solar_salt_enth_mass_min
 
     print('   **Calculate bounds for solar salt')
     print('     Mass enthalpy max: {: >4.4f}, min: {: >4.4f}'.format(
-        m.fs.solar_salt_enthalpy_mass_max, m.fs.solar_salt_enthalpy_mass_min))
+        m.fs.solar_salt_enth_mass_max, m.fs.solar_salt_enth_mass_min))
 
 
 def add_bounds(m):
@@ -1319,14 +1319,14 @@ def add_bounds(m):
         unit_in_charge.hxc.shell.heat.setub(0)
         unit_in_charge.hxc.tube.heat.setlb(0)
         unit_in_charge.hxc.tube.heat.setub(m.heat_duty_max)
-        unit_in_charge.hxc.tube.properties_in[:].enthalpy_mass.setlb(
-            m.fs.salt_enthalpy_mass_min / m.factor)
-        unit_in_charge.hxc.tube.properties_in[:].enthalpy_mass.setub(
-            m.fs.salt_enthalpy_mass_max * m.factor)
-        unit_in_charge.hxc.tube.properties_out[:].enthalpy_mass.setlb(
-            m.fs.salt_enthalpy_mass_min / m.factor)
-        unit_in_charge.hxc.tube.properties_out[:].enthalpy_mass.setub(
-            m.fs.salt_enthalpy_mass_max * m.factor)
+        unit_in_charge.hxc.tube.properties_in[:].enth_mass.setlb(
+            m.fs.salt_enth_mass_min / m.factor)
+        unit_in_charge.hxc.tube.properties_in[:].enth_mass.setub(
+            m.fs.salt_enth_mass_max * m.factor)
+        unit_in_charge.hxc.tube.properties_out[:].enth_mass.setlb(
+            m.fs.salt_enth_mass_min / m.factor)
+        unit_in_charge.hxc.tube.properties_out[:].enth_mass.setub(
+            m.fs.salt_enth_mass_max * m.factor)
         unit_in_charge.hxc.overall_heat_transfer_coefficient.setlb(0)
         unit_in_charge.hxc.overall_heat_transfer_coefficient.setub(10000)
         unit_in_charge.hxc.area.setlb(m.min_area)
@@ -1408,14 +1408,14 @@ def add_bounds(m):
         unit_in_discharge.hxd.tube.heat.setub(m.heat_duty_max)
         unit_in_discharge.hxd.shell.heat.setlb(-m.heat_duty_max)
         unit_in_discharge.hxd.shell.heat.setub(0)
-        unit_in_discharge.hxd.shell.properties_in[:].enthalpy_mass.setlb(
-            m.fs.salt_enthalpy_mass_min / m.factor)
-        unit_in_discharge.hxd.shell.properties_in[:].enthalpy_mass.setub(
-            m.fs.salt_enthalpy_mass_max * m.factor)
-        unit_in_discharge.hxd.shell.properties_out[:].enthalpy_mass.setlb(
-            m.fs.salt_enthalpy_mass_min / m.factor)
-        unit_in_discharge.hxd.shell.properties_out[:].enthalpy_mass.setub(
-            m.fs.salt_enthalpy_mass_max * m.factor)
+        unit_in_discharge.hxd.shell.properties_in[:].enth_mass.setlb(
+            m.fs.salt_enth_mass_min / m.factor)
+        unit_in_discharge.hxd.shell.properties_in[:].enth_mass.setub(
+            m.fs.salt_enth_mass_max * m.factor)
+        unit_in_discharge.hxd.shell.properties_out[:].enth_mass.setlb(
+            m.fs.salt_enth_mass_min / m.factor)
+        unit_in_discharge.hxd.shell.properties_out[:].enth_mass.setub(
+            m.fs.salt_enth_mass_max * m.factor)
         unit_in_discharge.hxd.overall_heat_transfer_coefficient.setlb(0)
         unit_in_discharge.hxd.overall_heat_transfer_coefficient.setub(10000)
         unit_in_discharge.hxd.area.setlb(m.min_area)
@@ -2061,6 +2061,9 @@ if __name__ == "__main__":
     load_init_file = False
     if load_init_file:
         path_init_file = 'initialized_usc_storage_gdp_mp.json'
+    else:
+        path_init_file = None
+
     fix_power = False
     method = "with_efficiency"
     tank_scenario = "hot_empty"
