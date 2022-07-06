@@ -28,6 +28,8 @@ are adopted from the aforementioned DOE report
 and condenser.
 (3) Multi-stage turbines are modeled as multiple lumped single
 stage turbines
+
+updated (10/07/2021)
 """
 
 __author__ = "Naresh Susarla & E S Rawlings"
@@ -44,28 +46,31 @@ from pyomo.common.fileutils import this_file_dir
 
 # Import IDAES libraries
 from idaes.core import FlowsheetBlock, MaterialBalanceType
-from idaes.core.solvers.get_solver import get_solver
+from idaes.core.util import get_solver
 from idaes.core.util.initialization import propagate_state
 from idaes.core.util.model_statistics import degrees_of_freedom
-from idaes.models.unit_models import (
+from idaes.generic_models.unit_models import (
     HeatExchanger,
     MomentumMixingType,
     Heater,
 )
-from idaes.models_extra.power_generation.unit_models.helm import (
+from idaes.power_generation.unit_models.helm import (
     HelmMixer,
     HelmIsentropicCompressor,
     HelmTurbineStage,
     HelmSplitter
 )
-from idaes.models.unit_models.heat_exchanger import (
+from idaes.generic_models.unit_models.heat_exchanger import (
     delta_temperature_underwood_callback)
 import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
-from idaes.core.util.tags import svg_tag
+from idaes.core.util.misc import svg_tag
 
 # Import Property Packages (IAPWS95 for Water/Steam)
-from idaes.models.properties import iapws95
+from idaes.generic_models.properties import iapws95
+from pyomo.util.infeasible import (log_infeasible_constraints,
+                                    log_close_to_bounds)
+logging.basicConfig(level=logging.INFO)
 
 
 def declare_unit_model():
@@ -148,7 +153,8 @@ def declare_unit_model():
     # Inlet 'makeup' refers to the make up water
     m.fs.condenser_mix = HelmMixer(
         default={
-            "momentum_mixing_type": MomentumMixingType.minimize,
+            "momentum_mixing_type": MomentumMixingType.none,
+            # "momentum_mixing_type": MomentumMixingType.minimize,
             "inlet_list": ["main", "bfpt", "drain", "makeup"],
             "property_package": m.fs.prop_water,
         }
@@ -184,7 +190,8 @@ def declare_unit_model():
     m.fs.fwh_mixer = HelmMixer(
         m.set_fwh_mixer,
         default={
-            "momentum_mixing_type": MomentumMixingType.minimize,
+            # "momentum_mixing_type": MomentumMixingType.minimize,
+            "momentum_mixing_type": MomentumMixingType.none,
             "inlet_list": ["steam", "drain"],
             "property_package": m.fs.prop_water,
         }
@@ -214,7 +221,8 @@ def declare_unit_model():
     ###########################################################################
     m.fs.deaerator = HelmMixer(
         default={
-            "momentum_mixing_type": MomentumMixingType.minimize,
+            # "momentum_mixing_type": MomentumMixingType.minimize,
+            "momentum_mixing_type": MomentumMixingType.none,
             "inlet_list": ["steam", "drain", "feedwater"],
             "property_package": m.fs.prop_water,
         }
@@ -441,6 +449,33 @@ def _make_constraints(m):
              ) ==
             m.fs.plant_heat_duty[t]*1e6*(pyunits.W/pyunits.MW)
         )
+
+    # ******** Adding Mixer Constraints for Pressure Out **********
+    @m.fs.condenser_mix.Constraint(m.fs.time)
+    def constraint_condenser_mix_pressure(b, t):
+        return (
+            b.mixed_state[t].pressure ==
+            b.main_state[t].pressure
+            )
+
+    @m.fs.deaerator.Constraint(m.fs.time)
+    def constraint_deaerator_pressure(b, t):
+        return (
+            b.mixed_state[t].pressure ==
+            b.feedwater_state[t].pressure
+            )
+
+    def fwh_mixer_pressure_constraint(b, t):
+        return (
+            b.mixed_state[t].pressure ==
+            b.steam_state[t].pressure
+        )
+    for i in m.set_fwh_mixer:
+        b = m.fs.fwh_mixer[i]
+        setattr(b,
+                "fwh_mixer_pout_constraint",
+                Constraint(m.fs.config.time,
+                           rule=fwh_mixer_pressure_constraint))
 
 
 def _create_arcs(m):
@@ -1138,16 +1173,11 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
 def add_bounds(m):
 
     m.flow_max = m.main_flow * 3  # number from Naresh
-    # m.salt_flow_max = 1000  # in kg/s
+    m.salt_flow_max = 1000  # in kg/s
 
-    for unit_k in [
-            m.fs.boiler,
-            m.fs.reheater[1],
-            m.fs.reheater[2],
-            m.fs.cond_pump,
-            m.fs.bfp,
-            m.fs.bfpt
-            ]:
+    for unit_k in [m.fs.boiler, m.fs.reheater[1],
+                   m.fs.reheater[2], m.fs.cond_pump,
+                   m.fs.bfp, m.fs.bfpt]:
         unit_k.inlet.flow_mol[:].setlb(0)  # mol/s
         unit_k.inlet.flow_mol[:].setub(m.flow_max)  # mol/s
         unit_k.outlet.flow_mol[:].setlb(0)  # mol/s
