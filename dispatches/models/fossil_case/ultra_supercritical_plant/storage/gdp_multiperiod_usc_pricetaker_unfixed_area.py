@@ -26,12 +26,13 @@ multiperiod model.
 import json
 
 import pyomo.environ as pyo
+from pyomo.environ import units as pyunits
 from pyomo.environ import (Constraint, NonNegativeReals, Var)
 
 from idaes.apps.grid_integration.multiperiod.multiperiod import MultiPeriodModel
 from idaes.core.util.model_statistics import degrees_of_freedom
 import idaes.core.util.scaling as iscale
-from idaes.core.util import get_solver
+from idaes.core.solvers.get_solver import get_solver
 
 
 __author__ = "Soraya Rawlings"
@@ -39,7 +40,8 @@ __author__ = "Soraya Rawlings"
 # Use GDP design for charge and discharge heat exchanger from 4-12
 # disjunctions model when True. If False, use the GDP design from 4-5
 # disjunctions model.
-new_design = True
+new_design = False
+
 if new_design:
     print('>>>>> Solving for new storage design')
     import usc_storage_gdp_mp_unfixed_area_new_storage_design as usc_gdp
@@ -86,18 +88,8 @@ def create_ss_model():
                          deact_arcs_after_init=deact_arcs_after_init,
                          solver=solver)
 
-    # storage_work = m.usc.fs.discharge_mode_disjunct.es_turbine.work[0]
-    charge_mode = m.usc.fs.charge_mode_disjunct
-    discharge_mode = m.usc.fs.discharge_mode_disjunct
 
-    m.usc.fs.hx_pump_work.unfix()
-    m.usc.fs.discharge_turbine_work.unfix()
-
-    if not deact_arcs_after_init:
-        m.usc.fs.turbine[3].inlet.unfix()
-        m.usc.fs.fwh[8].inlet_2.unfix()
-
-    # Set bounds for plant power
+    # Set bounds for power produced by the plant alone
     m.usc.fs.plant_min_power_eq = pyo.Constraint(
         expr=m.usc.fs.plant_power_out[0] >= min_power
     )
@@ -105,20 +97,37 @@ def create_ss_model():
         expr=m.usc.fs.plant_power_out[0] <= max_power
     )
 
-    # Unfix data fixed during initialization
-    m.usc.fs.boiler.inlet.flow_mol[0].unfix()
-
     # Set lower bound in charge heat exchanger
+    charge_mode = m.usc.fs.charge_mode_disjunct
+    discharge_mode = m.usc.fs.discharge_mode_disjunct
     m.usc.fs.discharge_mode_disjunct.storage_lower_bound_eq = pyo.Constraint(
-        expr=discharge_mode.hxd.heat_duty[0] * 1e-6 >= min_storage_heat_duty
+        expr=(
+            (1e-6) * (pyunits.MW / pyunits.W) *
+            discharge_mode.hxd.heat_duty[0]
+        ) >= min_storage_heat_duty
     )
     m.usc.fs.charge_mode_disjunct.storage_lower_bound_eq = pyo.Constraint(
-        expr=charge_mode.hxc.heat_duty[0] * 1e-6 >= min_storage_heat_duty
+        expr=(
+            (1e-6) * (pyunits.MW / pyunits.W) *
+            charge_mode.hxc.heat_duty[0]
+        ) >= min_storage_heat_duty
     )
 
+    # Unfix boiler data fixed during initialization
+    m.usc.fs.boiler.inlet.flow_mol[0].unfix()
+
+    if not deact_arcs_after_init:
+        m.usc.fs.turbine[3].inlet.unfix()
+        m.usc.fs.fwh[8].inlet_2.unfix()
+
+    # Unfix global variables fixed during initialization
+    m.usc.fs.hx_pump_work.unfix()
+    m.usc.fs.discharge_turbine_work.unfix()
+
     # Unfix storage system data. Note that the area of the charge and
-    # discharge heat exchangers is unfixed and clauclated during the
+    # discharge heat exchangers is unfixed and calculated during the
     # solution of the model.
+    m.usc.fs.operating_cost.unfix()
     m.usc.fs.charge_mode_disjunct.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
     m.usc.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
     for salt_hxc in [charge_mode.hxc]:
@@ -232,7 +241,7 @@ def create_mp_block():
     iscale.set_scaling_factor(b1.fs.operating_cost, 1e-3)
     iscale.set_scaling_factor(b1.fs.plant_fixed_operating_cost, 1e-3)
     iscale.set_scaling_factor(b1.fs.plant_variable_operating_cost, 1e-3)
-    iscale.set_scaling_factor(b1.fs.plant_capital_cost, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.plant_capital_cost, 1e-3)
 
     iscale.set_scaling_factor(b1.fs.salt_amount, 1e-3)
     iscale.set_scaling_factor(b1.salt_inventory_hot, 1e-3)
@@ -241,9 +250,9 @@ def create_mp_block():
     iscale.set_scaling_factor(b1.previous_salt_inventory_cold, 1e-3)
     iscale.set_scaling_factor(b1.fs.constraint_salt_inventory_hot, 1e-3)
 
-    iscale.set_scaling_factor(b1.fs.charge_mode_disjunct.capital_cost, 1e-3)
-    iscale.set_scaling_factor(b1.fs.discharge_mode_disjunct.capital_cost, 1e-3)
-    iscale.set_scaling_factor(b1.fs.storage_capital_cost, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.charge_mode_disjunct.capital_cost, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.discharge_mode_disjunct.capital_cost, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.storage_capital_cost, 1e-3)
 
     # Calculate scaling factors
     iscale.calculate_scaling_factors(m)
