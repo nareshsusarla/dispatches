@@ -41,7 +41,7 @@ from pyomo.core.expr.numeric_expr import ExternalFunctionExpression
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
 
-from idaes.core.util import get_solver
+from idaes.core.solvers.get_solver import get_solver
 
 from gdp_multiperiod_usc_pricetaker_unfixed_area import create_gdp_multiperiod_usc_model
 
@@ -188,7 +188,7 @@ def print_model(mdl,
         if not new_design:
             print('        Cooler heat duty: {:.4f}'.format(value(blk_process.fs.cooler_heat_duty)))
         print('        Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
-            value(blk_process.fs.boiler_eff) * 100,
+            value(blk_process.fs.boiler_efficiency) * 100,
             value(blk_process.fs.cycle_efficiency) * 100))
         print('        Boiler heat duty: {:.4f}'.format(
             value(blk_process.fs.boiler.heat_duty[0]) * 1e-6))
@@ -202,12 +202,12 @@ def print_model(mdl,
             value(blk_process.previous_salt_inventory_hot)))
         print('        Makeup water flow (mol/s): {:.4f}'.format(
             value(blk_process.fs.condenser_mix.makeup.flow_mol[0])))
-        print('        Total op cost ($/h): {:.4f}'.format(
-            value(mdl.blocks[blk].process.operating_cost) / scaling_cost))
-        print('        Total cap cost ($/h): {:.4f}'.format(
-            value(mdl.blocks[blk].process.capital_cost) / scaling_cost))
         print('        Revenue (M$/year): {:.4f}'.format(
             value(mdl.blocks[blk].process.revenue) / scaling_cost))
+        print('        Total op cost ($/h): {:.4f}'.format(
+            value(mdl.blocks[blk].process.operating_cost) / scaling_cost))
+        # print('        Total cap cost ($/h): {:.4f}'.format(
+        #     value(mdl.blocks[blk].process.capital_cost) / scaling_cost))
         print()
 
         # Save data for each NLP subproblem and plot results
@@ -402,7 +402,7 @@ def run_pricetaker_analysis(hours_per_day=None,
     blks = gdp_multiperiod_usc.get_active_process_blocks()
 
     ##################################################################
-    # Add logical constraints
+    # Add nonanticipativity constraints
     ##################################################################
     m.hours_set = RangeSet(0, nhours - 1)
     m.hours_set2 = RangeSet(0, nhours - 2)
@@ -431,6 +431,9 @@ def run_pricetaker_analysis(hours_per_day=None,
         )
 
 
+    ##################################################################
+    # Add logical constraints
+    ##################################################################
     discharge_min_salt = 379 # in mton, 8MW min es turbine
     min_hot_salt = 2000
     @m.Constraint(m.hours_set)
@@ -455,14 +458,16 @@ def run_pricetaker_analysis(hours_per_day=None,
     def _constraint_min_discharge(m, h):
         return sum(m.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var
                    for h in m.hours_set) >= 1
-    # @m.Constraint()
-    # def _logic_constraint2_min_discharge(m):
-    #     return sum(m.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var for h in m.hours_set) >= sum(m.blocks[h].process.usc.fs.charge_mode_disjunct.binary_indicator_var for h in m.hours_set) + 1
 
     @m.Constraint(m.hours_set)
     def _constraint_min_no_storage(m, h):
         return sum(m.blocks[h].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var
                    for h in m.hours_set) >= 1
+
+    # @m.Constraint()
+    # def _logic_constraint2_min_discharge(m):
+    #     return sum(m.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var for h in m.hours_set) >= sum(m.blocks[h].process.usc.fs.charge_mode_disjunct.binary_indicator_var for h in m.hours_set) + 1
+
 
 
     if tank_status == "hot_empty":
@@ -494,33 +499,29 @@ def run_pricetaker_analysis(hours_per_day=None,
     # Add lmp market data for each block
     count = 0
     for blk in blks:
-        blk.revenue = pyo.Var(initialize=1e3,
-                              bounds=(0, 1e6),
-                              doc="Revenue in $/h")
-        blk.revenue_eq = pyo.Constraint(
-            expr=1e-3 * blk.revenue == lmp[count] * blk.usc.fs.net_power * scaling_cost * 1e-3)
-        blk.operating_cost = pyo.Var(initialize=1e4,
-                                     bounds=(0, 1e6),
-                                     doc="Total operating cost in $/h")
-        blk.operating_cost_eq = pyo.Constraint(
+        blk.revenue = pyo.Expression(
+            expr=lmp[count] * blk.usc.fs.net_power
+        )
+
+        # Add expression to calculate total operating costs. Note that
+        # these costs are scaled using the scaling_cost factor
+        blk.operating_cost = pyo.Expression(
             expr=(
-                1e-3 * blk.operating_cost == (
-                    (blk.usc.fs.operating_cost
-                     + blk.usc.fs.plant_fixed_operating_cost
-                     + blk.usc.fs.plant_variable_operating_cost) / (365 * 24)
-                ) * scaling_cost * 1e-3
+                blk.usc.fs.operating_cost
+                + blk.usc.fs.plant_fixed_operating_cost
+                + blk.usc.fs.plant_variable_operating_cost
+            ) * scaling_cost
+        )
+
+        # Declare expression to calculate the total profit. All the
+        # costs are in $ per hour
+        blk.cost = pyo.Expression(
+            expr=-(
+                blk.revenue * scaling_cost
+                - blk.operating_cost
+                - blk.usc.fs.storage_capital_cost * scaling_cost
             )
         )
-        blk.capital_cost = pyo.Var(initialize=1e4,
-                                   bounds=(0, 1e6),
-                                   doc="Storage capital cost in $/h")
-        blk.capital_cost_eq = pyo.Constraint(
-            expr=(
-                1e-3 * blk.capital_cost == \
-                (blk.usc.fs.storage_capital_cost / (365 * 24)) * scaling_cost * 1e-3
-            )
-        )
-        blk.cost = pyo.Expression(expr=-(blk.revenue - blk.operating_cost - blk.capital_cost))
         count += 1
 
     m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
@@ -559,29 +560,43 @@ def run_pricetaker_analysis(hours_per_day=None,
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
     opt.CONFIG.time_limit = "28000"
-    opt.CONFIG.subproblem_presolve = True
+    opt.CONFIG.subproblem_presolve = False
     _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
 
     # Initializing disjuncts
     print()
     print()
-    print('>>Initializing disjuncts')
-    for k in range(nhours):
-        if k < (hours_per_day / 3):
-            print('  **Setting block {} to no storage'.format(k))
-            blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
-            blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
-            blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
-        elif k < (2 * (hours_per_day / 3)):
-            print('  **Setting block {} to charge'.format(k))
-            blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
-            blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
-            blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
-        elif k < hours_per_day:
-            print('  **Setting block {} to discharge'.format(k))
-            blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
-            blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(1)
-            blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+    # print('>>Initializing disjuncts')
+    # for k in range(nhours):
+    #     if k < (hours_per_day / 3):
+    #         print('  **Setting block {} to charge'.format(k))
+    #         blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
+    #         blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+    #         blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+    #     elif k < (2 * (hours_per_day / 3)):
+    #         print('  **Setting block {} to no storage'.format(k))
+    #         blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+    #         blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+    #         blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
+    #     elif k < hours_per_day:
+    #         print('  **Setting block {} to discharge'.format(k))
+    #         blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+    #         blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(1)
+    #         blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+
+    print('>>Fixing disjuncts')
+    blks[0].usc.fs.charge_mode_disjunct.binary_indicator_var.fix(1)
+    blks[0].usc.fs.discharge_mode_disjunct.binary_indicator_var.fix(0)
+    blks[0].usc.fs.no_storage_mode_disjunct.binary_indicator_var.fix(0)
+    blks[1].usc.fs.charge_mode_disjunct.binary_indicator_var.fix(0)
+    blks[1].usc.fs.discharge_mode_disjunct.binary_indicator_var.fix(0)
+    blks[1].usc.fs.no_storage_mode_disjunct.binary_indicator_var.fix(1)
+    blks[2].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+    blks[2].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+    blks[2].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
+    blks[3].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+    blks[3].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+    blks[3].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
 
     # Solve problem
     net_power = []
@@ -671,7 +686,7 @@ def print_results(m, blks, results):
                 value(charge_mode.hxc.outlet_2.temperature[0])))
             print('  HXC steam temperature (K) in/out: {:.4f}/{:.4f}'.format(
                 value(charge_mode.hxc.side_1.properties_in[0].temperature),
-            value(charge_mode.hxc.side_1.properties_out[0].temperature)))
+                value(charge_mode.hxc.side_1.properties_out[0].temperature)))
             print('  HXC salt flow (kg/s) [mton/h]: {:.4f} [{:.4f}]'.format(
                 value(charge_mode.hxc.outlet_2.flow_mass[0]),
                 value(charge_mode.hxc.outlet_2.flow_mass[0]) * 3600 * factor_mton))
@@ -690,7 +705,7 @@ def print_results(m, blks, results):
                 value(discharge_mode.hxd.outlet_1.temperature[0])))
             print('  HXD steam temperature (K) in/out: {:.4f}/{:.4f}'.format(
                 value(discharge_mode.hxd.side_2.properties_in[0].temperature),
-            value(discharge_mode.hxd.side_2.properties_out[0].temperature)))
+                value(discharge_mode.hxd.side_2.properties_out[0].temperature)))
             print('  HXD salt flow (kg/s) [mton/h]: {:.4f} [{:.4f}]'.format(
                 value(discharge_mode.hxd.outlet_1.flow_mass[0]),
                 value(discharge_mode.hxd.outlet_1.flow_mass[0]) * 3600 * factor_mton))
@@ -723,14 +738,18 @@ def print_results(m, blks, results):
         print(' Plant Power Out: {:.4f}'.format(
             value(blks[c].usc.fs.plant_power_out[0])))
         print(' Discharge turbine work (MW): {:.4f}'.format(
-        value(storage_work) * factor))
-        print(' Cost ($): {:.4f}'.format(value(blks[c].cost) / scaling_cost))
-        print(' Revenue ($): {:.4f}'.format(value(blks[c].revenue) / scaling_cost))
-        print(' Operating cost ($): {:.4f}'.format(value(blks[c].operating_cost) / scaling_cost))
-        print(' Specific Operating cost ($/MWh): {:.4f}'.format(
-            (value(blks[c].operating_cost) / scaling_cost) / value(blks[c].usc.fs.net_power)))
+            value(storage_work) * factor))
+        print(' Cost ($): {:.4f}'.format(
+            value(blks[c].cost) / scaling_cost))
+        print(' Revenue ($): {:.4f}'.format(
+            value(blks[c].revenue) / scaling_cost))
+        print(' Operating cost ($): {:.4f}'.format(
+            value(blks[c].operating_cost) / scaling_cost))
+        # print(' Specific Operating cost ($/MWh): {:.4f}'.format(
+        #     (value(blks[c].operating_cost) / scaling_cost) /
+        #     value(blks[c].usc.fs.net_power)))
         print(' Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
-            value(blks[c].usc.fs.boiler_eff) * 100,
+            value(blks[c].usc.fs.boiler_efficiency) * 100,
             value(blks[c].usc.fs.cycle_efficiency) * perc))
         print(' Boiler heat duty: {:.4f}'.format(
             value(blks[c].usc.fs.boiler.heat_duty[0]) * 1e-6))
@@ -989,17 +1008,17 @@ if __name__ == '__main__':
     # 4-5 disjunctions model. **Note** This should have the same value
     # as in the GDP multiperiod model, so when changing this, the one
     # in GDP multiperiod should be changed too.
-    new_design = True
+    new_design = False
 
     lx = True
     if lx:
-        scaling_cost = 1e-3
         # scaling_obj = 1e-2 # 12 hrs
         if new_design:
             scaling_obj = 1e-2
-            # scaling_obj = 1e-1
+            scaling_cost = 1e-3
         else:
-            scaling_obj = 1e-1
+            scaling_obj = 1e-2
+            scaling_cost = 1e-3
     else:
         scaling_obj = 1
     print()
