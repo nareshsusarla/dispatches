@@ -56,6 +56,7 @@ __author__ = "Naresh Susarla and Soraya Rawlings"
 from math import pi
 import logging
 import os
+from IPython import embed
 
 # Import Pyomo libraries
 import pyomo.environ as pyo
@@ -70,12 +71,15 @@ from pyomo.gdp import Disjunct, Disjunction
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
 from pyomo.network.plugins import expand_arcs
+from pyomo.contrib.fbbt.fbbt import  _prop_bnds_root_to_leaf_map
+from pyomo.core.expr.numeric_expr import ExternalFunctionExpression
 
 # Import IDAES libraries
 from idaes.core import MaterialBalanceType
 from idaes.core.util.initialization import propagate_state
 from idaes.core.util import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
+from idaes.core import UnitModelCostingBlock
 from idaes.generic_models.unit_models import (HeatExchanger,
                                               MomentumMixingType,
                                               Heater)
@@ -96,7 +100,14 @@ from idaes.generic_models.unit_models.heat_exchanger import (
 from idaes.generic_models.unit_models.pressure_changer import (
     ThermodynamicAssumption)
 from idaes.core.util.misc import svg_tag
-import idaes.core.util.unit_costing as icost
+from idaes.models.costing.SSLW import (
+    SSLWCosting,
+    SSLWCostingData,
+    PumpType,
+    PumpMaterial,
+    PumpMotorType,
+)
+from idaes.core.util.exceptions import ConfigurationError
 import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
 
@@ -104,11 +115,11 @@ import idaes.logger as idaeslog
 from dispatches.models.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant_mixcon as usc)
 
-import solarsalt_properties
-import hitecsalt_properties
-import thermal_oil_updated as thermal_oil
+# Import properties package for storage materials
+from dispatches.models.fossil_case.properties import (solarsalt_properties,
+                                                      hitecsalt_properties,
+                                                      thermaloil_properties)
 
-from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
 scaling_factor = 1
@@ -121,13 +132,13 @@ def create_charge_model(m, method=None, max_power=None):
     # Create a block to add charge storage model
     m.fs.charge = Block()
 
+    # Add model data
+    _add_data(m)
 
     # Add molten salt properties (Solar and Hitec salt)
     m.fs.solar_salt_properties = solarsalt_properties.SolarsaltParameterBlock()
     m.fs.hitec_salt_properties = hitecsalt_properties.HitecsaltParameterBlock()
-    m.fs.therminol66_properties = thermal_oil.ThermalOilParameterBlock()
-
-    m.number_of_years = 30
+    m.fs.therminol66_properties = thermaloil_properties.ThermalOilParameterBlock()
 
     ###########################################################################
     #  Add a dummy heat exchanger                                  #
@@ -235,6 +246,163 @@ def create_charge_model(m, method=None, max_power=None):
     return m
 
 
+def _add_data(m):
+    """Add data to the model
+    """
+
+    # Add Chemical engineering cost index for 2019
+    m.CE_index = 607.5  # Chemical engineering cost index for 2019
+
+    # Add number of operating hours
+    m.fs.charge.hours_per_day = pyo.Param(
+        initialize=6,
+        doc='Estimated number of hours of charging per day'
+    )
+
+    # Add number of years over which the capital cost is annualized
+    m.fs.charge.num_of_years = pyo.Param(
+        initialize=30,
+        doc='Number of years for capital cost annualization')
+
+    # Add data to compute overall heat transfer coefficient for the
+    # Solar salt, Hitec salt, and Thermal oil storage heat exchangers
+    # using the Sieder-Tate Correlation. Parameters for tube diameter
+    # and thickness assumed from the data in (2017) He et al., Energy
+    # Procedia 105, 980-985
+    m.fs.charge.data_hxc = {
+        'tube_thickness': 0.004,
+        'tube_inner_dia': 0.032,
+        'tube_outer_dia': 0.036,
+        'k_steel': 21.5,
+        'number_tubes': 20,
+        'shell_inner_dia': 1
+    }
+
+    m.fs.charge.hxc_tube_thickness = pyo.Param(
+        initialize=m.fs.charge.data_hxc['tube_thickness'],
+        doc='Tube thickness in m')
+    m.fs.charge.hxc_tube_inner_dia = pyo.Param(
+        initialize=m.fs.charge.data_hxc['tube_inner_dia'],
+        doc='Tube inner diameter in m')
+    m.fs.charge.hxc_tube_outer_dia = pyo.Param(
+        initialize=m.fs.charge.data_hxc['tube_outer_dia'],
+        doc='Tube outer diameter in m')
+    m.fs.charge.hxc_k_steel = pyo.Param(
+        initialize=m.fs.charge.data_hxc['k_steel'],
+        doc='Thermal conductivity of steel in W/m.K')
+    m.fs.charge.hxc_n_tubes = pyo.Param(
+        initialize=m.fs.charge.data_hxc['number_tubes'],
+        doc='Number of tubes ')
+    m.fs.charge.hxc_shell_inner_dia = pyo.Param(
+        initialize=m.fs.charge.data_hxc['shell_inner_dia'],
+        doc='Shell inner diameter in m')
+
+    m.fs.charge.hxc_tube_cs_area = pyo.Expression(
+        expr=(pi / 4) *
+        (m.fs.charge.hxc_tube_inner_dia ** 2),
+        doc="Tube inside cross sectional area in m2")
+    m.fs.charge.hxc_tube_out_area = pyo.Expression(
+        expr=(pi / 4) *
+        (m.fs.charge.hxc_tube_outer_dia ** 2),
+        doc="Tube cross sectional area including thickness in m2")
+    m.fs.charge.hxc_shell_eff_area = pyo.Expression(
+        expr=(
+            (pi / 4) *
+            (m.fs.charge.hxc_shell_inner_dia ** 2) -
+            m.fs.charge.hxc_n_tubes *
+            m.fs.charge.hxc_tube_out_area),
+        doc="Effective shell cross sectional area in m2")
+
+    m.fs.charge.hxc_tube_dia_ratio = (m.fs.charge.hxc_tube_outer_dia /
+                                      m.fs.charge.hxc_tube_inner_dia)
+    m.fs.charge.hxc_log_tube_dia_ratio = log(m.fs.charge.hxc_tube_dia_ratio)
+
+
+    # Add fuel and storage material cost data
+    m.data_cost = {
+        'coal_price': 2.11e-9,
+        'cooling_price': 3.3e-9,
+        'solar_salt_price': 0.49,
+        'hitec_salt_price': 0.93,
+        'thermal_oil_price': 6.72,  # $/kg
+        'storage_tank_material': 3.5,
+        'storage_tank_insulation': 235,
+        'storage_tank_foundation': 1210
+    }
+
+    m.fs.charge.coal_price = Param(
+        initialize=m.data_cost['coal_price'],
+        doc='Coal price based on HHV for Illinois No.6 (NETL Report) $/J')
+    m.fs.charge.cooling_price = Param(
+        initialize=m.data_cost['cooling_price'],
+        doc='Cost of chilled water for cooler from Sieder et al. $/J')
+    m.fs.charge.solar_salt_price = Param(
+        initialize=m.data_cost['solar_salt_price'],
+        doc='Solar salt price in $/kg')
+    m.fs.charge.hitec_salt_price = Param(
+        initialize=m.data_cost['hitec_salt_price'],
+        doc='Hitec salt price in $/kg')
+    m.fs.charge.thermal_oil_price = Param(
+        initialize=m.data_cost['thermal_oil_price'],
+        doc='Thermal oil price in $/kg')
+    m.fs.charge.storage_tank_material_cost = pyo.Param(
+        initialize=m.data_cost['storage_tank_material'],
+        doc='$/kg of SS316 material')
+    m.fs.charge.storage_tank_insulation_cost = pyo.Param(
+        initialize=m.data_cost['storage_tank_insulation'],
+        doc='$/m2')
+    m.fs.charge.storage_tank_foundation_cost = pyo.Param(
+        initialize=m.data_cost['storage_tank_foundation'],
+        doc='$/m2')
+
+    # Add data for storage material tank
+    m.data_storage_tank = {
+        'LbyD': 0.325,
+        'tank_thickness': 0.039,
+        'material_density': 7800
+    }
+    m.fs.charge.l_by_d = pyo.Param(
+        initialize=m.data_storage_tank['LbyD'],
+        doc='L by D assumption for computing storage tank dimensions')
+    m.fs.charge.tank_thickness = pyo.Param(
+        initialize=m.data_storage_tank['tank_thickness'],
+        doc='Storage tank thickness assumed based on reference'
+    )
+    m.fs.charge.storage_tank_material_dens_mass = pyo.Param(
+        initialize=m.data_storage_tank['material_density'],
+        doc='Kg/m3')
+
+    # Add parameters to calculate salt and oil pump costing. Since the
+    # pump units are not explicitly modeled, the IDAES cost method is
+    # not used for this equipment.  The primary purpose of the salt and oil
+    # pump is to move the storage material without changing the pressure.
+    # Thus, the pressure head is computed assuming that the salt or oil
+    # is moved on an average of 5 m (i.e., 16.41 ft) linear distance.
+    m.data_salt_pump = {
+        'FT': 1.5,
+        'FM': 2.0,
+        'head': 3.281*5, # in ft, equivalent to 5 m
+        'motor_FT': 1,
+        'nm': 1
+    }
+
+    m.fs.charge.spump_FT = pyo.Param(
+        initialize=m.data_salt_pump['FT'],
+        doc='Pump Type Factor for vertical split case')
+    m.fs.charge.spump_FM = pyo.Param(
+        initialize=m.data_salt_pump['FM'],
+        doc='Pump Material Factor Stainless Steel')
+    m.fs.charge.spump_head = pyo.Param(
+        initialize=m.data_salt_pump['head'],
+        doc='Pump Head 5m in Ft.')
+    m.fs.charge.spump_motorFT = pyo.Param(
+        initialize=m.data_salt_pump['motor_FT'],
+        doc='Motor Shaft Type Factor')
+    m.fs.charge.spump_nm = pyo.Param(
+        initialize=m.data_salt_pump['nm'],
+        doc='Motor Shaft Type Factor')
+
+
 def _make_constraints(m, method=None, max_power=None):
     """Declare the constraints for the charge model
     """
@@ -252,8 +420,9 @@ def _make_constraints(m, method=None, max_power=None):
         initialize=max_power,
         mutable=True,
         doc='Pmax for the power plant [MW]')
-    m.fs.boiler_eff = Expression(
-        expr=0.2143 * (m.fs.plant_power_out[0] / m.fs.max_power)
+    m.fs.boiler_efficiency = Expression(
+        expr=0.2143
+        * (m.fs.plant_power_out[0] / m.fs.max_power)
         + 0.7357,
         doc="Boiler efficiency in fraction"
     )
@@ -264,7 +433,7 @@ def _make_constraints(m, method=None, max_power=None):
 
     if method == "with_efficiency":
         def coal_heat_duty_rule(b):
-            return m.fs.coal_heat_duty * m.fs.boiler_eff == (
+            return m.fs.coal_heat_duty * m.fs.boiler_efficiency == (
                 m.fs.plant_heat_duty[0])
         m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
 
@@ -350,187 +519,112 @@ def solar_salt_disjunct_equations(disj):
     m.fs.charge.solar_salt_disjunct.hxc = HeatExchanger(
         default={
             "delta_temperature_callback": delta_temperature_underwood_callback,
-            "shell": {
-                "property_package": m.fs.prop_water
-            },
-            "tube": {
-                "property_package": m.fs.solar_salt_properties
-            }
+            "shell": {"property_package": m.fs.prop_water},
+            "tube": {"property_package": m.fs.solar_salt_properties}
         }
     )
 
     # Calculate heat transfer coefficient for solar salt heat
+    # exchanger. For that, calculate first the Reynolds, Prandtl, and
+    # Nusselt number for the salt and steam side of hitec charge heat
     # exchanger
-    m.fs.charge.data_hxc_solar = {
-        'tube_thickness': 0.004,
-        'tube_inner_dia': 0.032,
-        'tube_outer_dia': 0.036,
-        'k_steel': 21.5,
-        'number_tubes': 20,
-        'shell_inner_dia': 1
-    }
-
-    # Data to compute overall heat transfer coefficient for the charge
-    # heat exchanger using the Sieder-Tate Correlation. Parameters for
-    # tube diameter and thickness assumed from the data in (2017) He
-    # et al., Energy Procedia 105, 980-985
-    m.fs.charge.solar_salt_disjunct.tube_thickness = Param(
-        initialize=m.fs.charge.data_hxc_solar['tube_thickness'],
-        doc='Tube thickness [m]')
-    m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia = Param(
-        initialize=m.fs.charge.data_hxc_solar['tube_inner_dia'],
-        doc='Tube inner diameter [m]')
-    m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia = Param(
-        initialize=m.fs.charge.data_hxc_solar['tube_outer_dia'],
-        doc='Tube outer diameter [m]')
-    m.fs.charge.solar_salt_disjunct.hxc.k_steel = Param(
-        initialize=m.fs.charge.data_hxc_solar['k_steel'],
-        doc='Thermal conductivity of steel [W/mK]')
-    m.fs.charge.solar_salt_disjunct.hxc.n_tubes = Param(
-        initialize=m.fs.charge.data_hxc_solar['number_tubes'],
-        doc='Number of tubes')
-    m.fs.charge.solar_salt_disjunct.hxc.shell_inner_dia = Param(
-        initialize=m.fs.charge.data_hxc_solar['shell_inner_dia'],
-        doc='Shell inner diameter [m]')
-
-    # Calculate Reynolds, Prandtl, and Nusselt number for the salt and
-    # steam side of charge heat exchanger
-    m.fs.charge.solar_salt_disjunct.hxc.tube_cs_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia ** 2),
-        doc="Tube cross sectional area")
-    m.fs.charge.solar_salt_disjunct.hxc.tube_out_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia ** 2),
-        doc="Tube cross sectional area including thickness [m2]")
-    m.fs.charge.solar_salt_disjunct.hxc.shell_eff_area = Expression(
+    solar_hxc = m.fs.charge.solar_salt_disjunct.hxc
+    solar_hxc.salt_reynolds_number = Expression(
         expr=(
-            (pi / 4) *
-            (m.fs.charge.solar_salt_disjunct.hxc.shell_inner_dia ** 2) -
-            m.fs.charge.solar_salt_disjunct.hxc.n_tubes *
-            m.fs.charge.solar_salt_disjunct.hxc.tube_out_area),
-        doc="Effective shell cross sectional area [m2]")
-
-    m.fs.charge.solar_salt_disjunct.hxc.salt_reynolds_number = Expression(
-        expr=(
-            (m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0] *
-             m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia) /
-            (m.fs.charge.solar_salt_disjunct.hxc.shell_eff_area *
-             m.fs.charge.solar_salt_disjunct.hxc.side_2.
-             properties_in[0].dynamic_viscosity["Liq"])
+            (solar_hxc.inlet_2.flow_mass[0] *
+             m.fs.charge.hxc_tube_outer_dia) /
+            (m.fs.charge.hxc_shell_eff_area *
+             solar_hxc.side_2.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number")
-    m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_number = Expression(
+    solar_hxc.salt_prandtl_number = Expression(
         expr=(
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.
-            properties_in[0].cp_specific_heat["Liq"] *
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.
-            properties_in[0].dynamic_viscosity["Liq"] /
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.
-            properties_in[0].thermal_conductivity["Liq"]
+            solar_hxc.side_2.properties_in[0].cp_mass["Liq"] *
+            solar_hxc.side_2.properties_in[0].visc_d_phase["Liq"] /
+            solar_hxc.side_2.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number")
-    m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_wall = Expression(
+    solar_hxc.salt_prandtl_wall = Expression(
         expr=(
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.
-            properties_out[0].cp_specific_heat["Liq"] *
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.
-            properties_out[0].dynamic_viscosity["Liq"] /
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.
-            properties_out[0].thermal_conductivity["Liq"]
+            solar_hxc.side_2.properties_out[0].cp_mass["Liq"] *
+            solar_hxc.side_2.properties_out[0].visc_d_phase["Liq"] /
+            solar_hxc.side_2.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number at wall")
-    m.fs.charge.solar_salt_disjunct.hxc.salt_nusselt_number = Expression(
+    solar_hxc.salt_nusselt_number = Expression(
         expr=(
             0.35 *
-            (m.fs.charge.solar_salt_disjunct.hxc.salt_reynolds_number**0.6) *
-            (m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_number**0.4) *
-            ((m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_number /
-              m.fs.charge.solar_salt_disjunct.hxc.salt_prandtl_wall) ** 0.25) *
+            (solar_hxc.salt_reynolds_number**0.6) *
+            (solar_hxc.salt_prandtl_number**0.4) *
+            ((solar_hxc.salt_prandtl_number /
+              solar_hxc.salt_prandtl_wall) ** 0.25) *
             (2**0.2)
         ),
         doc="Salt Nusslet Number from 2019, App Ener (233-234), 126")
-    m.fs.charge.solar_salt_disjunct.hxc.steam_reynolds_number = Expression(
+    solar_hxc.steam_reynolds_number = Expression(
         expr=(
-            m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol[0] *
-            m.fs.charge.solar_salt_disjunct.hxc.side_1.properties_in[0].mw *
-            m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia /
-            (m.fs.charge.solar_salt_disjunct.hxc.tube_cs_area *
-             m.fs.charge.solar_salt_disjunct.hxc.n_tubes *
-             m.fs.charge.solar_salt_disjunct.hxc.side_1.
-             properties_in[0].visc_d_phase["Vap"])
+            solar_hxc.inlet_1.flow_mol[0] *
+            solar_hxc.side_1.properties_in[0].mw *
+            m.fs.charge.hxc_tube_inner_dia /
+            (m.fs.charge.hxc_tube_cs_area *
+             m.fs.charge.hxc_n_tubes *
+             solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"])
         ),
         doc="Steam Reynolds Number")
-    m.fs.charge.solar_salt_disjunct.hxc.steam_prandtl_number = Expression(
+    solar_hxc.steam_prandtl_number = Expression(
         expr=(
-            (m.fs.charge.solar_salt_disjunct.hxc.side_1.
-             properties_in[0].cp_mol /
-             m.fs.charge.solar_salt_disjunct.hxc.side_1.
-             properties_in[0].mw) *
-            m.fs.charge.solar_salt_disjunct.hxc.side_1.
-            properties_in[0].visc_d_phase["Vap"] /
-            m.fs.charge.solar_salt_disjunct.hxc.side_1.
-            properties_in[0].therm_cond_phase["Vap"]
+            (solar_hxc.side_1.properties_in[0].cp_mol /
+             solar_hxc.side_1.properties_in[0].mw) *
+            solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
+            solar_hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
         ),
         doc="Steam Prandtl Number")
-    m.fs.charge.solar_salt_disjunct.hxc.steam_nusselt_number = Expression(
+    solar_hxc.steam_nusselt_number = Expression(
         expr=(
             0.023 *
-            (m.fs.charge.solar_salt_disjunct.
-             hxc.steam_reynolds_number**0.8) *
-            (m.fs.charge.solar_salt_disjunct.
-             hxc.steam_prandtl_number**(0.33)) *
-            ((m.fs.charge.solar_salt_disjunct.hxc.
-              side_1.properties_in[0].visc_d_phase["Vap"] /
-              m.fs.charge.solar_salt_disjunct.hxc.side_1.
-              properties_out[0].visc_d_phase["Liq"]) ** 0.14)
+            (solar_hxc.steam_reynolds_number**0.8) *
+            (solar_hxc.steam_prandtl_number**(0.33)) *
+            ((solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
+              solar_hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
         ),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia")
 
     # Calculate heat transfer coefficients for the salt and steam
     # sides of charge heat exchanger
-    m.fs.charge.solar_salt_disjunct.hxc.h_salt = Expression(
+    solar_hxc.h_salt = Expression(
         expr=(
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.
-            properties_in[0].thermal_conductivity["Liq"] *
-            m.fs.charge.solar_salt_disjunct.hxc.salt_nusselt_number /
-            m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia
+            solar_hxc.side_2.properties_in[0].therm_cond_phase["Liq"] *
+            solar_hxc.salt_nusselt_number /
+            m.fs.charge.hxc_tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]")
-    m.fs.charge.solar_salt_disjunct.hxc.h_steam = Expression(
+    solar_hxc.h_steam = Expression(
         expr=(
-            m.fs.charge.solar_salt_disjunct.hxc.side_1.
-            properties_in[0].therm_cond_phase["Vap"] *
-            m.fs.charge.solar_salt_disjunct.hxc.steam_nusselt_number /
-            m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia
+            solar_hxc.side_1.properties_in[0].therm_cond_phase["Vap"] *
+            solar_hxc.steam_nusselt_number /
+            m.fs.charge.hxc_tube_inner_dia
         ),
         doc="Steam side convective heat transfer coefficient [W/mK]")
 
-    # Rewrite overall heat transfer coefficient constraint to avoid
-    # denominators
-    m.fs.charge.solar_salt_disjunct.hxc.tube_dia_ratio = (
-        m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia /
-        m.fs.charge.solar_salt_disjunct.hxc.tube_inner_dia)
-    m.fs.charge.solar_salt_disjunct.hxc.log_tube_dia_ratio = log(
-        m.fs.charge.solar_salt_disjunct.hxc.tube_dia_ratio)
-
+    # Calculate overall heat transfer coefficient for Solar salt
+    # charge heat exchanger
     @m.fs.charge.solar_salt_disjunct.hxc.Constraint(m.fs.time)
     def constraint_hxc_ohtc(b, t):
         return (
-            m.fs.charge.solar_salt_disjunct.hxc.
-            overall_heat_transfer_coefficient[t] *
-            (2 * m.fs.charge.solar_salt_disjunct.hxc.k_steel *
-             m.fs.charge.solar_salt_disjunct.hxc.h_steam +
-             m.fs.charge.solar_salt_disjunct.hxc.tube_outer_dia *
-             m.fs.charge.solar_salt_disjunct.hxc.log_tube_dia_ratio *
-             m.fs.charge.solar_salt_disjunct.hxc.h_salt *
-             m.fs.charge.solar_salt_disjunct.hxc.h_steam +
-             m.fs.charge.solar_salt_disjunct.hxc.tube_dia_ratio *
-             m.fs.charge.solar_salt_disjunct.hxc.h_salt *
-             2 * m.fs.charge.solar_salt_disjunct.hxc.k_steel)
-        ) == (2 * m.fs.charge.solar_salt_disjunct.hxc.k_steel *
-              m.fs.charge.solar_salt_disjunct.hxc.h_salt *
-              m.fs.charge.solar_salt_disjunct.hxc.h_steam)
+            b.overall_heat_transfer_coefficient[t] *
+            (2 *
+             m.fs.charge.hxc_k_steel *
+             b.h_steam +
+             m.fs.charge.hxc_tube_outer_dia *
+             m.fs.charge.hxc_log_tube_dia_ratio *
+             b.h_salt *
+             b.h_steam +
+             m.fs.charge.hxc_tube_dia_ratio *
+             b.h_salt *
+             2 * m.fs.charge.hxc_k_steel)
+        ) == (2 * m.fs.charge.hxc_k_steel *
+              b.h_salt *
+              b.h_steam)
 
     # Declare arcs within the disjunct
     m.fs.charge.solar_salt_disjunct.connector_to_hxc = Arc(
@@ -557,204 +651,119 @@ def hitec_salt_disjunct_equations(disj):
     m.fs.charge.hitec_salt_disjunct.hxc = HeatExchanger(
         default={
             "delta_temperature_callback": delta_temperature_underwood_callback,
-            "shell": {
-                "property_package": m.fs.prop_water
-            },
-            "tube": {
-                "property_package": m.fs.hitec_salt_properties
-            }
+            "shell": {"property_package": m.fs.prop_water},
+            "tube": {"property_package": m.fs.hitec_salt_properties}
         }
     )
 
     # Calculate heat transfer coefficient for hitec salt heat
+    # exchanger. For that, calculate first the Reynolds, Prandtl, and
+    # Nusselt number for the salt and steam side of hitec charge heat
     # exchanger
-    m.fs.charge.data_hxc_hitec = {
-        'tube_thickness': 0.004,
-        'tube_inner_dia': 0.032,
-        'tube_outer_dia': 0.036,
-        'k_steel': 21.5,
-        'number_tubes': 20,
-        'shell_inner_dia': 1
-    }
-
-    # Compute overall heat transfer coefficient for the heat exchanger
-    # using the Sieder-Tate Correlation. Parameters for tube diameter
-    # and thickness assumed from the data in (2017) He et al., Energy
-    # Procedia 105, 980-985
-    m.fs.charge.hitec_salt_disjunct.hxc.tube_thickness = Param(
-        initialize=m.fs.charge.data_hxc_hitec['tube_thickness'],
-        doc='Tube thickness [m]')
-    m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia = Param(
-        initialize=m.fs.charge.data_hxc_hitec['tube_inner_dia'],
-        doc='Tube inner diameter [m]')
-    m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia = Param(
-        initialize=m.fs.charge.data_hxc_hitec['tube_outer_dia'],
-        doc='Tube outer diameter [m]')
-    # https://www.theworldmaterial.com/thermal-conductivity-of-stainless-steel/
-    m.fs.charge.hitec_salt_disjunct.hxc.k_steel = Param(
-        initialize=m.fs.charge.data_hxc_hitec['k_steel'],
-        doc='Thermal conductivity of steel [W/mK]')
-    m.fs.charge.hitec_salt_disjunct.hxc.n_tubes = Param(
-        initialize=m.fs.charge.data_hxc_hitec['number_tubes'],
-        doc='Number of tubes ')
-    m.fs.charge.hitec_salt_disjunct.hxc.shell_inner_dia = Param(
-        initialize=m.fs.charge.data_hxc_hitec['shell_inner_dia'],
-        doc='Shell inner diameter [m]')
-
-    m.fs.charge.hitec_salt_disjunct.hxc.tube_cs_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia ** 2),
-        doc="Tube inside cross sectional area [m2]")
-    m.fs.charge.hitec_salt_disjunct.hxc.tube_out_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia ** 2),
-        doc="Tube cross sectional area including thickness [m2]")
-    m.fs.charge.hitec_salt_disjunct.hxc.shell_eff_area = Expression(
+    hitec_hxc = m.fs.charge.hitec_salt_disjunct.hxc
+    hitec_hxc.salt_reynolds_number = Expression(
         expr=(
-            (pi / 4) *
-            (m.fs.charge.hitec_salt_disjunct.hxc.shell_inner_dia ** 2)
-            - m.fs.charge.hitec_salt_disjunct.hxc.n_tubes *
-            m.fs.charge.hitec_salt_disjunct.hxc.tube_out_area),
-        doc="Effective shell cross sectional area [m2]")
-
-    # Calculate Reynolds, Prandtl, and Nusselt number for the salt and
-    # steam side of hitec charge heat exchanger
-    m.fs.charge.hitec_salt_disjunct.hxc.salt_reynolds_number = Expression(
-        expr=(
-            m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0] *
-            m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia /
-            (m.fs.charge.hitec_salt_disjunct.hxc.shell_eff_area *
-             m.fs.charge.hitec_salt_disjunct.hxc.side_2.
-             properties_in[0].dynamic_viscosity["Liq"])
+            hitec_hxc.inlet_2.flow_mass[0] *
+            m.fs.charge.hxc_tube_outer_dia /
+            (m.fs.charge.hxc_shell_eff_area *
+             hitec_hxc.side_2.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number"
     )
-    m.fs.charge.hitec_salt_disjunct.hxc.salt_prandtl_number = Expression(
+    hitec_hxc.salt_prandtl_number = Expression(
         expr=(
-            m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
-            cp_specific_heat["Liq"]
-            * m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
-            dynamic_viscosity["Liq"]
-            / m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
-            thermal_conductivity["Liq"]),
+            hitec_hxc.side_2.properties_in[0].cp_mass["Liq"]
+            * hitec_hxc.side_2.properties_in[0].visc_d_phase["Liq"]
+            / hitec_hxc.side_2.properties_in[0].therm_cond_phase["Liq"]),
         doc="Salt Prandtl Number")
-    m.fs.charge.hitec_salt_disjunct.hxc.salt_prandtl_wall = Expression(
+    hitec_hxc.salt_prandtl_wall = Expression(
         expr=(
-            m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_out[0].
-            cp_specific_heat["Liq"]
-            * m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_out[0].
-            dynamic_viscosity["Liq"]
-            / m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_out[0].
-            thermal_conductivity["Liq"]
+            hitec_hxc.side_2.properties_out[0].cp_mass["Liq"]
+            * hitec_hxc.side_2.properties_out[0].visc_d_phase["Liq"]
+            / hitec_hxc.side_2.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Wall Prandtl Number"
     )
-    m.fs.charge.hitec_salt_disjunct.hxc.salt_nusselt_number = Expression(
+    hitec_hxc.salt_nusselt_number = Expression(
         expr=(
-            1.61 * ((m.fs.charge.hitec_salt_disjunct.hxc.salt_reynolds_number *
-                     m.fs.charge.hitec_salt_disjunct.hxc.salt_prandtl_number *
-                     0.009)**0.63) *
-            ((m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].
-              dynamic_viscosity["Liq"] /
-              m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_out[0].
-              dynamic_viscosity["Liq"])**0.25)
+            1.61 * ((hitec_hxc.salt_reynolds_number *
+                     hitec_hxc.salt_prandtl_number *0.009)**0.63) *
+            ((hitec_hxc.side_2.properties_in[0].visc_d_phase["Liq"] /
+              hitec_hxc.side_2.properties_out[0].visc_d_phase["Liq"])**0.25)
         ),
         doc="Salt Nusslet Number from 2014, He et al, Exp Therm Fl Sci, 59, 9"
     )
-    m.fs.charge.hitec_salt_disjunct.hxc.steam_reynolds_number = Expression(
+    hitec_hxc.steam_reynolds_number = Expression(
         expr=(
-            m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol[0] *
-            m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_in[0].mw *
-            m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia
-            / (m.fs.charge.hitec_salt_disjunct.hxc.tube_cs_area
-               * m.fs.charge.hitec_salt_disjunct.hxc.n_tubes
-               * m.fs.charge.hitec_salt_disjunct.hxc.side_1.properties_in[0].
-               visc_d_phase["Vap"])
+            hitec_hxc.inlet_1.flow_mol[0] *
+            hitec_hxc.side_1.properties_in[0].mw *
+            m.fs.charge.hxc_tube_inner_dia
+            / (m.fs.charge.hxc_tube_cs_area *
+               m.fs.charge.hxc_n_tubes *
+               hitec_hxc.side_1.properties_in[0].visc_d_phase["Vap"])
         ),
         doc="Steam Reynolds Number"
     )
-    m.fs.charge.hitec_salt_disjunct.hxc.steam_prandtl_number = Expression(
+    hitec_hxc.steam_prandtl_number = Expression(
         expr=(
-            (m.fs.charge.hitec_salt_disjunct.hxc.side_1.
-             properties_in[0].cp_mol
-             / m.fs.charge.hitec_salt_disjunct.hxc.side_1.
-             properties_in[0].mw) *
-            m.fs.charge.hitec_salt_disjunct.hxc.side_1.
-            properties_in[0].visc_d_phase["Vap"]
-            / m.fs.charge.hitec_salt_disjunct.hxc.side_1.
-            properties_in[0].
-            therm_cond_phase["Vap"]
+            (hitec_hxc.side_1.properties_in[0].cp_mol /
+             hitec_hxc.side_1.properties_in[0].mw) *
+            hitec_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
+            hitec_hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
         ),
         doc="Steam Prandtl Number"
     )
-    m.fs.charge.hitec_salt_disjunct.hxc.steam_nusselt_number = Expression(
+    hitec_hxc.steam_nusselt_number = Expression(
         expr=(
             0.023 *
-            (m.fs.charge.hitec_salt_disjunct.hxc.steam_reynolds_number
-             ** 0.8)
-            * (m.fs.charge.hitec_salt_disjunct.hxc.steam_prandtl_number
-               ** 0.33)
-            * ((m.fs.charge.hitec_salt_disjunct.hxc.
-                side_1.properties_in[0].visc_d_phase["Vap"]
-                / m.fs.charge.hitec_salt_disjunct.hxc.
-                side_1.properties_out[0].visc_d_phase["Liq"]
-                ) ** 0.14)
+            (hitec_hxc.steam_reynolds_number** 0.8) *
+            (hitec_hxc.steam_prandtl_number** 0.33) *
+            ((hitec_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
+              hitec_hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
         ),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
     )
 
     # Calculate heat transfer coefficient for salt and steam side of
     # charge heat exchanger
-    m.fs.charge.hitec_salt_disjunct.hxc.h_salt = Expression(
+    hitec_hxc.h_salt = Expression(
         expr=(
-            m.fs.charge.hitec_salt_disjunct.hxc.
-            side_2.properties_in[0].thermal_conductivity["Liq"]
-            * m.fs.charge.hitec_salt_disjunct.hxc.
-            salt_nusselt_number /
-            m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia
+            hitec_hxc.side_2.properties_in[0].therm_cond_phase["Liq"] *
+            hitec_hxc.salt_nusselt_number /
+            m.fs.charge.hxc_tube_outer_dia
         ),
-        doc="Salt side convective heat transfer coefficient [W/mK]"
+        doc="Salt side convective heat transfer coefficient in W/m.K"
     )
-    m.fs.charge.hitec_salt_disjunct.hxc.h_steam = Expression(
+    hitec_hxc.h_steam = Expression(
         expr=(
-            m.fs.charge.hitec_salt_disjunct.hxc.
-            side_1.properties_in[0].therm_cond_phase["Vap"]
-            * m.fs.charge.hitec_salt_disjunct.hxc.
-            steam_nusselt_number /
-            m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia
+            hitec_hxc.side_1.properties_in[0].therm_cond_phase["Vap"] *
+            hitec_hxc.steam_nusselt_number /
+            m.fs.charge.hxc_tube_inner_dia
         ),
-        doc="Steam side convective heat transfer coefficient [W/mK]"
+        doc="Steam side convective heat transfer coefficient in W/m.K"
     )
 
-    # Rewrite overall heat transfer coefficient constraint to avoid
-    # denominators
-    m.fs.charge.hitec_salt_disjunct.hxc.tube_dia_ratio = (
-        m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia /
-        m.fs.charge.hitec_salt_disjunct.hxc.tube_inner_dia
-    )
-    m.fs.charge.hitec_salt_disjunct.hxc.log_tube_dia_ratio = log(
-        m.fs.charge.hitec_salt_disjunct.hxc.tube_dia_ratio)
-
+    # Calculate overall heat transfer coefficient for Solar salt
+    # charge heat exchanger
     @m.fs.charge.hitec_salt_disjunct.hxc.Constraint(
         m.fs.time,
-        doc="Hitec salt charge heat exchanger \
-        overall heat transfer coefficient")
+        doc="Hitec salt charge heat exchanger overall heat transfer coefficient")
     def constraint_hxc_ohtc_hitec(b, t):
         return (
-            m.fs.charge.hitec_salt_disjunct.hxc.
-            overall_heat_transfer_coefficient[t] *
-            (2 * m.fs.charge.hitec_salt_disjunct.hxc.k_steel *
-             m.fs.charge.hitec_salt_disjunct.hxc.h_steam
-             + m.fs.charge.hitec_salt_disjunct.hxc.tube_outer_dia *
-             m.fs.charge.hitec_salt_disjunct.hxc.log_tube_dia_ratio *
-             m.fs.charge.hitec_salt_disjunct.hxc.h_salt *
-             m.fs.charge.hitec_salt_disjunct.hxc.h_steam
-             + m.fs.charge.hitec_salt_disjunct.hxc.tube_dia_ratio *
-             m.fs.charge.hitec_salt_disjunct.hxc.h_salt *
-             2 * m.fs.charge.hitec_salt_disjunct.hxc.k_steel)
-        ) == (2 * m.fs.charge.hitec_salt_disjunct.hxc.k_steel *
-              m.fs.charge.hitec_salt_disjunct.hxc.h_salt *
-              m.fs.charge.hitec_salt_disjunct.hxc.h_steam)
+            b.overall_heat_transfer_coefficient[t] *
+            (2 *
+             m.fs.charge.hxc_k_steel *
+             b.h_steam
+             + m.fs.charge.hxc_tube_outer_dia *
+             m.fs.charge.hxc_log_tube_dia_ratio *
+             b.h_salt *
+             b.h_steam
+             + m.fs.charge.hxc_tube_dia_ratio *
+             b.h_salt *
+             2 * m.fs.charge.hxc_k_steel)
+        ) == (2 * m.fs.charge.hxc_k_steel *
+              b.h_salt *
+              b.h_steam)
 
     # Declare arcs to connect units within the disjunct
     m.fs.charge.hitec_salt_disjunct.connector_to_hxc = Arc(
@@ -781,204 +790,133 @@ def thermal_oil_disjunct_equations(disj):
     m.fs.charge.thermal_oil_disjunct.hxc = HeatExchanger(
         default={
             "delta_temperature_callback": delta_temperature_underwood_callback,
-            "shell": {
-                "property_package": m.fs.prop_water
-            },
-            "tube": {
-                "property_package": m.fs.therminol66_properties
-            },
+            "shell": {"property_package": m.fs.prop_water},
+            "tube": {"property_package": m.fs.therminol66_properties},
             "flow_pattern": HeatExchangerFlowPattern.countercurrent
         }
     )
 
-    # Calculate heat transfer coefficient for thermal oil heat exchanger
-    m.fs.charge.data_hxc_thermal_oil = {
-        'tube_thickness': 0.004,
-        'tube_inner_dia': 0.032,
-        'tube_outer_dia': 0.036,
-        'k_steel': 21.5,
-        'number_tubes': 20,
-        'shell_inner_dia': 1
-    }
+    # Calculate heat transfer coefficient for thermal oil heat
+    # exchanger. For that, first calculate Reynolds, Prandtl, and
+    # Nusselt number for the salt and steam side of thermal oil charge
+    # heat exchanger
+    oil_hxc = m.fs.charge.thermal_oil_disjunct.hxc
+    # m.fs.charge.thermal_oil_disjunct.hxc.oil_in_visc_d_phase = Expression(
+    #     expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].visc_kin["Liq"] *
+    #     # m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density * 1e-4
+    #     m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density["Liq"] * 1e-6 # conversion from mm2/s to m2/s
+    # )
 
-    # Compute overall heat transfer coefficient for the heat exchanger
-    # using the Sieder-Tate Correlation. Parameters for tube diameter
-    # and thickness assumed from the data in (2017) He et al., Energy
-    # Procedia 105, 980-985
-    m.fs.charge.thermal_oil_disjunct.hxc.tube_thickness = Param(
-        initialize=m.fs.charge.data_hxc_thermal_oil['tube_thickness'],
-        doc='Tube thickness [m]')
-    m.fs.charge.thermal_oil_disjunct.hxc.tube_inner_dia = Param(
-        initialize=m.fs.charge.data_hxc_thermal_oil['tube_inner_dia'],
-        doc='Tube inner diameter [m]')
-    m.fs.charge.thermal_oil_disjunct.hxc.tube_outer_dia = Param(
-        initialize=m.fs.charge.data_hxc_thermal_oil['tube_outer_dia'],
-        doc='Tube outer diameter [m]')
-    # https://www.theworldmaterial.com/thermal-conductivity-of-stainless-steel/
-    m.fs.charge.thermal_oil_disjunct.hxc.k_steel = Param(
-        initialize=m.fs.charge.data_hxc_thermal_oil['k_steel'],
-        doc='Thermal conductivity of steel [W/mK]')
-    m.fs.charge.thermal_oil_disjunct.hxc.n_tubes = Param(
-        initialize=m.fs.charge.data_hxc_thermal_oil['number_tubes'],
-        doc='Number of tubes ')
-    m.fs.charge.thermal_oil_disjunct.hxc.shell_inner_dia = Param(
-        initialize=m.fs.charge.data_hxc_thermal_oil['shell_inner_dia'],
-        doc='Shell inner diameter [m]')
+    # m.fs.charge.thermal_oil_disjunct.hxc.oil_out_visc_d_phase = Expression(
+    #     expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].visc_kin["Liq"] *
+    #     # m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].density * 1e-4
+    #     m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].density["Liq"] * 1e-6  # conversion from mm2/s to m2/s
+    # )
 
-    m.fs.charge.thermal_oil_disjunct.hxc.tube_cs_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.charge.thermal_oil_disjunct.hxc.tube_inner_dia ** 2),
-        doc="Tube inside cross sectional area [m2]")
-    m.fs.charge.thermal_oil_disjunct.hxc.tube_out_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.charge.thermal_oil_disjunct.hxc.tube_outer_dia ** 2),
-        doc="Tube cross sectional area including thickness [m2]")
-    m.fs.charge.thermal_oil_disjunct.hxc.shell_eff_area = Expression(
+    oil_hxc.oil_reynolds_number = Expression(
         expr=(
-            (pi / 4) *
-            (m.fs.charge.thermal_oil_disjunct.hxc.shell_inner_dia ** 2)
-            - m.fs.charge.thermal_oil_disjunct.hxc.n_tubes *
-            m.fs.charge.thermal_oil_disjunct.hxc.tube_out_area),
-        doc="Effective shell cross sectional area [m2]")
-
-    # Calculate Reynolds, Prandtl, and Nusselt number for the salt and
-    # steam side of thermal oil charge heat exchanger
-    m.fs.charge.thermal_oil_disjunct.hxc.oil_in_dynamic_viscosity = Expression(
-        expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].visc_kin["Liq"] *
-        # m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density * 1e-4
-        m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density["Liq"] * 1e-6 # conversion from mm2/s to m2/s
-    )
-
-    m.fs.charge.thermal_oil_disjunct.hxc.oil_out_dynamic_viscosity = Expression(
-        expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].visc_kin["Liq"] *
-        # m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].density * 1e-4
-        m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].density["Liq"] * 1e-6  # conversion from mm2/s to m2/s
-    )
-
-    m.fs.charge.thermal_oil_disjunct.hxc.oil_reynolds_number = Expression(
-        expr=(
-            m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.flow_mass[0] *
-            m.fs.charge.thermal_oil_disjunct.hxc.tube_outer_dia /
-            (m.fs.charge.thermal_oil_disjunct.hxc.shell_eff_area *
-             m.fs.charge.thermal_oil_disjunct.hxc.oil_in_dynamic_viscosity)
+            oil_hxc.inlet_2.flow_mass[0] *
+            m.fs.charge.hxc_tube_outer_dia /
+            (m.fs.charge.hxc_shell_eff_area *
+             oil_hxc.side_2.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number"
     )
-    m.fs.charge.thermal_oil_disjunct.hxc.oil_prandtl_number = Expression(
+    oil_hxc.oil_prandtl_number = Expression(
         expr=(
-            m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].cp_mass["Liq"]
-            * m.fs.charge.thermal_oil_disjunct.hxc.oil_in_dynamic_viscosity
-            / m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].therm_cond["Liq"]),
+            oil_hxc.side_2.properties_in[0].cp_mass["Liq"]
+            * oil_hxc.side_2.properties_in[0].visc_d_phase["Liq"]
+            / oil_hxc.side_2.properties_in[0].therm_cond_phase["Liq"]),
         doc="Salt Prandtl Number")
-    m.fs.charge.thermal_oil_disjunct.hxc.oil_prandtl_wall = Expression(
+    oil_hxc.oil_prandtl_wall = Expression(
         expr=(
-            m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].cp_mass["Liq"]
-            * m.fs.charge.thermal_oil_disjunct.hxc.oil_out_dynamic_viscosity
-            / m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].therm_cond["Liq"]
+            oil_hxc.side_2.properties_out[0].cp_mass["Liq"]
+            * oil_hxc.side_2.properties_out[0].visc_d_phase["Liq"]
+            / oil_hxc.side_2.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Wall Prandtl Number"
     )
-    m.fs.charge.thermal_oil_disjunct.hxc.oil_nusselt_number = Expression(
+    oil_hxc.oil_nusselt_number = Expression(
         expr=(
             0.36 *
-            ((m.fs.charge.thermal_oil_disjunct.hxc.oil_reynolds_number**0.55) *
-             (m.fs.charge.thermal_oil_disjunct.hxc.oil_prandtl_number**0.33) *
-             ((m.fs.charge.thermal_oil_disjunct.hxc.oil_prandtl_number /
-               m.fs.charge.thermal_oil_disjunct.hxc.oil_prandtl_wall)**0.14))
+            ((oil_hxc.oil_reynolds_number**0.55) *
+             (oil_hxc.oil_prandtl_number**0.33) *
+             ((oil_hxc.oil_prandtl_number /
+               oil_hxc.oil_prandtl_wall)**0.14))
         ),
         doc="Salt Nusslet Number from 2014, He et al, Exp Therm Fl Sci, 59, 9"
     )
-    m.fs.charge.thermal_oil_disjunct.hxc.steam_reynolds_number = Expression(
+    oil_hxc.steam_reynolds_number = Expression(
         expr=(
-            m.fs.charge.thermal_oil_disjunct.hxc.inlet_1.flow_mol[0] *
-            m.fs.charge.thermal_oil_disjunct.hxc.side_1.properties_in[0].mw *
-            m.fs.charge.thermal_oil_disjunct.hxc.tube_inner_dia
-            / (m.fs.charge.thermal_oil_disjunct.hxc.tube_cs_area
-               * m.fs.charge.thermal_oil_disjunct.hxc.n_tubes
-               * m.fs.charge.thermal_oil_disjunct.hxc.side_1.properties_in[0].
-               visc_d_phase["Vap"])
+            oil_hxc.inlet_1.flow_mol[0] *
+            oil_hxc.side_1.properties_in[0].mw *
+            m.fs.charge.hxc_tube_inner_dia
+            / (m.fs.charge.hxc_tube_cs_area
+               * m.fs.charge.hxc_n_tubes
+               * oil_hxc.side_1.properties_in[0].visc_d_phase["Vap"])
         ),
         doc="Steam Reynolds Number"
     )
-    m.fs.charge.thermal_oil_disjunct.hxc.steam_prandtl_number = Expression(
+    oil_hxc.steam_prandtl_number = Expression(
         expr=(
-            (m.fs.charge.thermal_oil_disjunct.hxc.side_1.
-             properties_in[0].cp_mol
-             / m.fs.charge.thermal_oil_disjunct.hxc.side_1.
-             properties_in[0].mw) *
-            m.fs.charge.thermal_oil_disjunct.hxc.side_1.
-            properties_in[0].visc_d_phase["Vap"]
-            / m.fs.charge.thermal_oil_disjunct.hxc.side_1.
-            properties_in[0].therm_cond_phase["Vap"]
+            (oil_hxc.side_1.properties_in[0].cp_mol
+             / oil_hxc.side_1.properties_in[0].mw) *
+            oil_hxc.side_1.properties_in[0].visc_d_phase["Vap"]
+            / oil_hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
         ),
         doc="Steam Prandtl Number"
     )
-    m.fs.charge.thermal_oil_disjunct.hxc.steam_nusselt_number = Expression(
+    oil_hxc.steam_nusselt_number = Expression(
         expr=(
             0.023 *
-            (m.fs.charge.thermal_oil_disjunct.hxc.
-             steam_reynolds_number ** 0.8)
-            * (m.fs.charge.thermal_oil_disjunct.hxc.
-               steam_prandtl_number ** (0.33))
-            * ((m.fs.charge.thermal_oil_disjunct.hxc.
-                side_1.properties_in[0].visc_d_phase["Vap"]
-                / m.fs.charge.thermal_oil_disjunct.hxc.
-                side_1.properties_out[0].visc_d_phase["Liq"]
-                ) ** 0.14)
+            (oil_hxc.steam_reynolds_number ** 0.8) *
+            (oil_hxc.steam_prandtl_number ** (0.33)) *
+            ((oil_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
+              oil_hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
         ),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
     )
 
     # Calculate heat transfer coefficient for salt and steam side of
     # charge heat exchanger
-    m.fs.charge.thermal_oil_disjunct.hxc.h_oil = Expression(
+    oil_hxc.h_oil = Expression(
         expr=(
-            m.fs.charge.thermal_oil_disjunct.hxc.
-            side_2.properties_in[0].therm_cond["Liq"] *
-            m.fs.charge.thermal_oil_disjunct.hxc.oil_nusselt_number /
-            m.fs.charge.thermal_oil_disjunct.hxc.tube_outer_dia
+            oil_hxc.side_2.properties_in[0].therm_cond_phase["Liq"] *
+            oil_hxc.oil_nusselt_number /
+            m.fs.charge.hxc_tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]"
     )
-    m.fs.charge.thermal_oil_disjunct.hxc.h_steam = Expression(
+    oil_hxc.h_steam = Expression(
         expr=(
-            m.fs.charge.thermal_oil_disjunct.hxc.
-            side_1.properties_in[0].therm_cond_phase["Vap"] *
-            m.fs.charge.thermal_oil_disjunct.hxc.steam_nusselt_number /
-            m.fs.charge.thermal_oil_disjunct.hxc.tube_inner_dia
+            oil_hxc.side_1.properties_in[0].therm_cond_phase["Vap"] *
+            oil_hxc.steam_nusselt_number /
+            m.fs.charge.hxc_tube_inner_dia
         ),
         doc="Steam side convective heat transfer coefficient [W/mK]"
     )
 
-    # Rewrite overall heat transfer coefficient constraint to avoid
-    # denominators
-    m.fs.charge.thermal_oil_disjunct.hxc.tube_dia_ratio = (
-        m.fs.charge.thermal_oil_disjunct.hxc.tube_outer_dia /
-        m.fs.charge.thermal_oil_disjunct.hxc.tube_inner_dia
-    )
-    m.fs.charge.thermal_oil_disjunct.hxc.log_tube_dia_ratio = log(
-        m.fs.charge.thermal_oil_disjunct.hxc.tube_dia_ratio)
-
+    # Calculate overall heat transfer coefficient for thermal oil of
+    # thermal oil heat exchanger
     @m.fs.charge.thermal_oil_disjunct.hxc.Constraint(
         m.fs.time,
-        doc="Hitec salt charge heat exchanger \
-            overall heat transfer coefficient")
+        doc="Thermal oil charge heat exchanger overall heat transfer coefficient")
     def constraint_hxc_ohtc_thermal_oil(b, t):
         return (
-            m.fs.charge.thermal_oil_disjunct.hxc.
-            overall_heat_transfer_coefficient[t] *
-            (2 * m.fs.charge.thermal_oil_disjunct.hxc.k_steel *
-             m.fs.charge.thermal_oil_disjunct.hxc.h_steam
-             + m.fs.charge.thermal_oil_disjunct.hxc.tube_outer_dia *
-             m.fs.charge.thermal_oil_disjunct.hxc.log_tube_dia_ratio *
-             m.fs.charge.thermal_oil_disjunct.hxc.h_oil *
-             m.fs.charge.thermal_oil_disjunct.hxc.h_steam
-             + m.fs.charge.thermal_oil_disjunct.hxc.tube_dia_ratio *
-             m.fs.charge.thermal_oil_disjunct.hxc.h_oil *
-             2 * m.fs.charge.thermal_oil_disjunct.hxc.k_steel)
-        ) == (2 * m.fs.charge.thermal_oil_disjunct.hxc.k_steel *
-              m.fs.charge.thermal_oil_disjunct.hxc.h_oil *
-              m.fs.charge.thermal_oil_disjunct.hxc.h_steam)
+            b.overall_heat_transfer_coefficient[t] *
+            (2 *
+             m.fs.charge.hxc_k_steel *
+             b.h_steam
+             + m.fs.charge.hxc_tube_outer_dia *
+             m.fs.charge.hxc_log_tube_dia_ratio *
+             b.h_oil *
+             b.h_steam
+             + m.fs.charge.hxc_tube_dia_ratio *
+             b.h_oil *
+             2 * m.fs.charge.hxc_k_steel)
+        ) == (2 * m.fs.charge.hxc_k_steel *
+              b.h_oil *
+              b.h_steam)
 
     # Define arc to connect units within disjunct
     m.fs.charge.thermal_oil_disjunct.connector_to_hxc = Arc(
@@ -1116,13 +1054,12 @@ def cooler_disjunct_equations(disj):
     )
 
     # Add a cost function for the cooler
-    # print('Number of years =', m.number_of_years)
     m.fs.charge.cooler_disjunct.constraint_cooler_capital_cost_function = Constraint(
         expr=m.fs.charge.cooler_capital_cost == (
             (28300
              - 0.0058 * m.fs.charge.cooler_disjunct.cooler.heat_duty[0]
              + 5e-10 * (m.fs.charge.cooler_disjunct.cooler.heat_duty[0]**2)
-            ) / m.number_of_years
+            ) / m.fs.charge.num_of_years
         ) * scaling_factor
         # expr=m.fs.charge.cooler_capital_cost == 0
     )
@@ -1739,6 +1676,15 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     m.fs.charge.mixer4_sink_disjunct.mixer4.initialize(outlvl=outlvl)
 
     print('DOFs before init solution =', degrees_of_freedom(m))
+    # # Check and raise an error if the degrees of freedom are not 0
+    # if not degrees_of_freedom(m) == 0:
+    #     raise ConfigurationError(
+    #         "The degrees of freedom after building the model are not 0. "
+    #         "You have {} degrees of freedom. "
+    #         "Please check your inputs to ensure a square problem "
+    #         "before initializing the model.".format(degrees_of_freedom(m))
+    #         )
+
     res = solver.solve(m,
                        tee=False,
                        options=optarg)
@@ -1763,86 +1709,20 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     """
 
-    # All the computed capital costs are annualized. The operating
-    # cost is for 1 year. In addition, operating savings in terms of
-    # annual coal cost are estimated based on the differential
-    # reduction of coal consumption as compared to ramped baseline
-    # power plant. Unless other wise stated, the cost correlations
-    # used here (except IDAES costing method) are taken from 2nd
-    # Edition, Product & Process Design Principles, Seider et al.
-
     ###########################################################################
-    #  Data                                                                   #
+    # Add capital cost
+    # 1. Calculate charge storage material purchase cost
+    # 2. Calculate charge heat exchangers cost
+    # 3. Calculate charge storage material pump purchase cost
+    # 4. Calculate charge storage material vessel cost
+    # 5. Calculate total capital cost of charge system
+
+    # Main assumptions
+    # 1. Salt/oil life is assumed to outlast the plant life
+    # 2. The economic objective is to minimize total annualized cost. So, cash
+    # flows, discount rate, and NPV are not included in this study.
     ###########################################################################
-    m.CE_index = 607.5  # Chemical engineering cost index for 2019
-
-    # The q baseline_charge corresponds to heat duty of a plant with
-    # no storage and producing 400 MW power
-    m.data_cost = {
-        'coal_price': 2.11e-9,
-        'cooling_price': 3.3e-9,
-        'q_baseline_charge': 838565942.4732262,
-        'solar_salt_price': 0.49,
-        'hitec_salt_price': 0.93,
-        'thermal_oil_price': 6.72,  # $/kg
-        'storage_tank_material': 3.5,
-        'storage_tank_insulation': 235,
-        'storage_tank_foundation': 1210
-    }
-    m.data_salt_pump = {
-        'FT': 1.5,
-        'FM': 2.0,
-        'head': 3.281*5,
-        'motor_FT': 1,
-        'nm': 1
-    }
-    m.data_storage_tank = {
-        'LbyD': 0.325,
-        'tank_thickness': 0.039,
-        'material_density': 7800
-    }
-
-    # Main flowsheet operation data
-    m.fs.charge.coal_price = Param(
-        initialize=m.data_cost['coal_price'],
-        doc='Coal price based on HHV for Illinois No.6 (NETL Report) $/J')
-    m.fs.charge.cooling_price = Param(
-        initialize=m.data_cost['cooling_price'],
-        doc='Cost of chilled water for cooler from Sieder et al. $/J')
-    m.fs.q_baseline = Param(
-        initialize=m.data_cost['q_baseline_charge'],
-        doc='Boiler duty in Wth @ 699MW for baseline plant with no storage')
-    m.fs.charge.solar_salt_price = Param(
-        initialize=m.data_cost['solar_salt_price'],
-        doc='Solar salt price in $/kg')
-    m.fs.charge.hitec_salt_price = Param(
-        initialize=m.data_cost['hitec_salt_price'],
-        doc='Hitec salt price in $/kg')
-    m.fs.charge.thermal_oil_price = Param(
-        initialize=m.data_cost['thermal_oil_price'],
-        doc='Thermal oil price in $/kg')
-
-    ###########################################################################
-    #  Operating hours                                                        #
-    ###########################################################################
-    m.number_hours_per_day = 6
-
-    m.fs.charge.hours_per_day = Var(
-        initialize=m.number_hours_per_day,
-        bounds=(0, 12),
-        doc='Estimated number of hours of charging per day'
-    )
-
-    # Fix number of hours of discharging to 6
-    m.fs.charge.hours_per_day.fix(m.number_hours_per_day)
-
-    # Define number of years over which the capital cost is annualized
-    m.fs.charge.num_of_years = Param(
-        initialize=m.number_of_years,
-        doc='Number of years for capital cost annualization')
-
-    ###########################################################################
-    #  Capital cost                                                           #
+    # Add capital cost: 1. Calculate storage material purchase cost
     ###########################################################################
 
     #  Solar salt inventory
@@ -1917,108 +1797,94 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             salt_disj.salt_purchase_cost,
             salt_disj.salt_purchase_cost_eq)
 
-    # --------------------------------------------
-    #  Solar salt charge heat exchangers costing
-    # --------------------------------------------
-    # The charge heat exchanger cost is estimated using the IDAES
-    # costing method with default options, i.e. a U-tube heat
+    ###########################################################################
+    # Add capital cost: 2. Calculate charge heat exchangers cost
+    ###########################################################################
+    # Calculate and initialize Solar salt, Hitec salt, and thermal oil
+    # charge heat exchangers costs, which are estimated using the
+    # IDAES costing method with default options, i.e. a U-tube heat
     # exchanger, stainless steel material, and a tube length of
     # 12ft. Refer to costing documentation to change any of the
-    # default options Purchase cost of heat exchanger has to be
+    # default options. The purchase cost of heat exchanger has to be
     # annualized when used
-    for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
-                     m.fs.charge.hitec_salt_disjunct.hxc,
-                     m.fs.charge.thermal_oil_disjunct.hxc]:
-        salt_hxc.get_costing()
-        salt_hxc.costing.CE_index = m.CE_index
-        # Initialize Solar and Hitec charge heat exchanger costing
-        # correlations
-        icost.initialize(salt_hxc.costing)
 
-    # --------------------------------------------
-    #  Water pump
-    # --------------------------------------------
-    # The water pump is added as hx_pump before sending the feed water
-    # to the discharge heat exchanger in order to increase its
-    # pressure.  The outlet pressure of hx_pump is set based on its
-    # return point in the flowsheet Purchase cost of hx_pump has to be
-    # annualized when used
-    m.fs.charge.hx_pump.get_costing(
-        Mat_factor="stain_steel",
-        mover_type="compressor",
-        compressor_type="centrifugal",
-        driver_mover_type="electrical_motor",
-        pump_type="centrifugal",
-        pump_type_factor='1.4',
-        pump_motor_type_factor='open'
+    m.fs.costing = SSLWCosting()
+
+    for charge_hx in [m.fs.charge.solar_salt_disjunct.hxc,
+                      m.fs.charge.hitec_salt_disjunct.hxc,
+                      m.fs.charge.thermal_oil_disjunct.hxc]:
+        charge_hx.costing = UnitModelCostingBlock(
+            default={
+                "flowsheet_costing_block": m.fs.costing,
+                "costing_method": SSLWCostingData.cost_heat_exchanger,
+            }
         )
-    m.fs.charge.hx_pump.costing.CE_index = m.CE_index
 
-    # Initialize HX pump cost correlation
-    icost.initialize(m.fs.charge.hx_pump.costing)
-
-    # --------------------------------------------
-    #  Salt-pump costing
-    # --------------------------------------------
-    # The salt pump is not explicitly modeled. Thus, the IDAES cost
-    # method is not used for this equipment at this time.  The primary
-    # purpose of the salt pump is to move molten salt and not to
-    # change the pressure. Thus the pressure head is computed assuming
-    # that the salt is moved on an average of 5m linear distance.
-    m.fs.charge.spump_FT = pyo.Param(
-        initialize=m.data_salt_pump['FT'],
-        doc='Pump Type Factor for vertical split case')
-    m.fs.charge.spump_FM = pyo.Param(
-        initialize=m.data_salt_pump['FM'],
-        doc='Pump Material Factor Stainless Steel')
-    m.fs.charge.spump_head = pyo.Param(
-        initialize=m.data_salt_pump['head'],
-        doc='Pump Head 5m in Ft.')
-    m.fs.charge.spump_motorFT = pyo.Param(
-        initialize=m.data_salt_pump['motor_FT'],
-        doc='Motor Shaft Type Factor')
-    m.fs.charge.spump_nm = pyo.Param(
-        initialize=m.data_salt_pump['nm'],
-        doc='Motor Shaft Type Factor')
-
-    #  Solar salt-pump costing
-    m.fs.charge.solar_salt_disjunct.spump_Qgpm = pyo.Expression(
-        expr=(m.fs.charge.solar_salt_disjunct.hxc.
-              side_2.properties_in[0].flow_mass *
-              264.17 * 60 /
-              (m.fs.charge.solar_salt_disjunct.hxc.
-               side_2.properties_in[0].density["Liq"])),
-        doc="Conversion of solar salt flow mass to vol flow [gal per min]"
+    # Calculate and initialize storage water pump cost. The purchase
+    # cost has to be annualized when used
+    m.fs.charge.hx_pump.costing = UnitModelCostingBlock(
+        default={
+            "flowsheet_costing_block": m.fs.costing,
+            "costing_method": SSLWCostingData.cost_pump,
+            "costing_method_arguments": {
+                "pump_type": PumpType.Centrifugal,
+                "material_type": PumpMaterial.StainlessSteel,
+                "pump_type_factor": 1.4,
+                "motor_type": PumpMotorType.Open,
+            },
+        }
     )
-    m.fs.charge.solar_salt_disjunct.dens_lbft3 = pyo.Expression(
-        expr=m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"] * 0.062428,
-        doc="pump size factor"
-    )  # density in lb per ft3
+
+    ###########################################################################
+    # Add capital cost: 3. Calculate charge storage material pump purchase cost
+    ###########################################################################
+    # Pumps for moving molten salts or thermal oil are not explicity
+    # modeled.  To compute capital costs for these pumps the capital
+    # cost expressions are added below for each heat transfer fluid
+    # (Solar salt, Hitec salt, and thermal oil).  All cost expressions
+    # are from the same reference as the IDAES costing framework and
+    # is given below.  Seider, Seader, Lewin, Windagdo, 3rd Ed. John
+    # Wiley and Sons, Chapter 22. Cost Accounting and Capital Cost
+    # Estimation, Section 22.2 Cost Indexes and Capital Investment
+
+    # ---------- Solar salt ----------
+    # Calculate purchase cost of Solar salt pump
+    m.fs.charge.solar_salt_disjunct.spump_Qgpm = pyo.Expression(
+        expr=(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].flow_mass *
+              (264.17 * pyo.units.gallon / pyo.units.m**3) *
+              (60 * pyo.units.s / pyo.units.min) /
+              (m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"])),
+        doc="Conversion of solar salt flow mass to vol flow in gallons/min"
+    )
+    m.fs.charge.solar_salt_disjunct.dens_lbft3 = pyo.units.convert(
+        m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"],
+        to_units=pyo.units.pound / pyo.units.foot**3
+    )
     m.fs.charge.solar_salt_disjunct.spump_sf = pyo.Expression(
         expr=(m.fs.charge.solar_salt_disjunct.spump_Qgpm
               * (m.fs.charge.spump_head ** 0.5)),
         doc="Pump size factor"
     )
+
+    # Expression for pump base purchase cost
     m.fs.charge.solar_salt_disjunct.pump_CP = pyo.Expression(
         expr=(
             m.fs.charge.spump_FT * m.fs.charge.spump_FM *
-            exp(
-                9.2951
-                - 0.6019 * log(m.fs.charge.solar_salt_disjunct.spump_sf)
-                + 0.0519 * ((log(m.fs.charge.solar_salt_disjunct.spump_sf))**2)
-            )
+            exp(9.2951 -
+                0.6019 * log(m.fs.charge.solar_salt_disjunct.spump_sf) +
+                0.0519 * ((log(m.fs.charge.solar_salt_disjunct.spump_sf))**2))
         ),
-        doc="Salt pump base (purchase) cost in $"
+        doc="Base purchase cost of Solar salt pump in $"
     )
-    # Costing motor
+
+    # Expression for pump efficiency
     m.fs.charge.solar_salt_disjunct.spump_np = pyo.Expression(
-        expr=(
-            -0.316
-            + 0.24015 * log(m.fs.charge.solar_salt_disjunct.spump_Qgpm)
-            - 0.01199 * ((log(m.fs.charge.solar_salt_disjunct.spump_Qgpm))**2)
-        ),
-        doc="Fractional efficiency of the pump horse power"
+        expr=(-0.316 +
+              0.24015 * log(m.fs.charge.solar_salt_disjunct.spump_Qgpm) -
+              0.01199 * ((log(m.fs.charge.solar_salt_disjunct.spump_Qgpm))**2)),
+        doc="Fractional efficiency of the pump in horsepower"
     )
+
     m.fs.charge.solar_salt_disjunct.motor_pc = pyo.Expression(
         expr=(
             (m.fs.charge.solar_salt_disjunct.spump_Qgpm *
@@ -2027,24 +1893,28 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
             (33000 * m.fs.charge.solar_salt_disjunct.spump_np *
              m.fs.charge.spump_nm)
         ),
-        doc="Motor power consumption in horsepower"
+        doc="Power consumption of motor in horsepower"
     )
-    # Motor purchase cost
+
+    # Define a local variable for the log of motor's power consumption
+    # This will help writing concise expressions for the motor
+    # purchase cost
     log_motor_pc = log(m.fs.charge.solar_salt_disjunct.motor_pc)
+
+    # Expression for motor purchase cost
     m.fs.charge.solar_salt_disjunct.motor_CP = pyo.Expression(
         expr=(
             m.fs.charge.spump_motorFT *
-            exp(
-                5.4866
-                + 0.13141 * log_motor_pc
-                + 0.053255 * (log_motor_pc**2)
-                + 0.028628 * (log_motor_pc**3)
-                - 0.0035549 * (log_motor_pc**4)
-            )
+            exp(5.4866 +
+                0.13141 * log_motor_pc +
+                0.053255 * (log_motor_pc**2) +
+                0.028628 * (log_motor_pc**3) -
+                0.0035549 * (log_motor_pc**4))
         ),
-        doc="Salt Pump's Motor Base Cost in $"
+        doc="Base cost of Solar Salt pump's motor in $"
     )
-    # Pump and motor purchase cost pump
+
+    # Calculate and initialize total cost of Solar salt pump
     m.fs.charge.solar_salt_disjunct.spump_purchase_cost = pyo.Var(
         initialize=100000,
         bounds=(0, 1e7),
@@ -2054,8 +1924,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     def solar_spump_purchase_cost_rule(b):
         return (
             m.fs.charge.solar_salt_disjunct.spump_purchase_cost == (
-                (m.fs.charge.solar_salt_disjunct.pump_CP
-                 + m.fs.charge.solar_salt_disjunct.motor_CP) *
+                (m.fs.charge.solar_salt_disjunct.pump_CP +
+                 m.fs.charge.solar_salt_disjunct.motor_CP) *
                 (m.CE_index / 394)
             ) / m.fs.charge.num_of_years
         )
@@ -2067,75 +1937,80 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.solar_salt_disjunct.spump_purchase_cost,
         m.fs.charge.solar_salt_disjunct.spump_purchase_cost_eq)
 
-    # --------------------------------------------
-    #  Hitec salt pump costing
-    # The primary purpose of the salt pump is to move molten salt and not to
-    # change the pressure. Thus the pressure head is computed assuming that
-    # the salt is moved on an average of 5m linear distance.
+    # ---------- Hitec salt ----------
+    # Calculate cost of Hitec salt pump
     m.fs.charge.hitec_salt_disjunct.spump_Qgpm = Expression(
         expr=(
             m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].flow_mass *
-            264.17 * 60 /
-            (m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"])
+            (264.17 * pyo.units.gallon / pyo.units.m**3) *
+            (60 * pyo.units.s / pyo.units.min) /
+            (m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"])
         ),
         doc="Convert salt flow mass to volumetric flow in gal per min"
     )
-    m.fs.charge.hitec_salt_disjunct.dens_lbft3 = Expression(
-        expr=m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].density["Liq"] * 0.062428,
-        doc="pump size factor"
-    )  # density in lb per ft3
+    m.fs.charge.hitec_salt_disjunct.dens_lbft3 = pyo.units.convert(
+        m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"],
+        to_units=pyo.units.pound / pyo.units.foot**3
+    )
     m.fs.charge.hitec_salt_disjunct.spump_sf = Expression(
-        expr=m.fs.charge.hitec_salt_disjunct.spump_Qgpm * (m.fs.charge.spump_head ** 0.5),
+        expr=m.fs.charge.hitec_salt_disjunct.spump_Qgpm *
+        (m.fs.charge.spump_head ** 0.5),
         doc="Pump size factor"
     )
-    # Pump purchase cost
+
+    # Define a local variable for the log of pump's size factor
+    # calculated above. This will help writing concise expressions
     log_hitec_spump_sf = log(m.fs.charge.hitec_salt_disjunct.spump_sf)
+
+    # Expression for pump base purchase cost
     m.fs.charge.hitec_salt_disjunct.pump_CP = Expression(
-        expr=(
-            m.fs.charge.spump_FT * m.fs.charge.spump_FM *
-            exp(
-                9.2951
-                - 0.6019 * log_hitec_spump_sf
-                + 0.0519 * (log_hitec_spump_sf**2))
-        ),
-        doc="Salt pump base (purchase) cost in $"
+        expr=(m.fs.charge.spump_FT *
+              m.fs.charge.spump_FM *
+              exp(9.2951 -
+                  0.6019 * log_hitec_spump_sf +
+                  0.0519 * (log_hitec_spump_sf**2))),
+        doc="Base purchase cost of Hitec salt pump in $"
     )
-    # Costing motor
+
+    # Expression for pump efficiency
     m.fs.charge.hitec_salt_disjunct.spump_np = Expression(
-        expr=(
-            -0.316
-            + 0.24015 * log(m.fs.charge.hitec_salt_disjunct.spump_Qgpm)
-            - 0.01199 * ((log(m.fs.charge.hitec_salt_disjunct.spump_Qgpm))**2)
-        ),
-        doc="fractional efficiency of the pump horse power"
+        expr=(-0.316 +
+              0.24015 * log(m.fs.charge.hitec_salt_disjunct.spump_Qgpm) -
+              0.01199 * ((log(m.fs.charge.hitec_salt_disjunct.spump_Qgpm))**2)),
+        doc="Fractional efficiency of the pump in horsepower"
     )
+
+    # Expression for motor power consumption
     m.fs.charge.hitec_salt_disjunct.motor_pc = Expression(
         expr=(
             (m.fs.charge.hitec_salt_disjunct.spump_Qgpm *
              m.fs.charge.spump_head *
-             m.fs.charge.hitec_salt_disjunct.dens_lbft3)
-            / (33000 *
-               m.fs.charge.hitec_salt_disjunct.spump_np *
-               m.fs.charge.spump_nm)
+             m.fs.charge.hitec_salt_disjunct.dens_lbft3) /
+            (33000 *
+             m.fs.charge.hitec_salt_disjunct.spump_np *
+             m.fs.charge.spump_nm)
         ),
-        doc="Motor power consumption in horsepower"
+        doc="Power consumption of motor in horsepower"
     )
-    # Motor purchase cost
+
+    
+    # Define a local variable for the log of motor's power consumption
+    # This will help writing concise expressions for the motor
+    # purchase cost
     log_hitec_motor_pc = log(m.fs.charge.hitec_salt_disjunct.motor_pc)
+    # Expression for motor base purchase cost
     m.fs.charge.hitec_salt_disjunct.motor_CP = Expression(
         expr=(
             m.fs.charge.spump_motorFT *
-            exp(
-                5.4866
-                + 0.13141 * log_hitec_motor_pc
-                + 0.053255 * (log_hitec_motor_pc**2)
-                + 0.028628 * (log_hitec_motor_pc**3)
-                - 0.0035549 * (log_hitec_motor_pc**4))
-        ),
+            exp(5.4866 +
+                0.13141 * log_hitec_motor_pc +
+                0.053255 * (log_hitec_motor_pc**2) +
+                0.028628 * (log_hitec_motor_pc**3) -
+                0.0035549 * (log_hitec_motor_pc**4))),
         doc="Salt Pump's Motor Base Cost in $"
     )
 
-    # Pump and motor purchase cost (total cost constraint)
+    # Calculate and initialize total purchase cost of Hitec salt pump
     m.fs.charge.hitec_salt_disjunct.spump_purchase_cost = Var(
         initialize=100000,
         bounds=(0, 1e7),
@@ -2158,47 +2033,51 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.hitec_salt_disjunct.spump_purchase_cost,
         m.fs.charge.hitec_salt_disjunct.spump_purchase_cost_eq)
 
-    # --------------------------------------------
-    #  Thermal oil pump costing
-    # The primary purpose of the oil pump is to move thermal oil and not to
-    # change the pressure. Thus the pressure head is computed assuming that
-    # the oil is moved on an average of 5m linear distance.
+    # ---------- Thermal oil ----------
+    # Calculate cost of thermal oil pump
     m.fs.charge.thermal_oil_disjunct.spump_Qgpm = pyo.Expression(
         expr=(m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].flow_mass *
-              264.17 * 60 /
-              (m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density["Liq"])),
-        doc="Conversion of solar salt flow mass to vol flow [gal per min]"
+              (264.17 * pyo.units.gallon / pyo.units.m**3) *
+              (60 * pyo.units.s / pyo.units.min) /
+              (m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"])),
+        doc="Conversion of solar salt flow mass to vol flow in gallons/min"
     )
-    m.fs.charge.thermal_oil_disjunct.dens_lbft3 = pyo.Expression(
-        expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density["Liq"] * 0.062428,
-        doc="pump size factor"
-    )  # density in lb per ft3
+    m.fs.charge.thermal_oil_disjunct.dens_lbft3 = pyo.units.convert(
+        m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"],
+        to_units=pyo.units.pound / pyo.units.foot**3
+    )
     m.fs.charge.thermal_oil_disjunct.spump_sf = pyo.Expression(
         expr=(m.fs.charge.thermal_oil_disjunct.spump_Qgpm *
               (m.fs.charge.spump_head ** 0.5)),
         doc="Pump size factor"
     )
+
+    # Defining a local variable for the log of pump's size factor
+    # calculated above This will help writing the pump's purchase cost
+    # expressions conciesly
     log_thermal_oil_spump_sf = log(m.fs.charge.thermal_oil_disjunct.spump_sf)
+    # Expression for pump base purchase cost
     m.fs.charge.thermal_oil_disjunct.pump_CP = pyo.Expression(
         expr=(
-            m.fs.charge.spump_FT * m.fs.charge.spump_FM *
-            exp(
-                9.2951
-                - 0.6019 * log_thermal_oil_spump_sf
-                + 0.0519 * (log_thermal_oil_spump_sf**2)
-            )
+            m.fs.charge.spump_FT *
+            m.fs.charge.spump_FM *
+            exp(9.2951 -
+                0.6019 * log_thermal_oil_spump_sf +
+                0.0519 * (log_thermal_oil_spump_sf**2))
         ),
         doc="Salt pump base (purchase) cost in $"
     )
-    # Costing motor
+
+    # Expression for pump efficiency
     m.fs.charge.thermal_oil_disjunct.spump_np = pyo.Expression(
-        expr=(
-            -0.316
-            + 0.24015 * log(m.fs.charge.thermal_oil_disjunct.spump_Qgpm)
-            - 0.01199 * ((log(m.fs.charge.thermal_oil_disjunct.spump_Qgpm))**2)
+        expr=(-0.316 +
+              0.24015 * log(m.fs.charge.thermal_oil_disjunct.spump_Qgpm) -
+              0.01199 * ((log(m.fs.charge.thermal_oil_disjunct.spump_Qgpm))**2)
         ),
         doc="Fractional efficiency of the pump horse power"
     )
+
+    # Expressiong for motor base purchase cost
     m.fs.charge.thermal_oil_disjunct.motor_pc = pyo.Expression(
         expr=(
             (m.fs.charge.thermal_oil_disjunct.spump_Qgpm *
@@ -2209,22 +2088,25 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         ),
         doc="Motor power consumption in horsepower"
     )
-    # Motor purchase cost
+
+    # Defining a local variable for the log of motor's power
+    # consumption. This will help writing the motor's purchase cost
+    # expressions conciesly
     log_thermal_oil_motor_pc = log(m.fs.charge.thermal_oil_disjunct.motor_pc)
     m.fs.charge.thermal_oil_disjunct.motor_CP = pyo.Expression(
         expr=(
             m.fs.charge.spump_motorFT *
-            exp(
-                5.4866
-                + 0.13141 * log_thermal_oil_motor_pc
-                + 0.053255 * (log_thermal_oil_motor_pc**2)
-                + 0.028628 * (log_thermal_oil_motor_pc**3)
-                - 0.0035549 * (log_thermal_oil_motor_pc**4)
-            )
+            exp(5.4866 +
+                0.13141 * log_thermal_oil_motor_pc +
+                0.053255 * (log_thermal_oil_motor_pc**2) +
+                0.028628 * (log_thermal_oil_motor_pc**3) -
+                0.0035549 * (log_thermal_oil_motor_pc**4))
         ),
-        doc="Salt Pump's Motor Base Cost in $"
+        doc="Base cost of thermal oil pump's motor in $"
     )
-    # Pump and motor purchase cost pump
+
+    # Calculate and initialize total purchase cost of thermal oil
+    # total pump
     m.fs.charge.thermal_oil_disjunct.spump_purchase_cost = pyo.Var(
         initialize=100000,
         bounds=(0, 1e10),
@@ -2242,21 +2124,16 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.charge.thermal_oil_disjunct.spump_purchase_cost_eq = pyo.Constraint(
         rule=oil_spump_purchase_cost_rule)
 
-    # Initialize cost correlation
     calculate_variable_from_constraint(
         m.fs.charge.thermal_oil_disjunct.spump_purchase_cost,
         m.fs.charge.thermal_oil_disjunct.spump_purchase_cost_eq)
 
-    # --------------------------------------------
-    #  Solar salt storage tank costing: vertical vessel
-    # --------------------------------------------
-    m.fs.charge.l_by_d = pyo.Param(
-        initialize=m.data_storage_tank['LbyD'],
-        doc='L by D assumption for computing storage tank dimensions')
-    m.fs.charge.tank_thickness = pyo.Param(
-        initialize=m.data_storage_tank['tank_thickness'],
-        doc='Storage tank thickness assumed based on reference'
-    )
+    ###########################################################################
+    # Add capital cost: 4. Calculate charge storage material vertical vessel cost
+    ###########################################################################
+
+    # ---------- Solar salt ----------
+    # Calculate size and dimensions of Solar salt storage tank
     # Tank size and dimension computation
     m.fs.charge.solar_salt_disjunct.tank_volume = pyo.Var(
         initialize=1000,
@@ -2283,33 +2160,35 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         bounds=(1, 3),
         doc='No of Tank units to use cost correlations')
 
-    # Number of tanks change
+    # Fix the number of Solar salt storage tanks
     m.fs.charge.solar_salt_disjunct.no_of_tanks.fix()
 
-    # Computing tank volume - jfr: editing to include 20% margin
+    # Compute Solar salt tank volume with a 10% margin
     def solar_tank_volume_rule(b):
         return (
             m.fs.charge.solar_salt_disjunct.tank_volume *
-            m.fs.charge.solar_salt_disjunct.hxc.
-            side_2.properties_in[0].density["Liq"] ==
-            m.fs.charge.solar_salt_disjunct.salt_amount * 1.10
+            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"] ==
+            m.fs.charge.solar_salt_disjunct.salt_amount *
+            1.10
         )
     m.fs.charge.solar_salt_disjunct.tank_volume_eq = pyo.Constraint(
         rule=solar_tank_volume_rule)
 
-    # Compute surface area of tank: surf area of sides + top surf area
-    # base area is accounted in foundation costs
+    # Compute Solar salt tank surface area considering the surface
+    # area of sides and top surface area. The base area is accounted
+    # in foundation costs
     def solar_tank_surf_area_rule(b):
         return (
             m.fs.charge.solar_salt_disjunct.tank_surf_area == (
                 pi * m.fs.charge.solar_salt_disjunct.tank_diameter *
-                m.fs.charge.solar_salt_disjunct.tank_height)
-            + (pi * m.fs.charge.solar_salt_disjunct.tank_diameter**2) / 4
+                m.fs.charge.solar_salt_disjunct.tank_height) +
+            (pi * m.fs.charge.solar_salt_disjunct.tank_diameter**2) / 4
         )
     m.fs.charge.solar_salt_disjunct.tank_surf_area_eq = pyo.Constraint(
         rule=solar_tank_surf_area_rule)
 
-    # Computing diameter for an assumed L by D
+    # Compute Solar salt tank diameter for an assumed lenght and
+    # diameter
     def solar_tank_diameter_rule(b):
         return (
             m.fs.charge.solar_salt_disjunct.tank_diameter == (
@@ -2320,10 +2199,11 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     m.fs.charge.solar_salt_disjunct.tank_diameter_eq = pyo.Constraint(
         rule=solar_tank_diameter_rule)
 
-    # Computing height of tank
+    # Compute height of Solar salt tank
     def solar_tank_height_rule(b):
         return m.fs.charge.solar_salt_disjunct.tank_height == (
-            m.fs.charge.l_by_d * m.fs.charge.solar_salt_disjunct.tank_diameter)
+            m.fs.charge.l_by_d *
+            m.fs.charge.solar_salt_disjunct.tank_diameter)
     m.fs.charge.solar_salt_disjunct.tank_height_eq = pyo.Constraint(
         rule=solar_tank_height_rule)
 
@@ -2338,25 +2218,10 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.solar_salt_disjunct.tank_height,
         m.fs.charge.solar_salt_disjunct.tank_height_eq)
 
-    # A dummy pyomo block for salt storage tank is declared for costing
-    # The diameter and length for this tank is assumed
-    # based on a number of tank (see the above for m.fs.no_of_tanks)
-    # Costing for each vessel designed above
-    # m.fs.charge.salt_tank = pyo.Block()
+    # Declare a dummy pyomo block for Solar salt storage tank for
+    # costing
     m.fs.charge.solar_salt_disjunct.costing = pyo.Block()
 
-    m.fs.charge.solar_salt_disjunct.costing.material_cost = pyo.Param(
-        initialize=m.data_cost['storage_tank_material'],
-        doc='$/kg of SS316 material')
-    m.fs.charge.solar_salt_disjunct.costing.insulation_cost = pyo.Param(
-        initialize=m.data_cost['storage_tank_insulation'],
-        doc='$/m2')
-    m.fs.charge.solar_salt_disjunct.costing.foundation_cost = pyo.Param(
-        initialize=m.data_cost['storage_tank_foundation'],
-        doc='$/m2')
-    m.fs.charge.solar_salt_disjunct.costing.material_density = pyo.Param(
-        initialize=m.data_storage_tank['material_density'],
-        doc='Kg/m3')
     m.fs.charge.solar_salt_disjunct.costing.tank_material_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
@@ -2372,42 +2237,42 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def rule_tank_material_cost(b):
         return m.fs.charge.solar_salt_disjunct.costing.tank_material_cost == (
-            m.fs.charge.solar_salt_disjunct.costing.material_cost *
-            m.fs.charge.solar_salt_disjunct.costing.material_density *
+            m.fs.charge.storage_tank_material_cost *
+            m.fs.charge.storage_tank_material_dens_mass *
             m.fs.charge.solar_salt_disjunct.tank_surf_area *
             m.fs.charge.tank_thickness
         )
-    m.fs.charge.solar_salt_disjunct.costing.eq_tank_material_cost = \
-        pyo.Constraint(rule=rule_tank_material_cost)
+    m.fs.charge.solar_salt_disjunct.costing.eq_tank_material_cost = pyo.Constraint(
+        rule=rule_tank_material_cost)
 
     def rule_tank_insulation_cost(b):
         return (
             m.fs.charge.solar_salt_disjunct.costing.tank_insulation_cost == (
-                m.fs.charge.solar_salt_disjunct.costing.insulation_cost *
+                m.fs.charge.storage_tank_insulation_cost *
                 m.fs.charge.solar_salt_disjunct.tank_surf_area))
 
-    m.fs.charge.solar_salt_disjunct.costing.eq_tank_insulation_cost = \
-        pyo.Constraint(rule=rule_tank_insulation_cost)
+    m.fs.charge.solar_salt_disjunct.costing.eq_tank_insulation_cost = pyo.Constraint(
+        rule=rule_tank_insulation_cost)
 
     def rule_tank_foundation_cost(b):
         return (
             m.fs.charge.solar_salt_disjunct.costing.tank_foundation_cost == (
-                m.fs.charge.solar_salt_disjunct.costing.foundation_cost *
-                pi * m.fs.charge.solar_salt_disjunct.tank_diameter**2 / 4))
-    m.fs.charge.solar_salt_disjunct.costing.eq_tank_foundation_cost = \
-        pyo.Constraint(rule=rule_tank_foundation_cost)
+                m.fs.charge.storage_tank_foundation_cost *
+                pi *
+                m.fs.charge.solar_salt_disjunct.tank_diameter**2 / 4))
+    m.fs.charge.solar_salt_disjunct.costing.eq_tank_foundation_cost = pyo.Constraint(
+        rule=rule_tank_foundation_cost)
 
     # Expression to compute the total cost for the salt tank
     m.fs.charge.solar_salt_disjunct.costing.total_tank_cost = pyo.Expression(
-        expr=m.fs.charge.solar_salt_disjunct.costing.tank_material_cost
-        + m.fs.charge.solar_salt_disjunct.costing.tank_foundation_cost
-        + m.fs.charge.solar_salt_disjunct.costing.tank_insulation_cost
+        expr=m.fs.charge.solar_salt_disjunct.costing.tank_material_cost +
+        m.fs.charge.solar_salt_disjunct.costing.tank_foundation_cost +
+        m.fs.charge.solar_salt_disjunct.costing.tank_insulation_cost
     )
 
-    # --------------------------------------------
-    #  Hitec salt storage tank costing: vertical vessel
-    # --------------------------------------------
-    # Tank size and dimension computation
+
+    # ---------- Hitec salt ----------
+    # Calculate size and dimension of Hitec salt storage tank
     m.fs.charge.hitec_salt_disjunct.tank_volume = Var(
         initialize=1000,
         bounds=(1, 10000),
@@ -2440,25 +2305,28 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     def hitec_tank_volume_rule(b):
         return (
             m.fs.charge.hitec_salt_disjunct.tank_volume *
-            m.fs.charge.hitec_salt_disjunct.hxc.side_2.
-            properties_in[0].density["Liq"] ==
-            m.fs.charge.hitec_salt_disjunct.salt_amount * 1.10
+            m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"] ==
+            m.fs.charge.hitec_salt_disjunct.salt_amount *
+            1.10
         )
     m.fs.charge.hitec_salt_disjunct.tank_volume_eq = Constraint(
         rule=hitec_tank_volume_rule)
 
-    # Compute surface area of tank: surf area of sides + top surf area
-    # base area is accounted in foundation costs
+    # Compute Hitec salt tank surface area considering the surface
+    # area of sides and top surface area. The base area is accounted
+    # in foundation costs
     def hitec_tank_surf_area_rule(b):
         return m.fs.charge.hitec_salt_disjunct.tank_surf_area == (
-            (pi * m.fs.charge.hitec_salt_disjunct.tank_diameter *
-             m.fs.charge.hitec_salt_disjunct.tank_height)
-            + (pi*m.fs.charge.hitec_salt_disjunct.tank_diameter**2) / 4
+            (pi *
+             m.fs.charge.hitec_salt_disjunct.tank_diameter *
+             m.fs.charge.hitec_salt_disjunct.tank_height) +
+            (pi*m.fs.charge.hitec_salt_disjunct.tank_diameter**2) / 4
         )
     m.fs.charge.hitec_salt_disjunct.tank_surf_area_eq = Constraint(
         rule=hitec_tank_surf_area_rule)
 
-    # Computing diameter for an assumed L by D
+    # Compute Hitec salt tank diameter for an assumed lenght and
+    # diameter
     def hitec_tank_diameter_rule(b):
         return (
             m.fs.charge.hitec_salt_disjunct.tank_diameter ==
@@ -2466,15 +2334,17 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
                    m.fs.charge.hitec_salt_disjunct.no_of_tanks)
               / (m.fs.charge.l_by_d * pi)) ** (1 / 3))
         )
-    m.fs.charge.hitec_salt_disjunct.tank_diameter_eq = \
-        Constraint(rule=hitec_tank_diameter_rule)
+    m.fs.charge.hitec_salt_disjunct.tank_diameter_eq = Constraint(
+        rule=hitec_tank_diameter_rule)
 
-    # Computing height of tank
+    # Compute Hitec salt tank height
     def hitec_tank_height_rule(b):
-        return m.fs.charge.hitec_salt_disjunct.tank_height == \
-            m.fs.charge.l_by_d * m.fs.charge.hitec_salt_disjunct.tank_diameter
-    m.fs.charge.hitec_salt_disjunct.tank_height_eq = \
-        Constraint(rule=hitec_tank_height_rule)
+        return m.fs.charge.hitec_salt_disjunct.tank_height == (
+            m.fs.charge.l_by_d *
+            m.fs.charge.hitec_salt_disjunct.tank_diameter
+        )
+    m.fs.charge.hitec_salt_disjunct.tank_height_eq = Constraint(
+        rule=hitec_tank_height_rule)
 
     # Initialize tanks design correlations
     calculate_variable_from_constraint(
@@ -2487,24 +2357,10 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.hitec_salt_disjunct.tank_height,
         m.fs.charge.hitec_salt_disjunct.tank_height_eq)
 
-    # A dummy pyomo block for salt storage tank is declared for costing
-    # The diameter and length for this tank is assumed
-    # based on a number of tank (see the above for m.fs.charge.no_of_tanks)
-    # Costing for each vessel designed above
+    # Declare a dummy pyomo block for Hitec salt storage tank for
+    # costing
     m.fs.charge.hitec_salt_disjunct.costing = Block()
 
-    m.fs.charge.hitec_salt_disjunct.costing.material_cost = Param(
-        initialize=m.data_cost['storage_tank_material'],
-        doc='$/kg of SS316 material')
-    m.fs.charge.hitec_salt_disjunct.costing.insulation_cost = Param(
-        initialize=m.data_cost['storage_tank_insulation'],
-        doc='$/m2')
-    m.fs.charge.hitec_salt_disjunct.costing.foundation_cost = Param(
-        initialize=m.data_cost['storage_tank_foundation'],
-        doc='$/m2')
-    m.fs.charge.hitec_salt_disjunct.costing.material_density = Param(
-        initialize=m.data_storage_tank['material_density'],
-        doc='Kg/m3')
     m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost = Var(
         initialize=5000,
         bounds=(1000, 1e7)
@@ -2520,27 +2376,28 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def rule_hitec_tank_material_cost(b):
         return m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost == (
-            m.fs.charge.hitec_salt_disjunct.costing.material_cost *
-            m.fs.charge.hitec_salt_disjunct.costing.material_density *
+            m.fs.charge.storage_tank_material_cost *
+            m.fs.charge.storage_tank_material_dens_mass *
             m.fs.charge.hitec_salt_disjunct.tank_surf_area *
             m.fs.charge.tank_thickness
         )
-    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_material_cost = Constraint(
+    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_material_cost = pyo.Constraint(
         rule=rule_hitec_tank_material_cost)
 
     def rule_hitec_tank_insulation_cost(b):
         return (m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost ==
-                m.fs.charge.hitec_salt_disjunct.costing.insulation_cost *
+                m.fs.charge.storage_tank_insulation_cost *
                 m.fs.charge.hitec_salt_disjunct.tank_surf_area)
-    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_insulation_cost = \
-        Constraint(rule=rule_hitec_tank_insulation_cost)
+    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_insulation_cost = pyo.Constraint(
+        rule=rule_hitec_tank_insulation_cost)
 
     def rule_hitec_tank_foundation_cost(b):
         return (m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost ==
-                m.fs.charge.hitec_salt_disjunct.costing.foundation_cost *
-                pi * m.fs.charge.hitec_salt_disjunct.tank_diameter**2 / 4)
-    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_foundation_cost = \
-        Constraint(rule=rule_hitec_tank_foundation_cost)
+                m.fs.charge.storage_tank_foundation_cost *
+                pi *
+                m.fs.charge.hitec_salt_disjunct.tank_diameter**2 / 4)
+    m.fs.charge.hitec_salt_disjunct.costing.eq_tank_foundation_cost = pyo.Constraint(
+        rule=rule_hitec_tank_foundation_cost)
 
     # Expression to compute the total cost for the salt tank
     m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost = Expression(
@@ -2549,10 +2406,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         + m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost
     )
 
-    # --------------------------------------------
-    #  Thermal oil storage tank costing: vertical vessel
-    # --------------------------------------------
-    # Tank size and dimension computation
+    # ---------- Thermal oil ----------
+    # Calculate size and dimension of thermal oil storage tank
     m.fs.charge.thermal_oil_disjunct.tank_volume = Var(
         initialize=1000,
         bounds=(1, 20000),
@@ -2581,40 +2436,43 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Number of tanks change
     m.fs.charge.thermal_oil_disjunct.no_of_tanks.fix()
 
-    # Computing tank volume with a 20% margin
+    # Compute thermal oil tank volume with a 10% margin
     def oil_tank_volume_rule(b):
         return (
             m.fs.charge.thermal_oil_disjunct.tank_volume *
             m.fs.charge.thermal_oil_disjunct.hxc.
-            side_2.properties_in[0].density["Liq"] ==
-            m.fs.charge.thermal_oil_disjunct.oil_amount * 1.10
+            side_2.properties_in[0].dens_mass["Liq"] ==
+            m.fs.charge.thermal_oil_disjunct.oil_amount *
+            1.10
         )
     m.fs.charge.thermal_oil_disjunct.tank_volume_eq = Constraint(
         rule=oil_tank_volume_rule)
 
-    # Compute surface area of tank: surf area of sides + top surf area
-    # base area is accounted in foundation costs
+    # Compute thermal oil tank surface area considering the surface
+    # area of sides and top surface area. The base area is accounted
+    # in foundation costs
     def oil_tank_surf_area_rule(b):
         return m.fs.charge.thermal_oil_disjunct.tank_surf_area == (
-            (pi * m.fs.charge.thermal_oil_disjunct.tank_diameter *
-             m.fs.charge.thermal_oil_disjunct.tank_height)
-            + (pi*m.fs.charge.thermal_oil_disjunct.tank_diameter**2) / 4
+            (pi *
+             m.fs.charge.thermal_oil_disjunct.tank_diameter *
+             m.fs.charge.thermal_oil_disjunct.tank_height) +
+            (pi*m.fs.charge.thermal_oil_disjunct.tank_diameter**2) / 4
         )
     m.fs.charge.thermal_oil_disjunct.tank_surf_area_eq = Constraint(
         rule=oil_tank_surf_area_rule)
 
-    # Computing diameter for an assumed L by D
+    # Compute thermal oil tank diameter for an assumed lenght and diameter
     def oil_tank_diameter_rule(b):
         return (
             m.fs.charge.thermal_oil_disjunct.tank_diameter ==
             ((4 * (m.fs.charge.thermal_oil_disjunct.tank_volume /
-                   m.fs.charge.thermal_oil_disjunct.no_of_tanks)
-              / (m.fs.charge.l_by_d * pi)) ** (1 / 3))
+                   m.fs.charge.thermal_oil_disjunct.no_of_tanks) /
+              (m.fs.charge.l_by_d * pi)) ** (1 / 3))
         )
     m.fs.charge.thermal_oil_disjunct.tank_diameter_eq = \
         Constraint(rule=oil_tank_diameter_rule)
 
-    # Computing height of tank
+    # Compute height of thermal oil tank
     def oil_tank_height_rule(b):
         return m.fs.charge.thermal_oil_disjunct.tank_height == \
             m.fs.charge.l_by_d * m.fs.charge.thermal_oil_disjunct.tank_diameter
@@ -2632,24 +2490,10 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.thermal_oil_disjunct.tank_height,
         m.fs.charge.thermal_oil_disjunct.tank_height_eq)
 
-    # A dummy pyomo block for salt storage tank is declared for costing
-    # The diameter and length for this tank is assumed
-    # based on a number of tank (see the above for m.fs.charge.no_of_tanks)
-    # Costing for each vessel designed above
+    # Declare a dummy pyomo block for thermal oil storage tank for
+    # costing
     m.fs.charge.thermal_oil_disjunct.costing = Block()
 
-    m.fs.charge.thermal_oil_disjunct.costing.material_cost = Param(
-        initialize=m.data_cost['storage_tank_material'],
-        doc='$/kg of SS316 material')
-    m.fs.charge.thermal_oil_disjunct.costing.insulation_cost = Param(
-        initialize=m.data_cost['storage_tank_insulation'],
-        doc='$/m2')
-    m.fs.charge.thermal_oil_disjunct.costing.foundation_cost = Param(
-        initialize=m.data_cost['storage_tank_foundation'],
-        doc='$/m2')
-    m.fs.charge.thermal_oil_disjunct.costing.material_density = Param(
-        initialize=m.data_storage_tank['material_density'],
-        doc='Kg/m3')
     m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost = Var(
         initialize=5000,
         bounds=(1000, 1e7)
@@ -2665,8 +2509,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def rule_oil_tank_material_cost(b):
         return m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost == (
-            m.fs.charge.thermal_oil_disjunct.costing.material_cost *
-            m.fs.charge.thermal_oil_disjunct.costing.material_density *
+            m.fs.charge.storage_tank_material_cost *
+            m.fs.charge.storage_tank_material_dens_mass *
             m.fs.charge.thermal_oil_disjunct.tank_surf_area *
             m.fs.charge.tank_thickness
         )
@@ -2676,7 +2520,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     def rule_oil_tank_insulation_cost(b):
         return (
             m.fs.charge.thermal_oil_disjunct.costing.tank_insulation_cost ==
-            m.fs.charge.thermal_oil_disjunct.costing.insulation_cost *
+            m.fs.charge.storage_tank_insulation_cost *
             m.fs.charge.thermal_oil_disjunct.tank_surf_area)
     m.fs.charge.thermal_oil_disjunct.costing.eq_tank_insulation_cost = \
         Constraint(rule=rule_oil_tank_insulation_cost)
@@ -2684,22 +2528,27 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     def rule_oil_tank_foundation_cost(b):
         return (
             m.fs.charge.thermal_oil_disjunct.costing.tank_foundation_cost ==
-            m.fs.charge.thermal_oil_disjunct.costing.foundation_cost *
-            pi * m.fs.charge.thermal_oil_disjunct.tank_diameter**2 / 4)
+            m.fs.charge.storage_tank_foundation_cost *
+            pi *
+            m.fs.charge.thermal_oil_disjunct.tank_diameter**2 / 4)
     m.fs.charge.thermal_oil_disjunct.costing.eq_tank_foundation_cost = \
         Constraint(rule=rule_oil_tank_foundation_cost)
 
     # Expression to compute the total cost for the salt tank
     m.fs.charge.thermal_oil_disjunct.costing.total_tank_cost = Expression(
-        expr=m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost
-        + m.fs.charge.thermal_oil_disjunct.costing.tank_foundation_cost
-        + m.fs.charge.thermal_oil_disjunct.costing.tank_insulation_cost
+        expr=m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost +
+        m.fs.charge.thermal_oil_disjunct.costing.tank_foundation_cost +
+        m.fs.charge.thermal_oil_disjunct.costing.tank_insulation_cost
     )
-    # --------------------------------------------
-    # Total annualized capital cost for solar salt
-    # --------------------------------------------
-    # Capital cost var at flowsheet level to handle the salt capital
-    # cost depending on the salt selected.
+
+    ###########################################################################
+    # Add capital cost: 5. Calculate total capital cost for charge system
+    ###########################################################################
+    # For the economic analysis
+    # ---------- Solar salt ----------
+    # Add capital cost variable at flowsheet level to handle the
+    # storage material capital cost depending on the selected storage
+    # material
     m.fs.charge.capital_cost = pyo.Var(
         initialize=1000000 * scaling_factor,
         bounds=(0, 1e10 * scaling_factor),
@@ -2712,21 +2561,19 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Annualize capital cost for the solar salt
     def solar_cap_cost_rule(b):
         return m.fs.charge.solar_salt_disjunct.capital_cost == (
-            m.fs.charge.solar_salt_disjunct.salt_purchase_cost
-            + m.fs.charge.solar_salt_disjunct.spump_purchase_cost
-            + (
-                m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost
-                + m.fs.charge.hx_pump.costing.purchase_cost
-                + m.fs.charge.solar_salt_disjunct.no_of_tanks *
-                m.fs.charge.solar_salt_disjunct.costing.total_tank_cost
-            )
-            / m.fs.charge.num_of_years
+            m.fs.charge.solar_salt_disjunct.salt_purchase_cost +
+            m.fs.charge.solar_salt_disjunct.spump_purchase_cost +
+            (m.fs.charge.solar_salt_disjunct.hxc.costing.capital_cost +
+             m.fs.charge.hx_pump.costing.capital_cost +
+             m.fs.charge.solar_salt_disjunct.no_of_tanks *
+             m.fs.charge.solar_salt_disjunct.costing.total_tank_cost) /
+            m.fs.charge.num_of_years
         ) * scaling_factor
     m.fs.charge.solar_salt_disjunct.cap_cost_eq = pyo.Constraint(
         rule=solar_cap_cost_rule)
 
-    # Adding constraint to link the fs capital cost var to
-    # solar salt disjunct
+    # Add constraint to link the global capital cost variable to
+    # Solar salt capital cost from disjunction 1
     m.fs.charge.solar_salt_disjunct.fs_cap_cost_eq = Constraint(
         expr=(
             m.fs.charge.capital_cost ==
@@ -2737,9 +2584,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.solar_salt_disjunct.capital_cost,
         m.fs.charge.solar_salt_disjunct.cap_cost_eq)
 
-    # --------------------------------------------
-    # Total annualized capital cost for hitec salt
-    # --------------------------------------------
+    # ---------- Hitec salt ----------
     m.fs.charge.hitec_salt_disjunct.capital_cost = Var(
         initialize=1000000 * scaling_factor,
         bounds=(0, 1e7 * scaling_factor),
@@ -2748,19 +2593,19 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Annualize capital cost for the hitec salt
     def hitec_cap_cost_rule(b):
         return m.fs.charge.hitec_salt_disjunct.capital_cost == (
-            m.fs.charge.hitec_salt_disjunct.salt_purchase_cost
-            + m.fs.charge.hitec_salt_disjunct.spump_purchase_cost
-            + (m.fs.charge.hitec_salt_disjunct.hxc.costing.purchase_cost
-               + m.fs.charge.hx_pump.costing.purchase_cost
-               + m.fs.charge.hitec_salt_disjunct.no_of_tanks *
-               m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost)
-            / m.fs.charge.num_of_years
+            m.fs.charge.hitec_salt_disjunct.salt_purchase_cost +
+            m.fs.charge.hitec_salt_disjunct.spump_purchase_cost +
+            (m.fs.charge.hitec_salt_disjunct.hxc.costing.capital_cost +
+             m.fs.charge.hx_pump.costing.capital_cost +
+             m.fs.charge.hitec_salt_disjunct.no_of_tanks *
+             m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost) /
+            m.fs.charge.num_of_years
         ) * scaling_factor
     m.fs.charge.hitec_salt_disjunct.cap_cost_eq = Constraint(
         rule=hitec_cap_cost_rule)
 
-    # Adding constraint to link the fs capital cost var to
-    # solar salt disjunct
+    # Add constraint to link the global capital cost variable to Hitec
+    # salt capital cost from disjunction 1
     m.fs.charge.hitec_salt_disjunct.fs_cap_cost_eq = Constraint(
         expr=(
             m.fs.charge.capital_cost ==
@@ -2771,9 +2616,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.hitec_salt_disjunct.capital_cost,
         m.fs.charge.hitec_salt_disjunct.cap_cost_eq)
 
-    # --------------------------------------------
-    # Total annualized capital cost for thermal oil
-    # --------------------------------------------
+    # ---------- Thermal oil ----------
     m.fs.charge.thermal_oil_disjunct.capital_cost = Var(
         initialize=1000000 * scaling_factor,
         bounds=(0, 1e10 * scaling_factor),
@@ -2782,19 +2625,19 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Annualize capital cost for the thermal oil
     def oil_cap_cost_rule(b):
         return m.fs.charge.thermal_oil_disjunct.capital_cost == (
-            m.fs.charge.thermal_oil_disjunct.salt_purchase_cost
-            + m.fs.charge.thermal_oil_disjunct.spump_purchase_cost
-            + (m.fs.charge.thermal_oil_disjunct.hxc.costing.purchase_cost
-               + m.fs.charge.hx_pump.costing.purchase_cost
-               + m.fs.charge.thermal_oil_disjunct.no_of_tanks *
-               m.fs.charge.thermal_oil_disjunct.costing.total_tank_cost)
-            / m.fs.charge.num_of_years
+            m.fs.charge.thermal_oil_disjunct.salt_purchase_cost +
+            m.fs.charge.thermal_oil_disjunct.spump_purchase_cost +
+            (m.fs.charge.thermal_oil_disjunct.hxc.costing.capital_cost +
+             m.fs.charge.hx_pump.costing.capital_cost +
+             m.fs.charge.thermal_oil_disjunct.no_of_tanks *
+             m.fs.charge.thermal_oil_disjunct.costing.total_tank_cost) /
+            m.fs.charge.num_of_years
         ) * scaling_factor
     m.fs.charge.thermal_oil_disjunct.cap_cost_eq = Constraint(
         rule=oil_cap_cost_rule)
 
-    # Adding constraint to link the fs capital cost var to
-    # thermal oil disjunct
+    # Add constraint to link the global capital cost variable to
+    # thermal oil capital cost from disjunction 1
     m.fs.charge.thermal_oil_disjunct.fs_cap_cost_eq = Constraint(
         expr=(
             m.fs.charge.capital_cost ==
@@ -2806,7 +2649,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.thermal_oil_disjunct.cap_cost_eq)
 
     ###########################################################################
-    #  Annual operating cost
+    #  Add operating cost
     ###########################################################################
     m.fs.charge.operating_hours = pyo.Expression(
         expr=365 * 3600 * m.fs.charge.hours_per_day,
@@ -2832,8 +2675,9 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.op_cost_eq)
 
     ###########################################################################
-    #  Annual capital and operating cost for full plant
+    #  Add capital and operating cost for full plant
     ###########################################################################
+
     # Add variables and functions to calculate the plant capital cost
     # and plant variable and fixed operating costs. Equations from
     # "USC Cost function.pptx" sent by Naresh
@@ -2907,13 +2751,13 @@ def calculate_bounds(m):
     # Calculate bounds for solar salt from properties expressions
     m.fs.charge.solar_salt_temperature_max = 853.15 + m.fs.temperature_degrees # in K
     m.fs.charge.solar_salt_temperature_min = 513.15 - m.fs.temperature_degrees # in K
-    m.fs.charge.solar_salt_enthalpy_mass_max = (
+    m.fs.charge.solar_salt_enth_mass_max = (
         (m.fs.solar_salt_properties.cp_param_1.value *
          (m.fs.charge.solar_salt_temperature_max - 273.15))
         + (m.fs.solar_salt_properties.cp_param_2.value * 0.5 * \
            (m.fs.charge.solar_salt_temperature_max - 273.15)**2)
     )
-    m.fs.charge.solar_salt_enthalpy_mass_min = (
+    m.fs.charge.solar_salt_enth_mass_min = (
         (m.fs.solar_salt_properties.cp_param_1.value *
          (m.fs.charge.solar_salt_temperature_min - 273.15))
         + (m.fs.solar_salt_properties.cp_param_2.value * 0.5 * \
@@ -2923,7 +2767,7 @@ def calculate_bounds(m):
     # Calculate bounds for hitec salt from properties expressions
     m.fs.charge.hitec_salt_temperature_max = 788.15 + m.fs.temperature_degrees # in K
     m.fs.charge.hitec_salt_temperature_min = 435.15 - m.fs.temperature_degrees # in K
-    m.fs.charge.hitec_salt_enthalpy_mass_max = (
+    m.fs.charge.hitec_salt_enth_mass_max = (
         (m.fs.hitec_salt_properties.cp_param_1.value *
          (m.fs.charge.hitec_salt_temperature_max))
         + (m.fs.hitec_salt_properties.cp_param_2.value * \
@@ -2931,7 +2775,7 @@ def calculate_bounds(m):
         + (m.fs.hitec_salt_properties.cp_param_3.value * \
            (m.fs.charge.hitec_salt_temperature_max)**3)
     )
-    m.fs.charge.hitec_salt_enthalpy_mass_min = (
+    m.fs.charge.hitec_salt_enth_mass_min = (
         (m.fs.hitec_salt_properties.cp_param_1.value *
          (m.fs.charge.hitec_salt_temperature_min))
         + (m.fs.hitec_salt_properties.cp_param_2.value * \
@@ -2944,31 +2788,31 @@ def calculate_bounds(m):
     m.fs.charge.thermal_oil_temperature_max = 616 + m.fs.temperature_degrees # in K
     # m.fs.charge.thermal_oil_temperature_min = 260 - m.fs.temperature_degrees # in K
     m.fs.charge.thermal_oil_temperature_min = 298.15 - m.fs.temperature_degrees # in K
-    m.fs.charge.thermal_oil_enthalpy_mass_max = (
+    m.fs.charge.thermal_oil_enth_mass_max = (
         1e3 * (0.003313 * (m.fs.charge.thermal_oil_temperature_max - 273.15)**2/2 +
                0.0000008970785 * (m.fs.charge.thermal_oil_temperature_max - 273.15)**3/3 +
                1.496005 * (m.fs.charge.thermal_oil_temperature_max - 273.15))
     )
-    m.fs.charge.thermal_oil_enthalpy_mass_min = (
+    m.fs.charge.thermal_oil_enth_mass_min = (
         1e3 * (0.003313 * (m.fs.charge.thermal_oil_temperature_min - 273.15)**2/2 +
                0.0000008970785 * (m.fs.charge.thermal_oil_temperature_min - 273.15)**3/3 +
                1.496005 * (m.fs.charge.thermal_oil_temperature_min - 273.15))
     )
 
-    m.fs.charge.salt_enthalpy_mass_max = max(m.fs.charge.solar_salt_enthalpy_mass_max,
-                                             m.fs.charge.hitec_salt_enthalpy_mass_max)
-    m.fs.charge.salt_enthalpy_mass_min = min(m.fs.charge.solar_salt_enthalpy_mass_min,
-                                             m.fs.charge.hitec_salt_enthalpy_mass_min)
+    m.fs.charge.salt_enth_mass_max = max(m.fs.charge.solar_salt_enth_mass_max,
+                                             m.fs.charge.hitec_salt_enth_mass_max)
+    m.fs.charge.salt_enth_mass_min = min(m.fs.charge.solar_salt_enth_mass_min,
+                                             m.fs.charge.hitec_salt_enth_mass_min)
 
     print('                         Solar        Hitec       Thermal oil')
-    print('enthalpy_mass max {: >18.4f} {: >13.4f} {: >10.4f}'.format(
-        m.fs.charge.solar_salt_enthalpy_mass_max,
-        m.fs.charge.hitec_salt_enthalpy_mass_max,
-        m.fs.charge.thermal_oil_enthalpy_mass_max))
-    print('enthalpy_mass min {: >18.4f} {: >13.4f} {: >8.4f}'.format(
-        m.fs.charge.solar_salt_enthalpy_mass_min,
-        m.fs.charge.hitec_salt_enthalpy_mass_min,
-        m.fs.charge.thermal_oil_enthalpy_mass_min))
+    print('enth_mass max {: >18.4f} {: >13.4f} {: >10.4f}'.format(
+        m.fs.charge.solar_salt_enth_mass_max,
+        m.fs.charge.hitec_salt_enth_mass_max,
+        m.fs.charge.thermal_oil_enth_mass_max))
+    print('enth_mass min {: >18.4f} {: >13.4f} {: >8.4f}'.format(
+        m.fs.charge.solar_salt_enth_mass_min,
+        m.fs.charge.hitec_salt_enth_mass_min,
+        m.fs.charge.thermal_oil_enth_mass_min))
 
 
 def add_bounds(m):
@@ -3008,22 +2852,22 @@ def add_bounds(m):
         salt_hxc.tube.heat.setlb(0)
         salt_hxc.tube.heat.setub(m.fs.heat_duty_max)
         # Add calculated bounds
-        salt_hxc.tube.properties_in[:].enthalpy_mass.setlb(
-            m.fs.charge.salt_enthalpy_mass_min / m.factor)
-        salt_hxc.tube.properties_in[:].enthalpy_mass.setub(
-            m.fs.charge.salt_enthalpy_mass_max * m.factor)
-        salt_hxc.tube.properties_out[:].enthalpy_mass.setlb(
-            m.fs.charge.salt_enthalpy_mass_min / m.factor)
-        salt_hxc.tube.properties_out[:].enthalpy_mass.setub(
-            m.fs.charge.salt_enthalpy_mass_max * m.factor)
+        salt_hxc.tube.properties_in[:].enth_mass.setlb(
+            m.fs.charge.salt_enth_mass_min / m.factor)
+        salt_hxc.tube.properties_in[:].enth_mass.setub(
+            m.fs.charge.salt_enth_mass_max * m.factor)
+        salt_hxc.tube.properties_out[:].enth_mass.setlb(
+            m.fs.charge.salt_enth_mass_min / m.factor)
+        salt_hxc.tube.properties_out[:].enth_mass.setub(
+            m.fs.charge.salt_enth_mass_max * m.factor)
         salt_hxc.overall_heat_transfer_coefficient.setlb(0)
         salt_hxc.overall_heat_transfer_coefficient.setub(10000)
         salt_hxc.area.setlb(0)
         salt_hxc.area.setub(5000)  # TODO: Check this value
         salt_hxc.costing.pressure_factor.setlb(0)
         salt_hxc.costing.pressure_factor.setub(1e5)
-        salt_hxc.costing.purchase_cost.setlb(0)
-        salt_hxc.costing.purchase_cost.setub(1e7)
+        salt_hxc.costing.capital_cost.setlb(0)
+        salt_hxc.costing.capital_cost.setub(1e7)
         salt_hxc.costing.base_cost_per_unit.setlb(0)
         salt_hxc.costing.base_cost_per_unit.setub(1e6)
         salt_hxc.costing.material_factor.setlb(0)
@@ -3066,19 +2910,19 @@ def add_bounds(m):
         oil_hxc.delta_temperature_in.setlb(10)
         oil_hxc.delta_temperature_out.setlb(9)
         # Add calculated bounds
-        oil_hxc.tube.properties_in[:].enthalpy_mass.setlb(
-            m.fs.charge.thermal_oil_enthalpy_mass_min / m.factor)
-        oil_hxc.tube.properties_in[:].enthalpy_mass.setub(
-            m.fs.charge.thermal_oil_enthalpy_mass_max * m.factor)
-        oil_hxc.tube.properties_out[:].enthalpy_mass.setlb(
-            m.fs.charge.thermal_oil_enthalpy_mass_min / m.factor)
-        oil_hxc.tube.properties_out[:].enthalpy_mass.setub(
-            m.fs.charge.thermal_oil_enthalpy_mass_max * m.factor)
+        oil_hxc.tube.properties_in[:].enth_mass.setlb(
+            m.fs.charge.thermal_oil_enth_mass_min / m.factor)
+        oil_hxc.tube.properties_in[:].enth_mass.setub(
+            m.fs.charge.thermal_oil_enth_mass_max * m.factor)
+        oil_hxc.tube.properties_out[:].enth_mass.setlb(
+            m.fs.charge.thermal_oil_enth_mass_min / m.factor)
+        oil_hxc.tube.properties_out[:].enth_mass.setub(
+            m.fs.charge.thermal_oil_enth_mass_max * m.factor)
         # Bounds for costing
         oil_hxc.costing.pressure_factor.setlb(0)
         oil_hxc.costing.pressure_factor.setub(1e5)
-        oil_hxc.costing.purchase_cost.setlb(0)
-        oil_hxc.costing.purchase_cost.setub(1e7)
+        oil_hxc.costing.capital_cost.setlb(0)
+        oil_hxc.costing.capital_cost.setub(1e7)
         oil_hxc.costing.base_cost_per_unit.setlb(0)
         oil_hxc.costing.base_cost_per_unit.setub(1e6)
         oil_hxc.costing.material_factor.setlb(0)
@@ -3102,8 +2946,8 @@ def add_bounds(m):
     m.fs.charge.cooler_disjunct.cooler.heat_duty.setub(0)
 
     # Add bounds to cost-related terms
-    m.fs.charge.hx_pump.costing.purchase_cost.setlb(0)
-    m.fs.charge.hx_pump.costing.purchase_cost.setub(1e7)
+    m.fs.charge.hx_pump.costing.capital_cost.setlb(0)
+    m.fs.charge.hx_pump.costing.capital_cost.setub(1e7)
 
     # Add bounds needed in VHP and HP source disjuncts
     for split in [m.fs.charge.vhp_source_disjunct.ess_vhp_split,
@@ -3413,7 +3257,7 @@ def print_model(nlp_model, nlp_data):
     #     # nlp_model.fs.turbine[k].display()
     #     print('        Turbine {} work (MW): {:.4f}'.
     #           format(k, value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
-    print('         Boiler efficiency (%): {:.6f}'.format(value(nlp_model.fs.boiler_eff) * 100))
+    print('         Boiler efficiency (%): {:.6f}'.format(value(nlp_model.fs.boiler_efficiency) * 100))
     print('         Cycle efficiency (%): {:.6f}'.format(value(nlp_model.fs.cycle_efficiency)))
     for k in nlp_model.set_turbine_splitter:
         print("         Turbine splitter {} split fraction 2: {:.4f}".
@@ -3441,6 +3285,9 @@ def run_gdp(m):
     opt.CONFIG.tee = True
     opt.CONFIG.init_strategy = "no_init"
     opt.CONFIG.time_limit = "2400"
+    opt.CONFIG.subproblem_presolve = False
+    _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
+
 
     results = opt.solve(
         m,
@@ -3485,7 +3332,7 @@ def print_results(m, results):
         (pyo.value(m.fs.charge.operating_cost) / scaling_factor) * 1e-6))
     print('Plant Power (MW): {:.6f}'.format(
         value(m.fs.plant_power_out[0])))
-    print('Boiler efficiency (%): {:.6f}'.format(value(m.fs.boiler_eff) * 100))
+    print('Boiler efficiency (%): {:.6f}'.format(value(m.fs.boiler_efficiency) * 100))
     print('Cycle efficiency (%): {:.6f}'.format(value(m.fs.cycle_efficiency)))
     print('Boiler feed water flow (mol/s): {:.6f}'.format(
         value(m.fs.boiler.inlet.flow_mol[0])))
@@ -3504,8 +3351,8 @@ def print_results(m, results):
         print('Heat exchanger area (m2): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.hxc.area)))
         print('Heat exchanger cost ($) [($/y)]: {:.6f} [{:.6f}]'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost),
-            value(m.fs.charge.solar_salt_disjunct.hxc.costing.purchase_cost / m.number_of_years)))
+            value(m.fs.charge.solar_salt_disjunct.hxc.costing.capital_cost),
+            value(m.fs.charge.solar_salt_disjunct.hxc.costing.capital_cost / m.fs.charge.num_of_years)))
         print('Salt flow (kg/s): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0])))
         print('Salt temperature in (K): {:.6f}'.format(
@@ -3531,13 +3378,13 @@ def print_results(m, results):
             value(m.fs.charge.solar_salt_disjunct.salt_purchase_cost)))
         print('Tank cost ($/y): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.
-                  costing.total_tank_cost / m.number_of_years)))
+                  costing.total_tank_cost / m.fs.charge.num_of_years)))
         print('Salt pump cost ($/y): {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.spump_purchase_cost)))
         print('Salt storage tank volume in m3: {:.6f}'.format(
             value(m.fs.charge.solar_salt_disjunct.tank_volume)))
-        print('Salt density: {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].density['Liq'])))
+        print('Salt dens_mass: {:.6f}'.format(
+            value(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dens_mass['Liq'])))
     elif m.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
         print('Salt: Hitec salt is selected')
         print('HXC heat duty: {:.6f}'.format(
@@ -3545,7 +3392,7 @@ def print_results(m, results):
         print('Heat exchanger area (m2): {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.hxc.area)))
         print('Heat exchanger cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.costing.purchase_cost / m.number_of_years)))
+            value(m.fs.charge.hitec_salt_disjunct.hxc.costing.capital_cost / m.fs.charge.num_of_years)))
         print('Salt flow (kg/s): {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0])))
         print('Salt temperature in (K): {:.6f}'.format(
@@ -3571,15 +3418,15 @@ def print_results(m, results):
             value(m.fs.charge.hitec_salt_disjunct.salt_purchase_cost)))
         print('Tank cost ($/y): {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.
-                  costing.total_tank_cost / m.number_of_years)))
+                  costing.total_tank_cost / m.fs.charge.num_of_years)))
         print('Salt pump cost ($/y): {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.spump_purchase_cost)))
         print('')
         print('Salt storage tank volume in m3: {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.tank_volume)))
-        print('Salt density: {:.6f}'.format(
+        print('Salt dens_mass: {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.hxc.
-                  side_2.properties_in[0].density['Liq'])))
+                  side_2.properties_in[0].dens_mass['Liq'])))
         print('HXC heat duty: {:.6f}'.format(
             value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6))
     else:
@@ -3610,9 +3457,8 @@ def print_results(m, results):
         print('Delta temperature at outlet (K): {:.6f}'.format(
             value(m.fs.charge.thermal_oil_disjunct.hxc.
                   delta_temperature_out[0])))
-        print('Oil density: {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.
-                  tube.properties_in[0].density["Liq"])))
+        print('Oil dens_mass: {:.6f}'.format(
+            value(m.fs.charge.thermal_oil_disjunct.hxc.tube.properties_in[0].dens_mass["Liq"])))
     print('')
     print('Solver details')
     print(results)
