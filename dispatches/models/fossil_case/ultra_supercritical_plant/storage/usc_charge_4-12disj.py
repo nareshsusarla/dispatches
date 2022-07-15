@@ -77,27 +77,23 @@ from pyomo.core.expr.numeric_expr import ExternalFunctionExpression
 # Import IDAES libraries
 from idaes.core import MaterialBalanceType
 from idaes.core.util.initialization import propagate_state
-from idaes.core.util import get_solver
+from idaes.core.solvers.get_solver import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes.core import UnitModelCostingBlock
-from idaes.generic_models.unit_models import (HeatExchanger,
-                                              MomentumMixingType,
-                                              Heater)
-from idaes.generic_models.unit_models import (
-    Mixer,
-    PressureChanger
-)
-from idaes.power_generation.unit_models.helm import (
-    HelmMixer,
-    HelmIsentropicCompressor,
-    HelmTurbineStage,
-    HelmSplitter
-)
-from idaes.generic_models.unit_models.separator import (Separator,
-                                                        SplittingType)
-from idaes.generic_models.unit_models.heat_exchanger import (
+from idaes.models.unit_models import (HeatExchanger,
+                                      MomentumMixingType,
+                                      Heater)
+from idaes.models.unit_models import (Mixer,
+                                      PressureChanger)
+from idaes.models_extra.power_generation.unit_models.helm import (HelmMixer,
+                                                                  HelmIsentropicCompressor,
+                                                                  HelmTurbineStage,
+                                                                  HelmSplitter)
+from idaes.models.unit_models.separator import (Separator,
+                                                SplittingType)
+from idaes.models.unit_models.heat_exchanger import (
     delta_temperature_underwood_callback, HeatExchangerFlowPattern)
-from idaes.generic_models.unit_models.pressure_changer import (
+from idaes.models.unit_models.pressure_changer import (
     ThermodynamicAssumption)
 from idaes.core.util.misc import svg_tag
 from idaes.models.costing.SSLW import (
