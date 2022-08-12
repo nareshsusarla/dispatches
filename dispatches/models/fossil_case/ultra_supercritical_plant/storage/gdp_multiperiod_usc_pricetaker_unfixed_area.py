@@ -40,7 +40,7 @@ __author__ = "Soraya Rawlings"
 # Use GDP design for charge and discharge heat exchanger from 4-12
 # disjunctions model when True. If False, use the GDP design from 4-5
 # disjunctions model.
-new_design = False
+new_design = True
 
 if new_design:
     print('>>>>> Solving for new storage design')
@@ -127,7 +127,7 @@ def create_ss_model():
     # Unfix storage system data. Note that the area of the charge and
     # discharge heat exchangers is unfixed and calculated during the
     # solution of the model.
-    m.usc.fs.operating_cost.unfix()
+    # m.usc.fs.fuel_cost.unfix()
     m.usc.fs.charge_mode_disjunct.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
     m.usc.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
     for salt_hxc in [charge_mode.hxc]:
@@ -238,17 +238,17 @@ def create_mp_block():
         )
 
     # Scale variables and constraints
-    iscale.set_scaling_factor(b1.fs.operating_cost, 1e-3)
-    iscale.set_scaling_factor(b1.fs.plant_fixed_operating_cost, 1e-3)
-    iscale.set_scaling_factor(b1.fs.plant_variable_operating_cost, 1e-3)
-    # iscale.set_scaling_factor(b1.fs.plant_capital_cost, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.fuel_cost, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.plant_fixed_operating_cost, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.plant_variable_operating_cost, 1e-3)
+    # # iscale.set_scaling_factor(b1.fs.plant_capital_cost, 1e-3)
 
     iscale.set_scaling_factor(b1.fs.salt_amount, 1e-3)
     iscale.set_scaling_factor(b1.salt_inventory_hot, 1e-3)
     iscale.set_scaling_factor(b1.salt_inventory_cold, 1e-3)
     iscale.set_scaling_factor(b1.previous_salt_inventory_hot, 1e-3)
     iscale.set_scaling_factor(b1.previous_salt_inventory_cold, 1e-3)
-    iscale.set_scaling_factor(b1.fs.constraint_salt_inventory_hot, 1e-3)
+    # iscale.set_scaling_factor(b1.fs.constraint_salt_inventory_hot, 1e-3)
 
     # iscale.set_scaling_factor(b1.fs.charge_mode_disjunct.capital_cost, 1e-3)
     # iscale.set_scaling_factor(b1.fs.discharge_mode_disjunct.capital_cost, 1e-3)
