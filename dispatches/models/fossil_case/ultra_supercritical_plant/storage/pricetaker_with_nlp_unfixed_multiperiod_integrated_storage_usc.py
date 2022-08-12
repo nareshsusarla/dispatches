@@ -13,26 +13,29 @@
 #
 #################################################################################
 
-"""
-This script uses the multiperiod model for the integrated ultra-supercritical
-power plant with energy storage and performs market analysis using the
-pricetaker assumption. The electricity prices, LMP (locational marginal prices)
-are assumed to not change. The prices used in this study are either obtained
-from a synthetic database.
+"""This script uses the multiperiod model for the simulatenous design
+and operation of an integrated ultra-supercritical power plant with
+energy storage and performs market analysis using the pricetaker
+assumption. The electricity prices, LMP (locational marginal prices),
+are assumed constant. The prices used in this study are either
+obtained from a synthetic database or from NREL data.
+
 """
 
 __author__ = "Soraya Rawlings and Naresh Susarla"
 
+
+# Import Python libraries
 import numpy as np
 import json
 
 # Import Pyomo objects
 import pyomo.environ as pyo
-from pyomo.environ import (Objective, Expression, value)
+from pyomo.environ import (Objective, Expression, value, maximize)
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
 
-
+# Import multiperiod model
 from nlp_multiperiod_usc_pricetaker_unfixed_area import create_nlp_multiperiod_usc_model
 
 # Import IDAES libraries
@@ -55,12 +58,13 @@ def _get_lmp(hours_per_day=None, nhours=None):
     use_rts_data = False
     use_mod_rts_data = True
     if use_rts_data:
-        print('>>>>>> Using RTS lmp data')
+        print('>>>>>> Using RTS LMP data')
         with open('rts_results_all_prices_base_case.npy', 'rb') as f:
             dispatch = np.load(f)
             price = np.load(f)
         lmp = price[0:nhours].tolist()
     elif use_mod_rts_data:
+        print('>>>>>> Using given LMP data')
         price = [22.9684, 21.1168, 20.4, 20.419,
                  20.419, 21.2877, 23.07, 25,
                  18.4634, 0, 0, 0,
@@ -74,7 +78,7 @@ def _get_lmp(hours_per_day=None, nhours=None):
             print('**ERROR: I need more LMP data!')
             raise Exception
     else:
-        print('>>>>>> Using NREL lmp data')
+        print('>>>>>> Using NREL LMP data')
         price = np.load("nrel_scenario_average_hourly.npy")
 
     return lmp
@@ -127,12 +131,15 @@ def run_pricetaker_analysis(hours_per_day=None,
         # Declare an expression to calculate the total profit. All the
         # costs are in $ per hour.
         blk.profit = pyo.Expression(
-            expr=-(blk.revenue -
-                   blk.total_cost)
+            expr=(blk.revenue -
+                  blk.total_cost)
         )
         count += 1
 
-    m.obj = pyo.Objective(expr=sum([blk.profit for blk in blks]) * scaling_obj)
+    m.obj = pyo.Objective(
+        expr=sum([blk.profit for blk in blks]) * scaling_obj,
+        sense=maximize
+    )
 
     # Initial state for linking variables: power and salt
     # tank. Different tank scenarios are included for the Solar salt
@@ -143,6 +150,8 @@ def run_pricetaker_analysis(hours_per_day=None,
     if tank_status == "hot_empty":
         blks[0].usc.previous_salt_inventory_hot.fix(tank_min)
         blks[0].usc.previous_salt_inventory_cold.fix(tank_max - tank_min)
+        # blks[0].usc.previous_salt_inventory_hot.fix(1103053.48 * factor_mton)
+        # blks[0].usc.previous_salt_inventory_cold.fix(tank_max - 1103053.48 * factor_mton)
     elif tank_status == "hot_half_full":
         blks[0].usc.previous_salt_inventory_hot.fix(tank_max / 2)
         blks[0].usc.previous_salt_inventory_cold.fix(tank_max / 2)
@@ -153,6 +162,7 @@ def run_pricetaker_analysis(hours_per_day=None,
         print("Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full")
 
     blks[0].usc.previous_power.fix(400)
+    # blks[0].usc.previous_power.fix(447.66)
 
 
     # Declare the solver and a set of lists to save the results
@@ -513,7 +523,7 @@ if __name__ == '__main__':
 
     lx = True
     if lx:
-        scaling_obj = 1e-2
+        scaling_obj = 1e-3
         scaling_cost = 1
     else:
         scaling_obj = 1
