@@ -61,6 +61,8 @@ def _get_lmp(hours_per_day=None, nhours=None):
     else:
         use_mod_rts_data = True
 
+    nhigh_lmp = 0
+    nlow_lmp = 0
     if use_rts_data:
         print('>> Using RTS lmp data')
         with open('rts_results_all_prices_base_case.npy', 'rb') as f:
@@ -68,15 +70,25 @@ def _get_lmp(hours_per_day=None, nhours=None):
             price = np.load(f)
         lmp = price[0:nhours].tolist()
     elif use_mod_rts_data:
-        price = [22.9684, 0, 0, 200]
-        # price = [
-        #     22.9684, 21.1168, 20.4, 20.419,
-        #     # 20.419, 21.2877, 23.07, 25,
-        #     # 18.4634, 0, 0, 0,
-        #     0, 0, 0, 0,
-        #     # 19.0342, 23.07, 200, 200,
-        #     200, 200, 200, 200,
-        # ]
+        # price = [22.9684, 21.1168, 0, 0, 200, 200]
+        price = [
+            22.9684, 21.1168, 20.4, 20.419,
+            # 20.419, 21.2877, 23.07, 25,
+            # 18.4634, 0, 0, 0,
+            0, 0, 0, 0,
+            # 19.0342, 23.07, 200, 200,
+            200, 200, 200, 200,
+        ]
+        max_lmp = max(price)
+        min_lmp = min(price)
+        for i in price:
+            if i >= (max_lmp - 5):
+                nhigh_lmp += 1
+            elif  i <= (min_lmp + 5):
+                nlow_lmp += 1
+        print('** {} lmp prices ($/MWh) between [max_lmp, max_lmp - 5]: [{}, {}]'.format(nhigh_lmp, max_lmp, max_lmp - 5))
+        print('   {} lmp prices ($/MWh) between [min_lmp, min_lmp + 5]: [{}, {}]'.format(nlow_lmp, min_lmp, min_lmp + 5))
+        print()
 
         if len(price) < hours_per_day:
             print()
@@ -88,7 +100,7 @@ def _get_lmp(hours_per_day=None, nhours=None):
         price = np.load("nrel_scenario_average_hourly.npy")
         # print(lmp)
 
-    return lmp
+    return lmp, nhigh_lmp, nlow_lmp
 
 
 def print_model(mdl,
@@ -107,18 +119,25 @@ def print_model(mdl,
     print('        Schedule')
     print('         Obj ($): {:.4f}'.format(
         (value(mdl.obj) / scaling_cost) / scaling_obj))
+    print('         Cycles: {} charge, {} discharge, {} no storage'.format(
+        sum(mdl.blocks[blk].process.usc.fs.charge_mode_disjunct.binary_indicator_var.value
+            for blk in mdl.blocks),
+        sum(mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct.binary_indicator_var.value
+            for blk in mdl.blocks),
+        sum(mdl.blocks[blk].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var.value
+            for blk in mdl.blocks)))
 
     for blk in mdl.blocks:
         blk_process_charge = mdl.blocks[blk].process.usc.fs.charge_mode_disjunct
         blk_process_discharge = mdl.blocks[blk].process.usc.fs.discharge_mode_disjunct
         blk_process_no_storage = mdl.blocks[blk].process.usc.fs.no_storage_mode_disjunct
         if blk_process_charge.binary_indicator_var.value == 1:
-            print('         Period {}: Charge (HXC: {:.0f} MW, {:.0f} m2)'.format(
+            print('         Period {}: Charge (HXC: {:.2f} MW, {:.2f} m2)'.format(
                 blk,
                 value(blk_process_charge.hxc.heat_duty[0]) * 1e-6,
                 value(blk_process_charge.hxc.area)))
         if blk_process_discharge.binary_indicator_var.value == 1:
-            print('         Period {}: Discharge (HXD: {:.0f} MW, {:.0f} m2)'.format(
+            print('         Period {}: Discharge (HXD: {:.2f} MW, {:.2f} m2)'.format(
                 blk,
                 value(blk_process_discharge.hxd.heat_duty[0]) * 1e-6,
                 value(blk_process_discharge.hxd.area)))
@@ -144,6 +163,9 @@ def print_model(mdl,
                 value(blk_process_charge.hxc.area)))
             print('         HXC Duty (MW): {:.4f}'.format(
                 value(blk_process_charge.hxc.heat_duty[0]) * 1e-6))
+            print('         HXC Delta temperature in/out (K): {:.4f}/{:.4f}'.format(
+                value(blk_process_charge.hxc.delta_temperature_in[0]),
+                value(blk_process_charge.hxc.delta_temperature_out[0])))
             print('         HXC salt temperature (K) in/out: {:.4f}/{:.4f}'.format(
                 value(blk_process_charge.hxc.inlet_2.temperature[0]),
                 value(blk_process_charge.hxc.outlet_2.temperature[0])))
@@ -164,6 +186,9 @@ def print_model(mdl,
                 value(blk_process_discharge.hxd.area)))
             print('         HXD Duty (MW): {:.4f}'.format(
                 value(blk_process_discharge.hxd.heat_duty[0]) * 1e-6))
+            print('         HXD Delta temperature in/out (K): {:.4f}/{:.4f}'.format(
+                value(blk_process_discharge.hxd.delta_temperature_in[0]),
+                value(blk_process_discharge.hxd.delta_temperature_out[0])))
             print('         HXD salt temperature (K) in/out: {:.4f}/{:.4f}'.format(
                 value(blk_process_discharge.hxd.inlet_1.temperature[0]),
                 value(blk_process_discharge.hxd.outlet_1.temperature[0])))
@@ -179,14 +204,16 @@ def print_model(mdl,
                 value(blk_process_discharge.es_turbine.work_mechanical[0]) * -1e-6))
         elif blk_process_no_storage.binary_indicator_var.value == 1:
             mdl.disjunction1_selection[mdl_data.master_iteration] = 'No_storage'
-            print('         Salt flow (kg/s): {:.4f}'.format(value(blk_process.fs.salt_storage)))
+            print('         Salt flow (kg/s): {:.4f}'.format(
+                value(blk_process.fs.salt_storage)))
         else:
             print('        No other operation mode is available!')
         print('        Net power: {:.4f}'.format(value(blk_process.fs.net_power)))
         print('        Discharge turbine work (MW): {:.4f}'.format(
             value(blk_process.fs.discharge_turbine_work)))
         if not new_design:
-            print('        Cooler heat duty: {:.4f}'.format(value(blk_process.fs.cooler_heat_duty)))
+            print('        Cooler heat duty: {:.4f}'.format(
+                value(blk_process.fs.cooler_heat_duty)))
         print('        Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
             value(blk_process.fs.boiler_efficiency) * 100,
             value(blk_process.fs.cycle_efficiency) * 100))
@@ -203,9 +230,9 @@ def print_model(mdl,
         print('        Makeup water flow (mol/s): {:.4f}'.format(
             value(blk_process.fs.condenser_mix.makeup.flow_mol[0])))
         print('        Revenue (M$/year): {:.4f}'.format(
-            value(mdl.blocks[blk].process.revenue) / scaling_cost))
+            value(mdl.blocks[blk].process.revenue)))
         print('        Total op cost ($/h): {:.4f}'.format(
-            value(mdl.blocks[blk].process.operating_cost) / scaling_cost))
+            value(mdl.blocks[blk].process.total_operating_cost)))
         # print('        Total cap cost ($/h): {:.4f}'.format(
         #     value(mdl.blocks[blk].process.capital_cost) / scaling_cost))
         print()
@@ -244,7 +271,6 @@ def print_model(mdl,
             )
             csvfile.flush()
 
-    print('        Obj (M$/year): {:.4f}'.format((value(mdl.obj) / scaling_cost) / scaling_obj))
     print('       ___________________________________________')
 
     hot_tank_level_iter.append(
@@ -385,7 +411,7 @@ def run_pricetaker_analysis(hours_per_day=None,
                             tank_max=None):
 
     # Get LMP data
-    lmp = _get_lmp(hours_per_day=hours_per_day, nhours=nhours)
+    lmp, nhigh_lmp, nlow_lmp = _get_lmp(hours_per_day=hours_per_day, nhours=nhours)
 
     # Create the multiperiod model object. You can pass arguments to
     # the "process_model_func" for each time period using a dict of
@@ -423,13 +449,15 @@ def run_pricetaker_analysis(hours_per_day=None,
             m.blocks[h].process.usc.fs.discharge_area
         )
 
+    # Declare constraint to ensure that the discharge heat exchanger
+    # has the same temperature for the hot salt than the one obtained
+    # during charge cycle.
     @m.Constraint(m.hours_set)
     def constraint_discharge_hot_salt_temperature(m, h):
         return (
             m.blocks[h].process.usc.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0] ==
             m.blocks[h].process.usc.fs.hot_salt_temp
         )
-
 
     ##################################################################
     # Add logical constraints
@@ -448,84 +476,80 @@ def run_pricetaker_analysis(hours_per_day=None,
         )
 
 
-    # Add a minimum number charge, discharge, and no storage operation modes
-    @m.Constraint(m.hours_set)
-    def _constraint_min_charge(m, h):
-        return sum(m.blocks[h].process.usc.fs.charge_mode_disjunct.binary_indicator_var
-                   for h in m.hours_set) >= 1
-
-    @m.Constraint(m.hours_set)
-    def _constraint_min_discharge(m, h):
-        return sum(m.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var
-                   for h in m.hours_set) >= 1
-
-    @m.Constraint(m.hours_set)
-    def _constraint_min_no_storage(m, h):
-        return sum(m.blocks[h].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var
-                   for h in m.hours_set) >= 1
-
+    # Add a minimum number of charge, discharge, and no storage
+    # operation modes. Note: For charge, the minimum number of cycles
+    # is based on the number of low lmp values obtained above, while
+    # for discharge, the minimum number of cycles is based on the
+    # number of high lmp values.
+    @m.Constraint()
+    def _constraint_min_charge(b):
+        return sum(b.blocks[h].process.usc.fs.charge_mode_disjunct.binary_indicator_var
+                   for h in b.hours_set) >= nlow_lmp - 1
+    @m.Constraint()
+    def _constraint_min_discharge(b):
+        return sum(b.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var
+                   for h in b.hours_set) >= nhigh_lmp - 1
     # @m.Constraint()
-    # def _logic_constraint2_min_discharge(m):
-    #     return sum(m.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var for h in m.hours_set) >= sum(m.blocks[h].process.usc.fs.charge_mode_disjunct.binary_indicator_var for h in m.hours_set) + 1
+    # def _constraint_min_no_storage(b):
+    #     return sum(b.blocks[h].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var
+    #                for h in b.hours_set) >= 1
 
 
-
-    if tank_status == "hot_empty":
-        # Add logical constraint to help reduce the alternatives to explore
-        # when periodic behavior is expected
-        @m.Constraint()
-        def _logic_constraint_no_discharge_time0(m):
-            return m.blocks[0].process.usc.fs.discharge_mode_disjunct.binary_indicator_var == 0
-        @m.Constraint()
-        def _logic_constraint_no_charge_at_timen(m):
-            return (
-                (m.blocks[0].process.usc.fs.charge_mode_disjunct.binary_indicator_var
-                 + m.blocks[nhours - 1].process.usc.fs.charge_mode_disjunct.binary_indicator_var) <= 1
-            )
-        @m.Constraint()
-        def _logic_constraint_no_storage_time0_no_charge_at_timen(m):
-            return (
-                (m.blocks[0].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var
-                 + m.blocks[nhours - 1].process.usc.fs.charge_mode_disjunct.binary_indicator_var) <= 1
-            )
-    elif tank_status == "hot_full":
-        @m.Constraint()
-        def _logic_constraint_no_discharge_at_timen(m):
-            return (
-                (m.blocks[0].process.usc.fs.discharge_mode_disjunct.binary_indicator_var
-                 + m.blocks[nhours - 1].process.usc.fs.discharge_mode_disjunct.binary_indicator_var) <= 1
-            )
+    # if tank_status == "hot_empty":
+    #     # Add logical constraint to help reduce the alternatives to explore
+    #     # when periodic behavior is expected
+    #     @m.Constraint()
+    #     def _logic_constraint_no_discharge_time0(m):
+    #         return m.blocks[0].process.usc.fs.discharge_mode_disjunct.binary_indicator_var == 0
+    #     @m.Constraint()
+    #     def _logic_constraint_no_charge_at_timen(m):
+    #         return (
+    #             (m.blocks[0].process.usc.fs.charge_mode_disjunct.binary_indicator_var
+    #              + m.blocks[nhours - 1].process.usc.fs.charge_mode_disjunct.binary_indicator_var) <= 1
+    #         )
+    #     # @m.Constraint()
+    #     # def _logic_constraint_no_storage_time0_no_charge_at_timen(m):
+    #     #     return (
+    #     #         (m.blocks[0].process.usc.fs.no_storage_mode_disjunct.binary_indicator_var
+    #     #          + m.blocks[nhours - 1].process.usc.fs.charge_mode_disjunct.binary_indicator_var) <= 1
+    #     #     )
+    # elif tank_status == "hot_full":
+    #     @m.Constraint()
+    #     def _logic_constraint_no_discharge_at_timen(m):
+    #         return (
+    #             (m.blocks[0].process.usc.fs.discharge_mode_disjunct.binary_indicator_var
+    #              + m.blocks[nhours - 1].process.usc.fs.discharge_mode_disjunct.binary_indicator_var) <= 1
+    #         )
 
     # Add lmp market data for each block
     count = 0
     for blk in blks:
         blk.revenue = pyo.Expression(
-            expr=lmp[count] * blk.usc.fs.net_power
+            expr=(lmp[count] * blk.usc.fs.net_power)
         )
 
         # Add expression to calculate total operating costs. Note that
-        # these costs are scaled using the scaling_cost factor
-        blk.operating_cost = pyo.Expression(
+        # these costs are scaled using a scaling cost factor
+        blk.total_operating_cost = pyo.Expression(
             expr=(
-                blk.usc.fs.operating_cost
-                + blk.usc.fs.plant_fixed_operating_cost
-                + blk.usc.fs.plant_variable_operating_cost
-            ) * scaling_cost
+                blk.usc.fs.fuel_cost +
+                blk.usc.fs.plant_fixed_operating_cost +
+                blk.usc.fs.plant_variable_operating_cost
+            )
         )
 
         # Declare expression to calculate the total profit. All the
         # costs are in $ per hour
         blk.cost = pyo.Expression(
             expr=-(
-                blk.revenue * scaling_cost
-                - blk.operating_cost
-                - blk.usc.fs.storage_capital_cost * scaling_cost
-            )
+                blk.revenue -
+                blk.total_operating_cost -
+                blk.usc.fs.storage_capital_cost
+            ) * scaling_cost
         )
         count += 1
 
     m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
-
 
     # Initial state for linking variables: power and salt
     # tank. Different tank scenarios are included for the Solar salt
@@ -550,6 +574,7 @@ def run_pricetaker_analysis(hours_per_day=None,
 
     opt = pyo.SolverFactory('gdpopt')
     opt.CONFIG.strategy = 'RIC'
+    # opt.CONFIG.strategy = 'LOA'
     opt.CONFIG.OA_penalty_factor = 1e4
     opt.CONFIG.max_slack = 1e4
     # opt.CONFIG.call_after_subproblem_solve = print_model
@@ -561,42 +586,40 @@ def run_pricetaker_analysis(hours_per_day=None,
     opt.CONFIG.init_strategy = "no_init"
     opt.CONFIG.time_limit = "28000"
     opt.CONFIG.subproblem_presolve = False
+    opt.CONFIG.iterlim = 200
     _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
 
-    # Initializing disjuncts
     print()
     print()
-    # print('>>Initializing disjuncts')
-    # for k in range(nhours):
-    #     if k < (hours_per_day / 3):
-    #         print('  **Setting block {} to charge'.format(k))
-    #         blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
-    #         blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
-    #         blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
-    #     elif k < (2 * (hours_per_day / 3)):
-    #         print('  **Setting block {} to no storage'.format(k))
-    #         blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
-    #         blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
-    #         blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
-    #     elif k < hours_per_day:
-    #         print('  **Setting block {} to discharge'.format(k))
-    #         blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
-    #         blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(1)
-    #         blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
-
-    print('>>Fixing disjuncts')
-    blks[0].usc.fs.charge_mode_disjunct.binary_indicator_var.fix(1)
-    blks[0].usc.fs.discharge_mode_disjunct.binary_indicator_var.fix(0)
-    blks[0].usc.fs.no_storage_mode_disjunct.binary_indicator_var.fix(0)
-    blks[1].usc.fs.charge_mode_disjunct.binary_indicator_var.fix(0)
-    blks[1].usc.fs.discharge_mode_disjunct.binary_indicator_var.fix(0)
-    blks[1].usc.fs.no_storage_mode_disjunct.binary_indicator_var.fix(1)
-    blks[2].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
-    blks[2].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
-    blks[2].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
-    blks[3].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
-    blks[3].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
-    blks[3].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
+    print('>>Initializing disjuncts')
+    if tank_status == "hot_empty":
+        for k in range(nhours):
+            if k >= (nhours / 2) - 1:
+                blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
+                blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+                blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+            else:
+                blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+                blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(1)
+                blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+    elif tank_status == "hot_full":
+        blks[0].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+        blks[0].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(1)
+        blks[0].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+        for k in range(nhours):
+            if k >= 1:
+                blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+                blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+                blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
+    else:
+        blks[0].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
+        blks[0].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+        blks[0].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+        for k in range(nhours):
+            if k >= 1:
+                blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+                blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+                blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
 
     # Solve problem
     net_power = []
@@ -640,8 +663,6 @@ def run_pricetaker_analysis(hours_per_day=None,
         hxd_duty.append(
             [pyo.value(blks[i].usc.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6
              for i in range(n_time_points)])
-
-    print(results)
 
     csvfile.close()
 
@@ -742,12 +763,9 @@ def print_results(m, blks, results):
         print(' Cost ($): {:.4f}'.format(
             value(blks[c].cost) / scaling_cost))
         print(' Revenue ($): {:.4f}'.format(
-            value(blks[c].revenue) / scaling_cost))
+            value(blks[c].revenue)))
         print(' Operating cost ($): {:.4f}'.format(
-            value(blks[c].operating_cost) / scaling_cost))
-        # print(' Specific Operating cost ($/MWh): {:.4f}'.format(
-        #     (value(blks[c].operating_cost) / scaling_cost) /
-        #     value(blks[c].usc.fs.net_power)))
+            value(blks[c].total_operating_cost)))
         print(' Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
             value(blks[c].usc.fs.boiler_efficiency) * 100,
             value(blks[c].usc.fs.cycle_efficiency) * perc))
@@ -762,7 +780,8 @@ def print_results(m, blks, results):
             value(blks[c].usc.previous_salt_inventory_cold),
             value(blks[c].usc.salt_inventory_cold)))
         c += 1
-    # print(results)
+
+    print(results)
 
 def plot_results(m,
                  blks,
@@ -1005,10 +1024,9 @@ if __name__ == '__main__':
 
     # Use GDP design for charge and discharge heat exchanger from 4-12
     # disjunctions model when True. If False, use the GDP design from
-    # 4-5 disjunctions model. **Note** This should have the same value
-    # as in the GDP multiperiod model, so when changing this, the one
-    # in GDP multiperiod should be changed too.
-    new_design = False
+    # 4-5 disjunctions model. **Note** When changing this, make sure
+    # to change it in the GDP multiperiod python script too.
+    new_design = True
 
     lx = True
     if lx:
@@ -1017,10 +1035,12 @@ if __name__ == '__main__':
             scaling_obj = 1e-2
             scaling_cost = 1e-3
         else:
-            scaling_obj = 1e-2
+            # scaling_obj = 1e-2 # 6h, 12h
+            scaling_obj = 1e-4 # 12h
             scaling_cost = 1e-3
     else:
         scaling_obj = 1
+        scaling_cost = 1
     print()
     print('Scaling cost:', scaling_cost)
     print('Scaling obj:', scaling_obj)
@@ -1041,7 +1061,7 @@ if __name__ == '__main__':
     max_power = design_data_dict["plant_max_power"] # in MW
     pmin = design_data_dict["plant_min_power"] # in MW
 
-    hours_per_day = 4
+    hours_per_day = 12
     ndays = 1
     nhours = hours_per_day * ndays
     nweeks = 1
