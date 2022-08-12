@@ -31,7 +31,6 @@ Additional main assumptions are as follows:
     and condenser.  (3) Multi-stage turbines are modeled as multiple
     lumped single stage turbines
 
-updated (03/15/2022)
 """
 
 __author__ = "Naresh Susarla and Soraya Rawlings"
@@ -39,8 +38,10 @@ __author__ = "Naresh Susarla and Soraya Rawlings"
 # Import Python libraries
 from math import pi
 import logging
+import json
+
 # Import Pyomo libraries
-# import os
+import pyomo.environ as pyo
 from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
                            NonNegativeReals, TransformationFactory, Expression,
                            maximize, RangeSet, value, log, exp, Var)
@@ -51,25 +52,25 @@ from pyomo.util.calc_var_value import calculate_variable_from_constraint
 # Import IDAES libraries
 from idaes.core import MaterialBalanceType
 from idaes.core.util.initialization import propagate_state
-from idaes.core.util import get_solver
+from idaes.core.solvers.get_solver import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
-from idaes.generic_models.unit_models import (HeatExchanger,
-                                              MomentumMixingType,
-                                              Heater)
-import idaes.core.util.unit_costing as icost
+from idaes.models.unit_models import (HeatExchanger,
+                                      MomentumMixingType,
+                                      Heater)
+# import idaes.core.util.unit_costing as icost
+from idaes.core import UnitModelCostingBlock
+from idaes.models.costing.SSLW import SSLWCosting, SSLWCostingData
+
 from idaes.core.util import model_serializer as ms
 
 # Import IDAES Libraries
-from idaes.generic_models.unit_models import PressureChanger
-from idaes.power_generation.unit_models.helm import (
-    HelmMixer,
-    HelmTurbineStage,
-    HelmSplitter
-)
-from idaes.generic_models.unit_models.heat_exchanger import (
+from idaes.models.unit_models import PressureChanger
+from idaes.models_extra.power_generation.unit_models.helm import (HelmMixer,
+                                                                  HelmTurbineStage,
+                                                                  HelmSplitter)
+from idaes.models.unit_models.heat_exchanger import (
     delta_temperature_underwood_callback)
-from idaes.generic_models.unit_models.pressure_changer import (
-    ThermodynamicAssumption)
+from idaes.models.unit_models.pressure_changer import ThermodynamicAssumption
 import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
 
@@ -81,24 +82,32 @@ from dispatches.models.fossil_case.ultra_supercritical_plant import (
 
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
-from dispatches.models.fossil_case.ultra_supercritical_plant.storage import (
-    solarsalt_properties)
+# from dispatches.models.fossil_case.ultra_supercritical_plant.storage import (
+#     solarsalt_properties)
 # import solarsalt_properties
+from dispatches.models.fossil_case.properties import solarsalt_properties
 
 from pyomo.network.plugins import expand_arcs
 
 from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
-max_salt = 6739292 # in kg
 
-def create_charge_model(m, method=None, max_power=None):
+scaling_obj = 1e-3
+
+def create_charge_model(m,
+                        method=None,
+                        pmax=None,
+                        max_salt_amount=None):
     """Create flowsheet and add unit models.
     """
 
     # Create a block to add charge storage model
     # m.fs.charge = Block()
     # m.fs.discharge = Block()
+
+    # Add data
+    add_data(m, max_salt_amount=max_salt_amount)
 
     # Add molten salt properties (Solar and Hitec salt)
     m.fs.solar_salt_properties = solarsalt_properties.SolarsaltParameterBlock()
@@ -182,87 +191,35 @@ def create_charge_model(m, method=None, max_power=None):
         }
     )
 
-    ###########################################################################
-    #  Design of Storage Heat Exchanger                                       #
-    ###########################################################################
-
-    # -------Shell-n-tube counter-flow heat exchanger design parameters-------
-
-    m.fs.data_storage_hx = {
-        'tube_thickness': 0.004,
-        'tube_inner_dia': 0.032,
-        'tube_outer_dia': 0.036,
-        'k_steel': 21.5,
-        'number_tubes': 20,
-        'shell_inner_dia': 1
-    }
-
-    m.fs.tube_thickness = Param(
-        initialize=m.fs.data_storage_hx['tube_thickness'],
-        doc='Tube thickness [m]')
-    m.fs.tube_inner_dia = Param(
-        initialize=m.fs.data_storage_hx['tube_inner_dia'],
-        doc='Tube inner diameter [m]')
-    m.fs.tube_outer_dia = Param(
-        initialize=m.fs.data_storage_hx['tube_outer_dia'],
-        doc='Tube outer diameter [m]')
-    m.fs.k_steel = Param(
-        initialize=m.fs.data_storage_hx['k_steel'],
-        doc='Thermal conductivity of steel [W/mK]')
-    m.fs.n_tubes = Param(
-        initialize=m.fs.data_storage_hx['number_tubes'],
-        doc='Number of tubes')
-    m.fs.shell_inner_dia = Param(
-        initialize=m.fs.data_storage_hx['shell_inner_dia'],
-        doc='Shell inner diameter [m]')
-    m.fs.tube_cs_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.tube_inner_dia ** 2),
-        doc="Tube cross sectional area")
-    m.fs.tube_out_area = Expression(
-        expr=(pi / 4) *
-        (m.fs.tube_outer_dia ** 2),
-        doc="Tube cross sectional area including thickness [m2]")
-    m.fs.shell_eff_area = Expression(
-        expr=(
-            (pi / 4) *
-            (m.fs.shell_inner_dia ** 2) -
-            m.fs.n_tubes *
-            m.fs.tube_out_area),
-        doc="Effective shell cross sectional area [m2]")
-
-    m.fs.tube_dia_ratio = (m.fs.tube_outer_dia / m.fs.tube_inner_dia)
-    m.fs.log_tube_dia_ratio = log(m.fs.tube_dia_ratio)
-
     # Data to compute overall heat transfer coefficient for the charge
     # heat exchanger using the Sieder-Tate Correlation. Parameters for
     # tube diameter and thickness assumed from the data in (2017) He
     # et al., Energy Procedia 105, 980-985
 
     # -------- Charge Heat Exchanger Heat Transfer Coefficient --------
-    m.fs.hxc.salt_reynolds_number = Expression(
+    m.fs.hxc.salt_reynolds_number = pyo.Expression(
         expr=(
             (m.fs.hxc.inlet_2.flow_mass[0] *
              m.fs.tube_outer_dia) /
             (m.fs.shell_eff_area *
-             m.fs.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"])
+             m.fs.hxc.side_2.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number")
-    m.fs.hxc.salt_prandtl_number = Expression(
+    m.fs.hxc.salt_prandtl_number = pyo.Expression(
         expr=(
-            m.fs.hxc.side_2.properties_in[0].cp_specific_heat["Liq"] *
-            m.fs.hxc.side_2.properties_in[0].dynamic_viscosity["Liq"] /
-            m.fs.hxc.side_2.properties_in[0].thermal_conductivity["Liq"]
+            m.fs.hxc.side_2.properties_in[0].cp_mass["Liq"] *
+            m.fs.hxc.side_2.properties_in[0].visc_d_phase["Liq"] /
+            m.fs.hxc.side_2.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number")
-    m.fs.hxc.salt_prandtl_wall = Expression(
+    m.fs.hxc.salt_prandtl_wall = pyo.Expression(
         expr=(
-            m.fs.hxc.side_2.properties_out[0].cp_specific_heat["Liq"] *
-            m.fs.hxc.side_2.properties_out[0].dynamic_viscosity["Liq"] /
-            m.fs.hxc.side_2.properties_out[0].thermal_conductivity["Liq"]
+            m.fs.hxc.side_2.properties_out[0].cp_mass["Liq"] *
+            m.fs.hxc.side_2.properties_out[0].visc_d_phase["Liq"] /
+            m.fs.hxc.side_2.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number at wall")
-    m.fs.hxc.salt_nusselt_number = Expression(
+    m.fs.hxc.salt_nusselt_number = pyo.Expression(
         expr=(
             0.35 *
             (m.fs.hxc.salt_reynolds_number**0.6) *
@@ -272,7 +229,7 @@ def create_charge_model(m, method=None, max_power=None):
             (2**0.2)
         ),
         doc="Salt Nusslet Number from 2019, App Ener (233-234), 126")
-    m.fs.hxc.steam_reynolds_number = Expression(
+    m.fs.hxc.steam_reynolds_number = pyo.Expression(
         expr=(
             m.fs.hxc.inlet_1.flow_mol[0] *
             m.fs.hxc.side_1.properties_in[0].mw *
@@ -282,7 +239,7 @@ def create_charge_model(m, method=None, max_power=None):
              m.fs.hxc.side_1.properties_in[0].visc_d_phase["Vap"])
         ),
         doc="Steam Reynolds Number")
-    m.fs.hxc.steam_prandtl_number = Expression(
+    m.fs.hxc.steam_prandtl_number = pyo.Expression(
         expr=(
             (m.fs.hxc.side_1.properties_in[0].cp_mol /
              m.fs.hxc.side_1.properties_in[0].mw) *
@@ -290,7 +247,7 @@ def create_charge_model(m, method=None, max_power=None):
             m.fs.hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
         ),
         doc="Steam Prandtl Number")
-    m.fs.hxc.steam_nusselt_number = Expression(
+    m.fs.hxc.steam_nusselt_number = pyo.Expression(
         expr=(
             0.023 *
             (m.fs.hxc.steam_reynolds_number**0.8) *
@@ -302,14 +259,14 @@ def create_charge_model(m, method=None, max_power=None):
 
     # Calculate heat transfer coefficients for the salt and steam
     # sides of charge heat exchanger
-    m.fs.hxc.h_salt = Expression(
+    m.fs.hxc.h_salt = pyo.Expression(
         expr=(
-            m.fs.hxc.side_2.properties_in[0].thermal_conductivity["Liq"] *
+            m.fs.hxc.side_2.properties_in[0].therm_cond_phase["Liq"] *
             m.fs.hxc.salt_nusselt_number /
             m.fs.tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]")
-    m.fs.hxc.h_steam = Expression(
+    m.fs.hxc.h_steam = pyo.Expression(
         expr=(
             m.fs.hxc.side_1.properties_in[0].therm_cond_phase["Vap"] *
             m.fs.hxc.steam_nusselt_number /
@@ -355,33 +312,33 @@ def create_charge_model(m, method=None, max_power=None):
     # ------- Discharge Heat Exchanger Heat Transfer Coefficient -------
     # Discharge heat exchanger salt and steam side constraints to
     # calculate Reynolds number, Prandtl number, and Nusselt number
-    m.fs.hxd.salt_reynolds_number = Expression(
+    m.fs.hxd.salt_reynolds_number = pyo.Expression(
         expr=(
             m.fs.hxd.inlet_1.flow_mass[0]
             * m.fs.tube_outer_dia
             / (m.fs.shell_eff_area
-               * m.fs.hxd.side_1.properties_in[0].dynamic_viscosity["Liq"])
+               * m.fs.hxd.side_1.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number"
     )
-    m.fs.hxd.salt_prandtl_number = Expression(
+    m.fs.hxd.salt_prandtl_number = pyo.Expression(
         expr=(
-            m.fs.hxd.side_1.properties_in[0].cp_specific_heat["Liq"]
-            * m.fs.hxd.side_1.properties_in[0].dynamic_viscosity["Liq"]
-            / m.fs.hxd.side_1.properties_in[0].thermal_conductivity["Liq"]
+            m.fs.hxd.side_1.properties_in[0].cp_mass["Liq"]
+            * m.fs.hxd.side_1.properties_in[0].visc_d_phase["Liq"]
+            / m.fs.hxd.side_1.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number"
     )
     # Assuming that the wall conditions are same as those at the outlet
-    m.fs.hxd.salt_prandtl_wall = Expression(
+    m.fs.hxd.salt_prandtl_wall = pyo.Expression(
         expr=(
-            m.fs.hxd.side_1.properties_out[0].cp_specific_heat["Liq"]
-            * m.fs.hxd.side_1.properties_out[0].dynamic_viscosity["Liq"]
-            / m.fs.hxd.side_1.properties_out[0].thermal_conductivity["Liq"]
+            m.fs.hxd.side_1.properties_out[0].cp_mass["Liq"]
+            * m.fs.hxd.side_1.properties_out[0].visc_d_phase["Liq"]
+            / m.fs.hxd.side_1.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Wall Salt Prandtl Number"
     )
-    m.fs.hxd.salt_nusselt_number = Expression(
+    m.fs.hxd.salt_nusselt_number = pyo.Expression(
         expr=(
             0.35 * (m.fs.hxd.salt_reynolds_number**0.6)
             * (m.fs.hxd.salt_prandtl_number**0.4)
@@ -391,7 +348,7 @@ def create_charge_model(m, method=None, max_power=None):
         ),
         doc="Solar Salt Nusslet Number from 2019, App Ener (233-234), 126"
     )
-    m.fs.hxd.steam_reynolds_number = Expression(
+    m.fs.hxd.steam_reynolds_number = pyo.Expression(
         expr=(
             m.fs.hxd.inlet_2.flow_mol[0]
             * m.fs.hxd.side_2.properties_in[0].mw
@@ -402,7 +359,7 @@ def create_charge_model(m, method=None, max_power=None):
         ),
         doc="Steam Reynolds Number"
     )
-    m.fs.hxd.steam_prandtl_number = Expression(
+    m.fs.hxd.steam_prandtl_number = pyo.Expression(
         expr=(
             (m.fs.hxd.side_2.properties_in[0].cp_mol
              / m.fs.hxd.side_2.properties_in[0].mw)
@@ -411,7 +368,7 @@ def create_charge_model(m, method=None, max_power=None):
         ),
         doc="Steam Prandtl Number"
     )
-    m.fs.hxd.steam_nusselt_number = Expression(
+    m.fs.hxd.steam_nusselt_number = pyo.Expression(
         expr=(
             0.023 * (m.fs.hxd.steam_reynolds_number ** 0.8)
             * (m.fs.hxd.steam_prandtl_number ** (0.33))
@@ -424,14 +381,14 @@ def create_charge_model(m, method=None, max_power=None):
 
     # Discharge heat exchanger salt and steam side heat transfer
     # coefficients
-    m.fs.hxd.h_salt = Expression(
+    m.fs.hxd.h_salt = pyo.Expression(
         expr=(
-            m.fs.hxd.side_1.properties_in[0].thermal_conductivity["Liq"]
+            m.fs.hxd.side_1.properties_in[0].therm_cond_phase["Liq"]
             * m.fs.hxd.salt_nusselt_number / m.fs.tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]"
     )
-    m.fs.hxd.h_steam = Expression(
+    m.fs.hxd.h_steam = pyo.Expression(
         expr=(
             m.fs.hxd.side_2.properties_in[0].therm_cond_phase["Liq"]
             * m.fs.hxd.steam_nusselt_number / m.fs.tube_inner_dia
@@ -465,13 +422,120 @@ def create_charge_model(m, method=None, max_power=None):
     ###########################################################################
     #  Create the stream Arcs and return the model                            #
     ###########################################################################
-    _make_constraints(m, method=method, max_power=max_power)
+    _make_constraints(m, method=method, pmax=pmax)
     _create_arcs(m)
     TransformationFactory("network.expand_arcs").apply_to(m)
     return m
 
 
-def _make_constraints(m, method=None, max_power=None):
+def add_data(m, max_salt_amount=None):
+
+    # Chemical engineering cost index for 2019
+    m.CE_index = 607.5
+
+    #  Define the data for the design of the storage heat
+    # exchangers. The design is: Shell-n-tube counter-flow heat
+    # exchanger design parameters. Data to compute overall heat
+    # transfer coefficient for the charge heat exchanger using the
+    # Sieder-Tate Correlation. Parameters for tube diameter and
+    # thickness assumed from the data in (2017) He et al., Energy
+    # Procedia 105, 980-985.
+    m.fs.data_storage_hx = {
+        'tube_thickness': 0.004,
+        'tube_inner_dia': 0.032,
+        'tube_outer_dia': 0.036,
+        'k_steel': 21.5,
+        'number_tubes': 20,
+        'shell_inner_dia': 1
+    }
+
+    m.fs.tube_thickness = pyo.Param(
+        initialize=m.fs.data_storage_hx['tube_thickness'],
+        doc='Tube thickness [m]')
+    m.fs.tube_inner_dia = pyo.Param(
+        initialize=m.fs.data_storage_hx['tube_inner_dia'],
+        doc='Tube inner diameter [m]')
+    m.fs.tube_outer_dia = pyo.Param(
+        initialize=m.fs.data_storage_hx['tube_outer_dia'],
+        doc='Tube outer diameter [m]')
+    m.fs.k_steel = pyo.Param(
+        initialize=m.fs.data_storage_hx['k_steel'],
+        doc='Thermal conductivity of steel [W/mK]')
+    m.fs.n_tubes = pyo.Param(
+        initialize=m.fs.data_storage_hx['number_tubes'],
+        doc='Number of tubes')
+    m.fs.shell_inner_dia = pyo.Param(
+        initialize=m.fs.data_storage_hx['shell_inner_dia'],
+        doc='Shell inner diameter [m]')
+    m.fs.tube_cs_area = pyo.Expression(
+        expr=(pi / 4) *
+        (m.fs.tube_inner_dia ** 2),
+        doc="Tube cross sectional area")
+    m.fs.tube_out_area = pyo.Expression(
+        expr=(pi / 4) *
+        (m.fs.tube_outer_dia ** 2),
+        doc="Tube cross sectional area including thickness [m2]")
+    m.fs.shell_eff_area = pyo.Expression(
+        expr=(
+            (pi / 4) *
+            (m.fs.shell_inner_dia ** 2) -
+            m.fs.n_tubes *
+            m.fs.tube_out_area),
+        doc="Effective shell cross sectional area [m2]")
+
+    m.fs.tube_dia_ratio = (m.fs.tube_outer_dia / m.fs.tube_inner_dia)
+    m.fs.log_tube_dia_ratio = log(m.fs.tube_dia_ratio)
+
+    m.data_cost = {
+        'coal_price': 2.11e-9,
+        'cooling_price': 3.3e-9,
+        'solar_salt_price': 0.49,
+    }
+
+    # Main flowsheet operation data
+    m.fs.coal_price = pyo.Param(
+        initialize=m.data_cost['coal_price'],
+        doc='Coal price based on HHV for Illinois No.6 (NETL Report) $/J')
+    m.fs.cooling_price = pyo.Param(
+        initialize=m.data_cost['cooling_price'],
+        doc='Cost of chilled water for cooler from Sieder et al. $/J')
+    m.fs.solar_salt_price = pyo.Param(
+        initialize=m.data_cost['solar_salt_price'],
+        doc='Solar salt price in $/kg')
+
+    # Define the number of hours per day to operate the storage system
+    # and the number of years over which the capital costs are
+    # annualized
+    m.fs.hours_per_day = pyo.Param(
+        initialize=24,
+        doc='Estimated number of hours of charging per day'
+    )
+    m.fs.num_of_years = pyo.Param(
+        initialize=30,
+        doc='Number of years for capital cost annualization')
+
+    # Define the amount of storage material
+    m.fs.salt_amount = pyo.Param(
+        initialize=max_salt_amount,
+        doc="Solar salt amount in mton"
+    )
+
+    # m.fs.hxc_salt_design_flow = pyo.Param(
+    #     initialize=312,
+    #     doc='Design flow of salt through hxc')
+    # m.fs.hxc_salt_design_density = pyo.Param(
+    #     initialize=1937.36,
+    #     doc='Design density of salt through hxc')
+
+    # m.fs.hxd_salt_design_flow = pyo.Param(
+    #     initialize=362.2,
+    #     doc='Design flow of salt through hxd')
+    # m.fs.hxd_salt_design_density = pyo.Param(
+    #     initialize=1721.12,
+    #     doc='Design density of salt through hxd')
+
+
+def _make_constraints(m, method=None, pmax=None):
     """Declare the constraints for the charge model
     """
 
@@ -509,40 +573,59 @@ def _make_constraints(m, method=None, max_power=None):
             ) ==
             m.fs.plant_power_out[t] * 1e6 * (pyunits.W/pyunits.MW)
         )
-    m.fs.net_power = Expression(
+    m.fs.net_power = pyo.Expression(
         expr=(m.fs.plant_power_out[0]
               + (-1e-6) * m.fs.es_turbine.work_mechanical[0])
     )
-    m.fs.max_power = Param(
-        initialize=max_power,
-        mutable=True,
-        doc='Pmax for the power plant [MW]')
-    m.fs.boiler_eff = Expression(
-        expr=0.2143 * (m.fs.net_power / m.fs.max_power)
+
+    m.fs.boiler_efficiency = pyo.Expression(
+        expr=0.2143 * (m.fs.net_power / pmax)
         + 0.7357,
         doc="Boiler efficiency in fraction"
     )
-    m.fs.coal_heat_duty = Var(
+    # m.fs.boiler_efficiency = pyo.Var(
+    #     initialize=0.9,
+    #     bounds=(0, 1)
+    # )
+    # m.fs.boiler_efficiency_eq = pyo.Constraint(
+    #     expr=(0.2143 * (m.fs.net_power / pmax)
+    #           + 0.7357)
+    # )
+    m.fs.coal_heat_duty = pyo.Var(
         initialize=1000,
         bounds=(0, 1e5),
         doc="Coal heat duty supplied to boiler (MW)")
 
     if method == "with_efficiency":
         def coal_heat_duty_rule(b):
-            return m.fs.coal_heat_duty * m.fs.boiler_eff == (
+            return m.fs.coal_heat_duty * m.fs.boiler_efficiency == (
                 m.fs.plant_heat_duty[0])
         m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
+        # @m.fs.Expression()
+        # def coal_heat_duty(b):
+        #     return (m.fs.plant_heat_duty[0] / m.fs.boiler_efficiency)
 
     else:
         def coal_heat_duty_rule(b):
             return m.fs.coal_heat_duty == (
                 m.fs.plant_heat_duty[0])
         m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
+        # @m.fs.Expression()
+        # def coal_heat_duty(b):
+        #     return m.fs.plant_heat_duty[0]
 
-    m.fs.cycle_efficiency = Expression(
+    m.fs.cycle_efficiency = pyo.Expression(
         expr=m.fs.net_power / m.fs.coal_heat_duty * 100,
         doc="Cycle efficiency in %"
     )
+    # m.fs.cycle_efficiency = pyo.Var(
+    #     initialize=0.4,
+    #     bounds=(0, 1)
+    # )
+    # m.fs.cycle_efficiency_eq = pyo.Constraint(
+    #     expr=m.fs.net_power / m.fs.coal_heat_duty,
+    #     doc="Cycle efficiency in fraction"
+    # )
 
 
 def _create_arcs(m):
@@ -692,7 +775,9 @@ def set_scaling_factors(m):
         iscale.set_scaling_factor(k.control_volume.heat, 1e-6)
 
 
-def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
+def initialize(m,
+               solver=None,
+               outlvl=idaeslog.WARNING,
                optarg={"tol": 1e-8, "max_iter": 300}):
     """Initialize the units included in the charge model
     """
@@ -765,7 +850,9 @@ def initialize(m, solver=None, outlvl=idaeslog.NOTSET,
     print("***************   Charge Model Initialized   ********************")
 
 
-def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
+def build_costing(m,
+                  solver=None,
+                  optarg={"tol": 1e-8, "max_iter": 300}):
     """ Add cost correlations for the storage design analysis. This
     function is used to estimate the capital and operatig cost of
     integrating an energy storage system. It contains cost
@@ -784,140 +871,44 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # used here (except IDAES costing method) are taken from 2nd
     # Edition, Product & Process Design Principles, Seider et al.
     solver = get_solver('ipopt', optarg)
-    ###########################################################################
-    #  Data                                                                   #
-    ###########################################################################
-    m.CE_index = 607.5  # Chemical engineering cost index for 2019
 
-    # The q baseline_charge corresponds to heat duty of a plant with
-    # no storage and producing 400 MW power
-    m.data_cost = {
-        'coal_price': 2.11e-9,
-        'cooling_price': 3.3e-9,
-        'q_baseline_charge': 838565942.4732262,
-        'solar_salt_price': 0.49,
-        'hitec_salt_price': 0.93,
-        'thermal_oil_price': 6.72,  # $/kg
-        'storage_tank_material': 3.5,
-        'storage_tank_insulation': 235,
-        'storage_tank_foundation': 1210
-    }
-    m.data_salt_pump = {
-        'FT': 1.5,
-        'FM': 2.0,
-        'head': 3.281*5,
-        'motor_FT': 1,
-        'nm': 1
-    }
-    m.data_storage_tank = {
-        'LbyD': 0.325,
-        'tank_thickness': 0.039,
-        'material_density': 7800
-    }
+    ##############################################################
+    # Add capital cost
+    # 1. Calculate change and discharge heat exchangers costs
+    # 2. Calculate total capital cost for charge and discharge heat
+    # exchangers
+    ##############################################################
 
-    # Main flowsheet operation data
-    m.fs.coal_price = Param(
-        initialize=m.data_cost['coal_price'],
-        doc='Coal price based on HHV for Illinois No.6 (NETL Report) $/J')
-    m.fs.cooling_price = Param(
-        initialize=m.data_cost['cooling_price'],
-        doc='Cost of chilled water for cooler from Sieder et al. $/J')
-    m.fs.q_baseline = Param(
-        initialize=m.data_cost['q_baseline_charge'],
-        doc='Boiler duty in Wth @ 699MW for baseline plant with no storage')
-    m.fs.solar_salt_price = Param(
-        initialize=m.data_cost['solar_salt_price'],
-        doc='Solar salt price in $/kg')
+    # Add IDAES costing method
+    m.fs.costing = SSLWCosting()
 
-    ###########################################################################
-    #  Operating hours                                                        #
-    ###########################################################################
-    m.number_hours_per_day = 24
-    m.number_of_years = 30
-
-    m.fs.hours_per_day = Var(
-        initialize=m.number_hours_per_day,
-        bounds=(0, 24),
-        doc='Estimated number of hours of charging per day'
-    )
-    # m.fs.hours_per_day = Param(
-    #     initialize=24,
-    #     # bounds=(0, 25),
-    #     doc='Estimated number of hours of charging per day'
-    # )
-
-    # Fix number of hours of discharging to 6
-    m.fs.hours_per_day.fix(m.number_hours_per_day)
-
-    # Define number of years over which the capital cost is annualized
-    m.fs.num_of_years = Param(
-        initialize=m.number_of_years,
-        doc='Number of years for capital cost annualization')
-
-    ###########################################################################
-    #  Capital cost                                                           #
-    ###########################################################################
-
-    m.fs.salt_amount = Var(
-        initialize=max_salt,
-        # bounds=(0, 1e9),
-        doc="Solar salt amount in kg"
-    )
-    m.fs.salt_amount.fix(max_salt)
-
-    m.fs.hxc_salt_design_flow = Param(
-        initialize=312,
-        doc='Design flow of salt through hxc')
-    m.fs.hxc_salt_design_density = Param(
-        initialize=1937.36,
-        doc='Design density of salt through hxc')
-
-    m.fs.hxd_salt_design_flow = Param(
-        initialize=362.2,
-        doc='Design flow of salt through hxd')
-    m.fs.hxd_salt_design_density = Param(
-        initialize=1721.12,
-        doc='Design density of salt through hxd')
-
-
-
-    # --------------------------------------------
-    #  Solar salt charge heat exchangers costing
-    # --------------------------------------------
-    # The charge heat exchanger cost is estimated using the IDAES
-    # costing method with default options, i.e. a U-tube heat
+    ###### 1. Calculate charge and discharge heat exchangers costs
+    # Calculate and initialize the Solar salt charge and discharge
+    # heat exchangers coss, which are estimated using the IDAES
+    # costing method with default options, i.e., a U-tube heat
     # exchanger, stainless steel material, and a tube length of
     # 12ft. Refer to costing documentation to change any of the
-    # default options Purchase cost of heat exchanger has to be
+    # default options. The purchase cost of heat exchanger has to be
     # annualized when used
-    for salt_hxc in [m.fs.hxc,
-                     m.fs.hxd]:
-        salt_hxc.get_costing()
-        salt_hxc.costing.CE_index = m.CE_index
-        # Initialize Solar charge heat exchanger costing correlations
-        icost.initialize(salt_hxc.costing)
+    for storage_hx in [m.fs.hxc,
+                       m.fs.hxd]:
+        storage_hx.costing = UnitModelCostingBlock(
+            default={"flowsheet_costing_block": m.fs.costing,
+                     "costing_method": SSLWCostingData.cost_heat_exchanger}
+        )
 
-    # # Fixed for now
-    # m.fs.capital_cost = Param(
-    #     initialize=0.407655e6,
-    #     doc="Annualized capital cost for solar salt in $/yr")
-
-    # --------------------------------------------
-    # Total annualized capital cost for solar salt
-    # --------------------------------------------
-    # Capital cost var at flowsheet level to handle the salt capital
-    # cost depending on the salt selected.
-    m.fs.capital_cost = Var(
+    ###### 2. Calculate total capital cost for charge and discharge
+    ###### heat exchangers
+    m.fs.storage_capital_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e9),
-        doc="Annualized capital cost for solar salt")
+        doc="Capital cost for solar salt heat exchangers in $/hour")
 
-    # Annualize capital cost for the solar salt
     def solar_cap_cost_rule(b):
-        return m.fs.capital_cost == (
-            (m.fs.hxc.costing.purchase_cost
-             + m.fs.hxd.costing.purchase_cost)
-            / m.fs.num_of_years
+        return m.fs.storage_capital_cost == (
+            (m.fs.hxc.costing.capital_cost
+             + m.fs.hxd.costing.capital_cost)
+            / (m.fs.num_of_years * 365 * 24)
         )
     m.fs.cap_cost_eq = Constraint(
         rule=solar_cap_cost_rule)
@@ -925,83 +916,82 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     ###########################################################################
     #  Annual operating cost
     ###########################################################################
-    m.fs.operating_hours = Expression(
+    m.fs.operating_hours = pyo.Expression(
         expr=365 * 3600 * m.fs.hours_per_day,
         doc="Number of operating hours per year")
-    m.fs.operating_cost = Var(
+    m.fs.fuel_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e12),
-        doc="Operating cost")  # add units
+        doc="Fuel (coal) cost in $/hour")  # add units
 
     # Modified to remove q_baseline, this now is the fuel cost (if no cooler)
-    def op_cost_rule(b):
-        return m.fs.operating_cost == (
-            m.fs.operating_hours * m.fs.coal_price *
-            (m.fs.coal_heat_duty * 1e6)
-            - (m.fs.cooling_price * m.fs.operating_hours *
-               m.fs.cooler.heat_duty[0])
-        )
-    m.fs.op_cost_eq = Constraint(rule=op_cost_rule)
+    def fuel_cost_rule(b):
+        return m.fs.fuel_cost == (
+            m.fs.operating_hours *
+            m.fs.coal_price *
+            (m.fs.coal_heat_duty * 1e6) -
+            (m.fs.cooling_price *
+             m.fs.operating_hours *
+             m.fs.cooler.heat_duty[0])
+        ) / (365 * 24)
+    m.fs.fuel_cost_eq = Constraint(rule=fuel_cost_rule)
 
 
     ###########################################################################
     #  Annual capital and operating cost for full plant
     ###########################################################################
     # Capital cost for power plant
-    m.fs.plant_capital_cost = Var(
+    # m.fs.plant_capital_cost = pyo.Var(
+    #     initialize=1000000,
+    #     bounds=(0, 1e12),
+    #     doc="Annualized capital cost for the plant in $")
+    m.fs.plant_fixed_operating_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e12),
-        doc="Annualized capital cost for the plant in $")
-    m.fs.plant_fixed_operating_cost = Var(
+        doc="Plant fixed operating cost in $/hour")
+    m.fs.plant_variable_operating_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e12),
-        doc="Plant fixed operating cost in $/yr")
-    m.fs.plant_variable_operating_cost = Var(
-        initialize=1000000,
-        bounds=(0, 1e12),
-        doc="Plant variable operating cost in $/yr")
+        doc="Plant variable operating cost in $/hour")
 
-    # Add function to calculate the plant capital cost. Equations from
-    # "USC Cost function.pptx" sent by Naresh
-    def plant_cap_cost_rule(b):
-        return m.fs.plant_capital_cost == (
-            (2688973 * m.fs.plant_power_out[0]  # in MW
-             + 618968072) /
-            m.fs.num_of_years
-        ) * (m.CE_index / 575.4)
-    m.fs.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
+    # def plant_cap_cost_rule(b):
+    #     return m.fs.plant_capital_cost == (
+    #         (2688973 * m.fs.plant_power_out[0]  # in MW
+    #          + 618968072) /
+    #         m.fs.num_of_years
+    #     ) * (m.CE_index / 575.4)
+    # m.fs.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
 
-    # Add function to calculate fixed and variable operating costs in
-    # the plant. Equations from "USC Cost function.pptx" sent by
-    # Naresh
     def op_fixed_plant_cost_rule(b):
         return m.fs.plant_fixed_operating_cost == (
             (16657.5 * m.fs.plant_power_out[0]  # in MW
              + 6109833.3) /
-            m.fs.num_of_years
-        ) * (m.CE_index / 575.4)  # annualized, in $/y
+            (m.fs.num_of_years * 365 * 24)
+        ) * (m.CE_index / 575.4)
     m.fs.op_fixed_plant_cost_eq = Constraint(
         rule=op_fixed_plant_cost_rule)
 
     def op_variable_plant_cost_rule(b):
         return m.fs.plant_variable_operating_cost == (
-            31754.7 * m.fs.plant_power_out[0]  # in MW
-        ) * (m.CE_index / 575.4)  # in $/yr
+            (31754.7 * m.fs.plant_power_out[0]) *
+            (m.CE_index / 575.4)
+        ) / (365 * 24)
     m.fs.op_variable_plant_cost_eq = Constraint(
         rule=op_variable_plant_cost_rule)
 
     return m
 
-def initialize_with_costing(m):
+
+def initialize_with_costing(m, solver=None):
     # Initialize operating cost
     calculate_variable_from_constraint(
-        m.fs.operating_cost,
-        m.fs.op_cost_eq)
+        m.fs.fuel_cost,
+        m.fs.fuel_cost_eq)
 
-    # Initialize capital cost of power plant
-    calculate_variable_from_constraint(
-        m.fs.plant_capital_cost,
-        m.fs.plant_cap_cost_eq)
+    # # Initialize capital cost of power plant
+    # calculate_variable_from_constraint(
+    #     m.fs.plant_capital_cost,
+    #     m.fs.plant_cap_cost_eq)
 
     # Initialize plant fixed and variable operating costs
     calculate_variable_from_constraint(
@@ -1010,12 +1000,10 @@ def initialize_with_costing(m):
     calculate_variable_from_constraint(
         m.fs.plant_variable_operating_cost,
         m.fs.op_variable_plant_cost_eq)
-    # --------
 
     res = solver.solve(m,
                        tee=False,
-                       symbolic_solver_labels=True,
-                       options=optarg)
+                       symbolic_solver_labels=True)
     print("Cost Initialization = ",
           res.solver.termination_condition)
     print("******************** Costing Initialized *************************")
@@ -1064,14 +1052,14 @@ def add_bounds(m):
     m.fs.hxc.shell.heat.setub(0)
     m.fs.hxc.tube.heat.setlb(0)
     m.fs.hxc.tube.heat.setub(m.fs.heat_duty_max)
-    m.fs.hxc.tube.properties_in[0].enthalpy_mass.setlb(0)
-    m.fs.hxc.tube.properties_in[0].enthalpy_mass.setub(1.5e6)
-    m.fs.hxc.tube.properties_out[0].enthalpy_mass.setlb(0)
-    m.fs.hxc.tube.properties_out[0].enthalpy_mass.setub(1.5e6)
+    m.fs.hxc.tube.properties_in[0].enth_mass.setlb(0)
+    m.fs.hxc.tube.properties_in[0].enth_mass.setub(1.5e6)
+    m.fs.hxc.tube.properties_out[0].enth_mass.setlb(0)
+    m.fs.hxc.tube.properties_out[0].enth_mass.setub(1.5e6)
 
     m.fs.hxc.overall_heat_transfer_coefficient.setlb(0)
     m.fs.hxc.overall_heat_transfer_coefficient.setub(10000)
-    m.fs.hxc.area.setlb(0)
+    m.fs.hxc.area.setlb(100)
     m.fs.hxc.area.setub(6000)  # 5000
     # Testing for NS
     m.fs.hxc.delta_temperature_in.setlb(9)
@@ -1101,13 +1089,13 @@ def add_bounds(m):
     m.fs.hxd.shell.heat.setub(0)
     m.fs.hxd.shell.heat.setlb(-m.fs.heat_duty_max)
 
-    m.fs.hxd.shell.properties_in[0].enthalpy_mass.setlb(0)
-    m.fs.hxd.shell.properties_in[0].enthalpy_mass.setub(1.5e6)
-    m.fs.hxd.shell.properties_out[0].enthalpy_mass.setlb(0)
-    m.fs.hxd.shell.properties_out[0].enthalpy_mass.setub(1.5e6)
+    m.fs.hxd.shell.properties_in[0].enth_mass.setlb(0)
+    m.fs.hxd.shell.properties_in[0].enth_mass.setub(1.5e6)
+    m.fs.hxd.shell.properties_out[0].enth_mass.setlb(0)
+    m.fs.hxd.shell.properties_out[0].enth_mass.setub(1.5e6)
     m.fs.hxd.overall_heat_transfer_coefficient.setlb(0)
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
-    m.fs.hxd.area.setlb(0)
+    m.fs.hxd.area.setlb(100)
     m.fs.hxd.area.setub(6000)  # 5000
     m.fs.hxd.delta_temperature_in.setlb(4.9)
     m.fs.hxd.delta_temperature_out.setlb(10)
@@ -1176,10 +1164,12 @@ def add_bounds(m):
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setlb(0)
         m.fs.turbine_splitter[k].outlet_2.flow_mol[:].setub(m.flow_max)
 
-    return m
 
-
-def main(method=None, max_power=None, load_from_file=None):
+def main(method=None,
+         pmax=None,
+         load_from_file=None,
+         solver=None,
+         max_salt_amount=None):
 
     if load_from_file is not None:
 
@@ -1187,7 +1177,10 @@ def main(method=None, max_power=None, load_from_file=None):
         m = usc.build_plant_model()
 
         # Create a flowsheet, add properties, unit models, and arcs
-        m = create_charge_model(m, method=method, max_power=max_power)
+        m = create_charge_model(m,
+                                method=method,
+                                pmax=pmax,
+                                max_salt_amount=max_salt_amount)
 
         # Give all the required inputs to the model
         set_model_input(m)
@@ -1208,7 +1201,10 @@ def main(method=None, max_power=None, load_from_file=None):
         usc.initialize(m)
 
         # Create a flowsheet, add properties, unit models, and arcs
-        m = create_charge_model(m, method=method, max_power=max_power)
+        m = create_charge_model(m,
+                                method=method,
+                                pmax=pmax,
+                                max_salt_amount=max_salt_amount)
 
         # Give all the required inputs to the model
         set_model_input(m)
@@ -1228,14 +1224,14 @@ def main(method=None, max_power=None, load_from_file=None):
         # raise Exception()
 
         # Initialize with bounds
-        initialize_with_costing(m)
+        initialize_with_costing(m, solver=solver)
 
     # Add bounds
     add_bounds(m)
     # print('DOF after bounds: ', degrees_of_freedom(m))
 
     # # storing the initialization file
-    # ms.to_json(m, fname='initialized_usc_storage_mlp_mp.json')
+    # ms.to_json(m, fname='initialized_usc_storage_nlp_mp.json')
     return m
 
 
@@ -1245,44 +1241,33 @@ def print_results(m, results):
     print('')
     print('')
     print("***************** Optimization Results ******************")
+    print('Obj ($/h): {:.6f}'.format(
+        value(m.obj) / scaling_obj))
     print('Revenue ($/h): {:.6f}'.format(
         value(m.fs.revenue)))
     print('Storage Capital Cost ($/h): {:.6f}'.format(
-        value(m.fs.capital_cost)/(365*24)))
+        value(m.fs.storage_capital_cost)))
     print('Fuel Cost ($/h): {:.6f}'.format(
-        value(m.fs.operating_cost)/(365*24)))
-    print('Hot Previous Salt Inventory (kg): {:.6f}'.format(
-        value(m.fs.previous_salt_inventory_hot[0])))
-    print('Hot Salt Inventory (kg): {:.6f}'.format(
-        value(m.fs.salt_inventory_hot[0])))
-    print('Cold Previous Salt Inventory (kg): {:.6f}'.format(
-        value(m.fs.previous_salt_inventory_cold[0])))
-    print('Cold Salt Inventory (kg): {:.6f}'.format(
-        value(m.fs.salt_inventory_cold[0])))
-    print('Salt Amount (kg): {:.6f}'.format(
-        value(m.fs.salt_amount)))
+        value(m.fs.fuel_cost)/(365*24)))
+    # print('Plant capital cost ($/h): {:.6f}'.format(
+    #     value(m.fs.plant_capital_cost)))
+    print('Plant fixed operating costs ($/h): {:.6f}'.format(
+        value(m.fs.plant_fixed_operating_cost)))
+    print('Plant variable operating costs ($/h): {:.6f}'.format(
+        value(m.fs.plant_variable_operating_cost)))
     print('')
     print('')
     print("***************** Costing Results ******************")
-    print('Obj (M$/year): {:.6f}'.format(value(m.obj)))
-    print('Plant capital cost (M$/y): {:.6f}'.format(
-        value(m.fs.plant_capital_cost) * 1e-6))
-    print('Plant fixed operating costs (M$/y): {:.6f}'.format(
-        value(m.fs.plant_fixed_operating_cost) * 1e-6))
-    print('Plant variable operating costs (M$/y): {:.6f}'.format(
-        value(m.fs.plant_variable_operating_cost) * 1e-6))
-    print('Charge capital cost (M$/y): {:.6f}'.format(
-        value(m.fs.capital_cost) * 1e-6))
-    print('Charge Operating costs (M$/y): {:.6f}'.format(
-        value(m.fs.operating_cost) * 1e-6))
-    # print('Salt cost ($/y): {:.6f}'.format(
-    #     value(m.fs.salt_purchase_cost)))
-    # print('Tank cost ($/y): {:.6f}'.format(
-    #     value(m.fs.solar_costing.total_tank_cost / 15)))
-    # print('Hot_Salt pump cost ($/y): {:.6f}'.format(
-    #     value(m.fs.hot_spump_purchase_cost)))
-    # print('Cold_Salt pump cost ($/y): {:.6f}'.format(
-    #     value(m.fs.cold_spump_purchase_cost)))
+    print('Hot Previous Salt Inventory (mton): {:.6f}'.format(
+        value(m.fs.previous_salt_inventory_hot[0])))
+    print('Hot Salt Inventory (mton): {:.6f}'.format(
+        value(m.fs.salt_inventory_hot[0])))
+    print('Cold Previous Salt Inventory (mton): {:.6f}'.format(
+        value(m.fs.previous_salt_inventory_cold[0])))
+    print('Cold Salt Inventory (mton): {:.6f}'.format(
+        value(m.fs.salt_inventory_cold[0])))
+    print('Salt Amount (mton): {:.6f}'.format(
+        value(m.fs.salt_amount)))
     print('')
     print('')
     print("***************** Power Plant Operation ******************")
@@ -1296,14 +1281,9 @@ def print_results(m, results):
     print('Boiler feed water flow (mol/s): {:.6f}'.format(
         value(m.fs.boiler.inlet.flow_mol[0])))
     print('Boiler duty (MW_th): {:.6f}'.format(
-        value((m.fs.boiler.heat_duty[0]
-               + m.fs.reheater[1].heat_duty[0]
-               + m.fs.reheater[2].heat_duty[0])
-              * 1e-6)))
+        value(m.fs.plant_heat_duty[0])))
     print('Cooling duty (MW_th): {:.6f}'.format(
         value(m.fs.cooler.heat_duty[0]) * -1e-6))
-    # print('Salt storage tank volume in m3: {:.6f}'.format(
-    #     value(m.fs.tank_volume)))
     print('HXC heat duty (MW): {:.6f}'.format(
         value(m.fs.hxc.heat_duty[0]) * 1e-6))
     print('HXD heat duty (MW): {:.6f}'.format(
@@ -1316,8 +1296,8 @@ def print_results(m, results):
     print('')
     print('HXC area (m2): {:.6f}'.format(
         value(m.fs.hxc.area)))
-    # print('HXC cost ($/y): {:.6f}'.format(
-    #     value(m.fs.hxc.costing.purchase_cost / 15)))
+    print('HXC cost ($/h): {:.6f}'.format(
+        value(m.fs.hxc.costing.capital_cost) / (m.fs.num_of_years * 365 * 24)))
     print('HXC Salt flow (kg/s): {:.6f}'.format(
         value(m.fs.hxc.inlet_2.flow_mass[0])))
     print('HXC Salt temperature in (K): {:.6f}'.format(
@@ -1340,8 +1320,8 @@ def print_results(m, results):
     print('')
     print('HXD area (m2): {:.6f}'.format(
         value(m.fs.hxd.area)))
-    # print('HXD cost ($/y): {:.6f}'.format(
-    #     value(m.fs.hxd.costing.purchase_cost / 15)))
+    print('HXD cost ($/h): {:.6f}'.format(
+        value(m.fs.hxd.costing.capital_cost) / (m.fs.num_of_years * 365 * 24)))
     print('HXD Salt flow (kg/s): {:.6f}'.format(
         value(m.fs.hxd.inlet_1.flow_mass[0])))
     print('HXD Salt temperature in (K): {:.6f}'.format(
@@ -1388,16 +1368,20 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fix_power=None):
+def model_analysis(m,
+                   solver=None,
+                   power=None,
+                   pmax=None,
+                   pmin=None,
+                   pmax_storage=None,
+                   pmin_storage=None,
+                   tank_status=None,
+                   fix_power=None,
+                   max_salt_amount=None,
+                   factor_mton=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
-
-    # Add constraints and bounds for plant and discharge produced
-    # power
-    min_power = int(0.65 * max_power)
-    max_power_storage = 22.4 # in MW
-    min_power_storage = 1 # in MW
 
     if fix_power:
         m.fs.power_demand_eq = Constraint(
@@ -1405,16 +1389,16 @@ def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fi
         )
     else:
         m.fs.plant_power_min = Constraint(
-            expr=m.fs.plant_power_out[0] >= min_power
+            expr=m.fs.plant_power_out[0] >= pmin
         )
         m.fs.plant_power_max = Constraint(
-            expr=m.fs.plant_power_out[0] <= max_power
+            expr=m.fs.plant_power_out[0] <= pmax
         )
         m.fs.storage_power_min = Constraint(
-            expr=m.fs.es_turbine.work[0] * (-1e-6) >= min_power_storage
+            expr=m.fs.es_turbine.work[0] * (-1e-6) >= pmin_storage
         )
         m.fs.storage_power_max = Constraint(
-            expr=m.fs.es_turbine.work[0] * (-1e-6) <= max_power_storage
+            expr=m.fs.es_turbine.work[0] * (-1e-6) <= pmax_storage
         )
 
     # Fix variables in the flowsheet
@@ -1426,81 +1410,69 @@ def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fi
     m.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()
     for salt_hxc in [m.fs.hxc]:
         salt_hxc.inlet_1.unfix()
-        salt_hxc.inlet_2.flow_mass.unfix()  # kg/s, 1 DOF
-        salt_hxc.area.unfix()  # 1 DOF
+        salt_hxc.inlet_2.flow_mass.unfix()
+        salt_hxc.area.unfix()
 
     for salt_hxd in [m.fs.hxd]:
         salt_hxd.inlet_2.unfix()
-        salt_hxd.inlet_1.flow_mass.unfix()  # kg/s, 1 DOF
-        salt_hxd.area.unfix()  # 1 DOF
+        salt_hxd.inlet_1.flow_mass.unfix()
+        salt_hxd.area.unfix()
 
     for unit in [m.fs.cooler]:
         unit.inlet.unfix()
-    m.fs.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
+    m.fs.cooler.outlet.enth_mol[0].unfix()
 
     # Fix storage heat exchangers area and salt temperatures
-    m.fs.salt_hot_temperature = 831
-    m.fs.hxc.area.fix(1904)
-    m.fs.hxd.area.fix(1762)
-    m.fs.hxc.outlet_2.temperature.fix(m.fs.salt_hot_temperature)
-    m.fs.hxd.inlet_1.temperature.fix(m.fs.salt_hot_temperature)
-    m.fs.hxd.outlet_1.temperature.fix(513.15)
-
-    # For testing
-    # m.fs.salt_storage_max = Constraint(
-    #     expr=m.fs.hxc.inlet_2.flow_mass[0] <= 10
-    # )
-    # m.fs.hxc.inlet_2.flow_mass.fix(19)
-
-    # print('DOF after unfix = ', degrees_of_freedom(m))
+    hot_salt_temperature = design_data_dict["hot_salt_temperature"]
+    cold_salt_temperature = design_data_dict["cold_salt_temperature"]
+    hxc_area = design_data_dict["hxc_area"]
+    hxd_area = design_data_dict["hxd_area"]
+    m.fs.hxc.area.fix(hxc_area)
+    m.fs.hxd.area.fix(hxd_area)
+    m.fs.hxc.outlet_2.temperature.fix(hot_salt_temperature)
+    m.fs.hxd.inlet_1.temperature.fix(hot_salt_temperature)
+    m.fs.hxd.outlet_1.temperature.fix(cold_salt_temperature)
 
     # Add salt inventory mass balances
-    m.fs.previous_salt_inventory_hot = Var(
+    max_inventory = 1e7 * factor_mton
+    m.fs.previous_salt_inventory_hot = pyo.Var(
         m.fs.time,
         domain=NonNegativeReals,
         initialize=1,
-        bounds=(0, None),
-        doc="Hot salt at the beginning of the hour (or time period), mton"
+        bounds=(0, max_inventory),
+        doc="Hot salt at the beginning of the time period in mton"
         )
-    m.fs.salt_inventory_hot = Var(
+    m.fs.salt_inventory_hot = pyo.Var(
         m.fs.time,
         domain=NonNegativeReals,
         initialize=80,
-        bounds=(0, None),
-        doc="Hot salt inventory at the end of the hour (or time period), mton"
+        bounds=(0, max_inventory),
+        doc="Hot salt inventory at the end of the time period in mton"
         )
-    m.fs.previous_salt_inventory_cold = Var(
+    m.fs.previous_salt_inventory_cold = pyo.Var(
         m.fs.time,
         domain=NonNegativeReals,
         initialize=1,
-        bounds=(0, None),
-        doc="Cold salt at the beginning of the hour (or time period), mton"
+        bounds=(0, max_inventory),
+        doc="Cold salt at the beginning of the time period in mton"
         )
-    m.fs.salt_inventory_cold = Var(
+    m.fs.salt_inventory_cold = pyo.Var(
         m.fs.time,
         domain=NonNegativeReals,
         initialize=80,
-        bounds=(0, None),
-        doc="Cold salt inventory at the end of the hour (or time period), mton"
+        bounds=(0, max_inventory),
+        doc="Cold salt inventory at the end of the time period in mton"
         )
 
     @m.fs.Constraint(doc="Inventory balance at the end of the time period")
     def constraint_salt_inventory_hot(b):
         return (
             b.salt_inventory_hot[0] == (
-            b.previous_salt_inventory_hot[0]
-            + (3600 * b.hxc.inlet_2.flow_mass[0]
-            - 3600 * b.hxd.inlet_1.flow_mass[0]) # in kg
+                b.previous_salt_inventory_hot[0]
+                + (3600 * b.hxc.inlet_2.flow_mass[0]
+                   - 3600 * b.hxd.inlet_1.flow_mass[0]) * factor_mton # in mton
             )
         )
-
-    # @m.fs.Constraint(doc="Inventory balance at the end of the time period")
-    # def constraint_salt_inventory_cold(b):
-    #     return (
-    #         b.salt_inventory_cold[0] ==
-    #         b.previous_salt_inventory_cold[0]
-    #         - 3600 * b.hxc.inlet_2.flow_mass[0]
-    #         + 3600 * b.hxd.inlet_1.flow_mass[0])
 
     @m.fs.Constraint(doc="Maximum salt inventory at any time")
     def constraint_salt_inventory(b):
@@ -1508,23 +1480,16 @@ def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fi
             b.salt_inventory_hot[0] +
             b.salt_inventory_cold[0] == b.salt_amount)
 
-    # @m.fs.Constraint(doc="Maximum previous salt inventory at any time")
-    # def constraint_salt_previous_inventory(b):
-    #     return (
-    #         b.previous_salt_inventory_hot[0] +
-    #         b.previous_salt_inventory_cold[0] == b.salt_amount)
-
-
     # Fix the previous salt inventory based on the tank scenario
-    tank_min = 1 # in kg
-    tank_max = max_salt  # in kg
-    if tank_scenario == "hot_empty":
+    tank_min = 1 * factor_mton # in mton
+    tank_max = max_salt_amount  # in mton
+    if tank_status == "hot_empty":
         m.fs.previous_salt_inventory_hot[0].fix(tank_min)
         m.fs.previous_salt_inventory_cold[0].fix(tank_max - tank_min)
-    elif tank_scenario == "hot_half_full":
+    elif tank_status == "hot_half_full":
         m.fs.previous_salt_inventory_hot[0].fix(tank_max / 2)
         m.fs.previous_salt_inventory_cold[0].fix(tank_max / 2)
-    elif tank_scenario == "hot_full":
+    elif tank_status == "hot_full":
         m.fs.previous_salt_inventory_hot[0].fix(tank_max - tank_min)
         m.fs.previous_salt_inventory_cold[0].fix(tank_min)
     else:
@@ -1532,23 +1497,23 @@ def model_analysis(m, solver, power=None, max_power=None, tank_scenario=None, fi
 
 
     # Calculate revenue
-    m.fs.revenue = Expression(
-        expr=(m.fs.lmp[0] *
-              m.fs.net_power),
+    m.fs.revenue = pyo.Expression(
+        expr=(m.fs.lmp * m.fs.net_power),
         doc="Revenue function in $/h assuming 1 hr operation"
     )
 
     # Objective function: total costs
-    scaling_factor = 1e-3
     m.obj = Objective(
         expr=(
             m.fs.revenue
-            - ((m.fs.operating_cost
+            - ((m.fs.fuel_cost
                 + m.fs.plant_fixed_operating_cost
-                + m.fs.plant_variable_operating_cost) / (365 * 24))
-            # - ((m.fs.capital_cost
-            #     + m.fs.plant_capital_cost) / (365 * 24))
-        ) * scaling_factor,
+                + m.fs.plant_variable_operating_cost))
+            - (
+                m.fs.storage_capital_cost
+                # + m.fs.plant_capital_cost
+            )
+        ) * scaling_obj,
         sense=maximize
     )
 
@@ -1580,26 +1545,45 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
+    # Add design data from .json file
+    # data_path = 'uscp_nlp_design_data.json'
+    data_path = 'uscp_design_data.json'
+    with open(data_path) as design_data:
+        design_data_dict = json.load(design_data)
+
+    pmax = design_data_dict["plant_max_power"]
+    pmin = design_data_dict["plant_min_power"]
+    pmin_storage = design_data_dict["min_discharge_turbine_power"]
+    pmax_storage = design_data_dict["max_discharge_turbine_power"]
+    factor_mton = design_data_dict["factor_mton"]
+    max_salt_amount = design_data_dict["max_salt_amount"] * factor_mton
+
     # Tank scenarios: "hot_empty", "hot_full", "hot_half_full"
-    max_power = 436
     power_demand = 436 # in MW
     method = "with_efficiency"
-    tank_scenario = "hot_empty"
+    tank_status = "hot_empty"
     fix_power = False
+    load_from_file = None
 
-    m_chg = main(method=method, max_power=max_power)
+    m_nlp = main(method=method,
+                 pmax=pmax,
+                 load_from_file=load_from_file,
+                 solver=solver,
+                 max_salt_amount=max_salt_amount)
 
-    m_chg.fs.lmp = Var(
-        m_chg.fs.time,
-        domain=Reals,
-        initialize=80,
+    m_nlp.fs.lmp = pyo.Param(
+        initialize=22,
         doc="Hourly LMP in $/MWh"
         )
-    m_chg.fs.lmp[0].fix(22)
 
-    m = model_analysis(m_chg,
+    m = model_analysis(m_nlp,
                        solver,
                        power=power_demand,
-                       max_power=max_power,
-                       tank_scenario=tank_scenario,
-                       fix_power=fix_power)
+                       pmax=pmax,
+                       pmin=pmin,
+                       pmax_storage=pmax_storage,
+                       pmin_storage=pmin_storage,
+                       tank_status=tank_status,
+                       fix_power=fix_power,
+                       max_salt_amount=max_salt_amount,
+                       factor_mton=factor_mton)
