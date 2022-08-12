@@ -199,8 +199,6 @@ def add_data(m):
     m.max_salt_flow = design_data_dict["max_salt_flow"] # in kg/s
     m.factor_mton = design_data_dict["factor_mton"] # factor to convert kg to metric ton
     m.max_salt_amount = design_data_dict["max_salt_amount"] * m.factor_mton # in mton
-    m.storage_nhours_per_day = design_data_dict["storage_number_hours_per_day"]
-    m.number_of_years = design_data_dict["number_of_years"]
 
     # Add initial values
     m.hxc_area_init = m.hxc_area
@@ -209,19 +207,15 @@ def add_data(m):
     # Chemical engineering cost index for 2019
     m.CE_index = 607.5
 
-    #  Operating hours
-    m.number_hours_per_day = 24
-    m.number_of_years = 30
-
     # Define the number of hours per day to operate the storage system
     # and the number of years over which the capital costs are
     # annualized
-    m.fs.hours_per_day = pyo.Var(
-        initialize=m.storage_nhours_per_day,
+    m.fs.hours_per_day = pyo.Param(
+        initialize=design_data_dict["operating_hours_per_day"],
         doc='Estimated number of hours of charging per day'
     )
     m.fs.num_of_years = pyo.Param(
-        initialize=m.number_of_years,
+        initialize=design_data_dict["number_of_years"],
         doc='Number of years for capital cost annualization')
 
     #  Define the data for the design of the storage heat
@@ -285,15 +279,11 @@ def add_data(m):
     # producing 400 MW power
     m.data_cost = {
         'coal_price': 2.11e-9,
-        'cooling_price': 3.3e-9,
         'solar_salt_price': 0.49,
     }
     m.fs.coal_price = pyo.Param(
         initialize=m.data_cost['coal_price'],
         doc='Coal price based on HHV for Illinois No.6 (NETL Report) in $/J')
-    m.fs.cooling_price = pyo.Param(
-        initialize=m.data_cost['cooling_price'],
-        doc='Cost of chilled water for cooler from Sieder et al. in $/J')
     m.fs.solar_salt_price = pyo.Param(
         initialize=m.data_cost['solar_salt_price'],
         doc='Solar salt price in $/kg')
@@ -320,33 +310,39 @@ def _make_constraints(m, method=None, max_power=None):
         )
     )
 
-    m.fs.boiler_eff = pyo.Var(
+    m.fs.boiler_efficiency = pyo.Var(
         initialize=0.9,
         bounds=(0, 1),
         doc="Boiler efficiency in fraction"
     )
     m.fs.boiler_efficiency_eq = pyo.Constraint(
-        expr=m.fs.boiler_eff == (
+        expr=m.fs.boiler_efficiency == (
             0.2143 * (m.fs.net_power / max_power)
             + 0.7357
         ),
         doc="Boiler efficiency in fraction"
     )
 
-    m.fs.coal_heat_duty = pyo.Var(
-        initialize=1000,
-        bounds=(0, 1e5),
-        doc="Coal heat duty supplied to boiler in MW")
+    # m.fs.coal_heat_duty = pyo.Var(
+    #     initialize=1000,
+    #     bounds=(0, 1e5),
+    #     doc="Coal heat duty supplied to boiler in MW")
 
     if method == "with_efficiency":
-        m.fs.coal_heat_duty_eq = pyo.Constraint(
-            expr=m.fs.coal_heat_duty * m.fs.boiler_eff ==
-            m.fs.plant_heat_duty[0]
+        # m.fs.coal_heat_duty_eq = pyo.Constraint(
+        #     expr=m.fs.coal_heat_duty * m.fs.boiler_efficiency ==
+        #     m.fs.plant_heat_duty[0]
+        # )
+        m.fs.coal_heat_duty = pyo.Expression(
+            expr=m.fs.plant_heat_duty[0] / m.fs.boiler_efficiency
         )
     else:
-        m.fs.coal_heat_duty_eq = pyo.Constraint(
-            expr=m.fs.coal_heat_duty ==
-            m.fs.plant_heat_duty[0]
+        # m.fs.coal_heat_duty_eq = pyo.Constraint(
+        #     expr=m.fs.coal_heat_duty ==
+        #     m.fs.plant_heat_duty[0]
+        # )
+        m.fs.coal_heat_duty = pyo.Expression(
+            expr=m.fs.plant_heat_duty[0]
         )
 
     m.fs.cycle_efficiency = pyo.Var(
@@ -941,10 +937,10 @@ def set_scaling_factors(m):
 
 
 def set_var_scaling(m):
-    iscale.set_scaling_factor(m.fs.operating_cost, 1e-3)
+    iscale.set_scaling_factor(m.fs.fuel_cost, 1e-3)
     iscale.set_scaling_factor(m.fs.plant_fixed_operating_cost, 1e-3)
     iscale.set_scaling_factor(m.fs.plant_variable_operating_cost, 1e-3)
-    iscale.set_scaling_factor(m.fs.plant_capital_cost, 1e-3)
+    # iscale.set_scaling_factor(m.fs.plant_capital_cost, 1e-3)
 
     iscale.set_scaling_factor(m.fs.salt_amount, 1e-3)
     iscale.set_scaling_factor(m.fs.salt_inventory_hot, 1e-3)
@@ -956,7 +952,7 @@ def set_var_scaling(m):
 
     iscale.set_scaling_factor(m.fs.charge_mode_disjunct.capital_cost, 1e-3)
     iscale.set_scaling_factor(m.fs.discharge_mode_disjunct.capital_cost, 1e-3)
-    iscale.set_scaling_factor(m.fs.storage_capital_cost, 1e-3)
+    # iscale.set_scaling_factor(m.fs.storage_capital_cost, 1e-3)
 
     # Calculate scaling factors
     iscale.calculate_scaling_factors(m)
@@ -965,7 +961,7 @@ def set_var_scaling(m):
 def initialize(m,
                solver=None,
                deact_arcs_after_init=None,
-               outlvl=idaeslog.NOTSET,
+               outlvl=idaeslog.WARNING,
                optarg={"tol": 1e-8, "max_iter": 300}):
     """Initialize the units included in the charge model
     """
@@ -1098,10 +1094,11 @@ def build_costing(m):
     m.fs.charge_mode_disjunct.capital_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e7),
-        doc="Annualized capital cost for solar salt")
+        doc="Capital cost of charge heat exchanger in $/h")
     def charge_solar_cap_cost_rule(b):
         return m.fs.charge_mode_disjunct.capital_cost == (
-            m.fs.charge_mode_disjunct.hxc.costing.capital_cost / m.fs.num_of_years
+            m.fs.charge_mode_disjunct.hxc.costing.capital_cost /
+            (m.fs.num_of_years * 365 * 24)
         )
     m.fs.charge_mode_disjunct.cap_cost_eq = pyo.Constraint(
         rule=charge_solar_cap_cost_rule)
@@ -1109,10 +1106,11 @@ def build_costing(m):
     m.fs.discharge_mode_disjunct.capital_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e7),
-        doc="Annualized capital cost for solar salt")
+        doc="Capital cost of discharge heat exhcnager in $/h")
     def discharge_solar_cap_cost_rule(b):
         return m.fs.discharge_mode_disjunct.capital_cost == (
-            m.fs.discharge_mode_disjunct.hxd.costing.capital_cost / m.fs.num_of_years
+            m.fs.discharge_mode_disjunct.hxd.costing.capital_cost /
+            (m.fs.num_of_years * 365 * 24)
         )
     m.fs.discharge_mode_disjunct.cap_cost_eq = pyo.Constraint(
         rule=discharge_solar_cap_cost_rule)
@@ -1121,7 +1119,7 @@ def build_costing(m):
     m.fs.storage_capital_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e7),
-        doc="Annualized capital cost for solar salt in $/year")
+        doc="Annualized capital cost for solar salt in $/h")
 
     m.fs.no_storage_mode_disjunct.capital_cost_eq_constraint = pyo.Constraint(
         expr=m.fs.storage_capital_cost == 0
@@ -1139,60 +1137,60 @@ def build_costing(m):
     m.fs.operating_hours = pyo.Expression(
         expr=365 * 3600 * m.fs.hours_per_day,
         doc="Number of operating hours per year")
-    m.fs.operating_cost = pyo.Var(
+    m.fs.fuel_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e12),
-        doc="Operating cost in $/year")
+        doc="Operating cost in $/h")
 
-    def op_cost_rule(b):
-        return 1e-3 * m.fs.operating_cost == (
-            m.fs.operating_hours * m.fs.coal_price *
+    def fuel_cost_rule(b):
+        return m.fs.fuel_cost == (
+            m.fs.operating_hours *
+            m.fs.coal_price *
             (m.fs.coal_heat_duty * 1e6)
-        ) * 1e-3
-    m.fs.op_cost_eq = pyo.Constraint(rule=op_cost_rule)
+        ) / (365 * 24)
+    m.fs.fuel_cost_eq = pyo.Constraint(rule=fuel_cost_rule)
 
     ###########################################################################
     #  Add capital and operating cost for full plant
     ###########################################################################
 
     # Calculate capital cost for power plant
-    m.fs.plant_capital_cost = pyo.Var(
-        initialize=1000000,
-        bounds=(0, 1e12),
-        doc="Annualized capital cost for the plant in $/year")
+    # m.fs.plant_capital_cost = pyo.Var(
+    #     initialize=1000000,
+    #     bounds=(0, 1e12),
+    #     doc="Plant capital cost in $/hour")
     m.fs.plant_fixed_operating_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e12),
-        doc="Plant fixed operating cost in $/year")
+        doc="Plant fixed operating cost in $/hour")
     m.fs.plant_variable_operating_cost = pyo.Var(
         initialize=1000000,
         bounds=(0, 1e12),
-        doc="Plant variable operating cost in $/year")
+        doc="Plant variable operating cost in $/hour")
 
-    def plant_cap_cost_rule(b):
-        return 1e-3 * m.fs.plant_capital_cost == (
-            ((2688973 * m.fs.plant_power_out[0]
-              + 618968072) /
-             m.fs.num_of_years
-            ) * (m.CE_index / 575.4)
-        ) * 1e-3
-    m.fs.plant_cap_cost_eq = pyo.Constraint(rule=plant_cap_cost_rule)
+    # def plant_cap_cost_rule(b):
+    #     return m.fs.plant_capital_cost == (
+    #         ((2688973 * m.fs.plant_power_out[0]
+    #           + 618968072) /
+    #          (m.fs.num_of_years * 365 * 24)
+    #         ) * (m.CE_index / 575.4)
+    #     )
+    # m.fs.plant_cap_cost_eq = pyo.Constraint(rule=plant_cap_cost_rule)
 
     def op_fixed_plant_cost_rule(b):
-        return 1e-3 * m.fs.plant_fixed_operating_cost == (
+        return m.fs.plant_fixed_operating_cost == (
             ((16657.5 * m.fs.plant_power_out[0]
               + 6109833.3) /
-             m.fs.num_of_years
+             (m.fs.num_of_years * 365 * 24)
             ) * (m.CE_index / 575.4)
-        ) * 1e-3
-    m.fs.op_fixed_plant_cost_eq = pyo.Constraint(
-        rule=op_fixed_plant_cost_rule)
+        )
+    m.fs.op_fixed_plant_cost_eq = pyo.Constraint(rule=op_fixed_plant_cost_rule)
 
     def op_variable_plant_cost_rule(b):
-        return 1e-3 * m.fs.plant_variable_operating_cost == (
+        return m.fs.plant_variable_operating_cost == (
             (31754.7 * m.fs.plant_power_out[0]
             ) * (m.CE_index / 575.4)
-        ) * 1e-3
+        ) / (365 * 24)
     m.fs.op_variable_plant_cost_eq = pyo.Constraint(
         rule=op_variable_plant_cost_rule)
 
@@ -1210,7 +1208,7 @@ def initialize_with_costing(m):
 
     # Fix operating cost variable to initialize cost in a square
     # problem
-    m.fs.operating_cost.fix(1e6)
+    # m.fs.fuel_cost.fix(1e6)
 
     # Initialize capital costs for charge and discharge heat
     # exchangers
@@ -1223,13 +1221,13 @@ def initialize_with_costing(m):
 
     # Initialize operating cost
     calculate_variable_from_constraint(
-        m.fs.operating_cost,
-        m.fs.op_cost_eq)
+        m.fs.fuel_cost,
+        m.fs.fuel_cost_eq)
 
-    # Initialize capital cost of power plant
-    calculate_variable_from_constraint(
-        m.fs.plant_capital_cost,
-        m.fs.plant_cap_cost_eq)
+    # # Initialize capital cost of power plant
+    # calculate_variable_from_constraint(
+    #     m.fs.plant_capital_cost,
+    #     m.fs.plant_cap_cost_eq)
 
     # Initialize plant fixed and variable operating costs
     calculate_variable_from_constraint(
@@ -1374,17 +1372,12 @@ def add_bounds(m):
         unit_in_charge.hxc.costing.material_factor.setlb(0)
         unit_in_charge.hxc.costing.material_factor.setub(100)
 
-
-        # HX pump and Cooler
-        # unit_in_charge.cooler.heat_duty.setlb(-1e12)
-        # unit_in_charge.cooler.heat_duty.setub(0)
-        for unit_k in [unit_in_charge.hx_pump,
-                       # unit_in_charge.cooler
-        ]:
+        # HX pump
+        for unit_k in [unit_in_charge.hx_pump]:
             unit_k.inlet.flow_mol.setlb(0)
-            unit_k.inlet.flow_mol.setub(0.2*m.flow_max)
+            unit_k.inlet.flow_mol.setub(m.flow_max_storage)
             unit_k.outlet.flow_mol.setlb(0)
-            unit_k.outlet.flow_mol.setub(0.2*m.flow_max)
+            unit_k.outlet.flow_mol.setub(m.flow_max_storage)
             unit_k.deltaP.setlb(0)
             unit_k.deltaP.setub(1e10)
         unit_in_charge.hx_pump.work_mechanical[0].setlb(0)
@@ -1452,7 +1445,7 @@ def add_bounds(m):
         unit_in_discharge.hxd.area.setub(m.max_area)
         unit_in_discharge.hxd.delta_temperature_in.setlb(5)
         unit_in_discharge.hxd.delta_temperature_out.setlb(10)
-        unit_in_discharge.hxd.delta_temperature_in.setub(300)
+        unit_in_discharge.hxd.delta_temperature_in.setub(350)
         unit_in_discharge.hxd.delta_temperature_out.setub(500)
         unit_in_discharge.hxd.costing.pressure_factor.setlb(0)
         unit_in_discharge.hxd.costing.pressure_factor.setub(1e5)
@@ -1610,14 +1603,14 @@ def print_results(m, results):
     print()
     print("***************** Costing Results ******************")
     print('Obj (M$/year): {:.4f}'.format(value(m.obj) / m.scaling_obj))
-    print('Plant capital cost (M$/y): {:.4f}'.format(
-        value(m.fs.plant_capital_cost) * 1e-6))
+    # print('Plant capital cost (M$/y): {:.4f}'.format(
+    #     value(m.fs.plant_capital_cost) * 1e-6))
     print('Plant fixed operating costs (M$/y): {:.4f}'.format(
         value(m.fs.plant_fixed_operating_cost) * 1e-6))
     print('Plant variable operating costs (M$/y): {:.4f}'.format(
         value(m.fs.plant_variable_operating_cost) * 1e-6))
-    print('Operating Cost (Fuel) ($/h): {:.4f}'.format(
-        value(m.fs.operating_cost)/(365*24)))
+    print('Coal Cost (fuel) ($/h): {:.4f}'.format(
+        value(m.fs.fuel_cost)))
     print('Storage Capital Cost ($/h): {:.4f}'.format(
         value(m.fs.storage_capital_cost)/(365*24)))
     print('')
@@ -1634,18 +1627,13 @@ def print_results(m, results):
         value(m.fs.hx_pump_work)))
     print('Boiler feed water flow (mol/s): {:.4f}'.format(
         value(m.fs.boiler.inlet.flow_mol[0])))
-    print('Boiler duty (MW_th): {:.4f}'.format(
-        value((m.fs.boiler.heat_duty[0]
-               + m.fs.reheater[1].heat_duty[0]
-               + m.fs.reheater[2].heat_duty[0])
-              * 1e-6)))
-    # print('Cooling duty (MW_th): {:.4f}'.format(
-    #     value(m.fs.cooler_heat_duty) * 1e-6))
+    print('Boiler (plant) heat duty (MW_th): {:.4f}'.format(
+        value(m.fs.plant_heat_duty[0])))
     print('Makeup water flow: {:.4f}'.format(
         value(m.fs.condenser_mix.makeup.flow_mol[0])))
     print()
     print('Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
-        value(m.fs.boiler_eff) * 100,
+        value(m.fs.boiler_efficiency) * 100,
         value(m.fs.cycle_efficiency) * 100))
     print()
     if m.fs.charge_mode_disjunct.binary_indicator_var.value == 1:
@@ -1665,8 +1653,6 @@ def print_results(m, results):
         print('HXC delta temperature (K): in: {:.4f}, out: {:.4f}'.format(
             value(m.fs.charge_mode_disjunct.hxc.delta_temperature_in[0]),
             value(m.fs.charge_mode_disjunct.hxc.delta_temperature_out[0])))
-        # print('Cooling duty (MW_th): {:.4f}'.format(
-        #     value(m.fs.charge_mode_disjunct.cooler.heat_duty[0]) * 1e-6))
         print('')
     elif m.fs.discharge_mode_disjunct.binary_indicator_var.value == 1:
         print("*************** Discharge Heat Exchanger (HXD) ****************")
@@ -1775,7 +1761,7 @@ def print_model(nlp_model, nlp_data):
     print('        HX pump work (MW): {:.4f}'.format(
         value(nlp_model.fs.hx_pump_work)))
     print('        Boiler efficiency (%): {:.4f}'.format(
-        value(nlp_model.fs.boiler_eff) * 100))
+        value(nlp_model.fs.boiler_efficiency) * 100))
     print('        Cycle efficiency (%): {:.4f}'.format(
         value(nlp_model.fs.cycle_efficiency) * 100))
     print('        Hot Previous Salt Inventory (mton): {:.4f}'.format(
@@ -1927,7 +1913,7 @@ def model_analysis(m,
     m.fs.boiler.inlet.flow_mol.unfix()
 
     # Unfix data fixed during initialization
-    m.fs.operating_cost.unfix()
+    # m.fs.fuel_cost.unfix()
     m.fs.charge_mode_disjunct.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
     m.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
 
@@ -2049,13 +2035,13 @@ def model_analysis(m,
     m.scaling_obj = 1
     m.obj = Objective(
         expr=(
-            m.fs.revenue
-            - ((m.fs.operating_cost
-                + m.fs.plant_fixed_operating_cost
-                + m.fs.plant_variable_operating_cost) / (365 * 24))
-            # - ((m.fs.storage_capital_cost
-            #     # + m.fs.plant_capital_cost
-            # )/ (365 * 24))
+            m.fs.revenue -
+            (m.fs.fuel_cost +
+             m.fs.plant_fixed_operating_cost +
+             m.fs.plant_variable_operating_cost) -
+            (m.fs.storage_capital_cost
+             # + m.fs.plant_capital_cost
+            )
         ) * m.scaling_obj,
         sense=maximize
     )
