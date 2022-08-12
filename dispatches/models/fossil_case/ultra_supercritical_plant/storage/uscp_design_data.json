@@ -13,13 +13,13 @@
     "cold_salt_temperature": 513.15,
     "min_storage_area": 0,
     "max_storage_area": 6000,
-    "min_storage_area_design": 800,
-    "max_storage_area_design": 4000,
+    "min_storage_area_design": 1000,
+    "max_storage_area_design": 3000,
     "min_solar_salt_temperature": 513.15,
     "max_solar_salt_temperature": 853.15,
     "max_salt_flow": 500,
     "max_salt_amount": 6739292,
     "factor_mton": 1e-3,
-    "storage_number_hours_per_day": 24,
+    "operating_hours_per_day": 24,
     "number_of_years": 30
 }
