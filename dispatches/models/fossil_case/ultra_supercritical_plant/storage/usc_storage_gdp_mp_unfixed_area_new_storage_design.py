@@ -1588,8 +1588,21 @@ def print_results(m, results):
     print('================================')
     print()
     print("***************** Optimization Results ******************")
+    print('Obj ($/h): {:.4f}'.format(value(m.obj) / m.scaling_obj))
     print('Revenue ($/h): {:.4f}'.format(
         value(m.fs.revenue)))
+    # print('Plant capital cost ($/h): {:.4f}'.format(
+    #     value(m.fs.plant_capital_cost)))
+    print('Plant fixed operating costs ($/h): {:.4f}'.format(
+        value(m.fs.plant_fixed_operating_cost)))
+    print('Plant variable operating costs ($/h): {:.4f}'.format(
+        value(m.fs.plant_variable_operating_cost)))
+    print('Coal Cost (fuel) ($/h): {:.4f}'.format(
+        value(m.fs.fuel_cost)))
+    print('Storage Capital Cost ($/h): {:.4f}'.format(
+        value(m.fs.storage_capital_cost)))
+    print()
+    print("***************** Tank Results ******************")
     print('Hot Salt Inventory (mton): {:.4f}, prev: {:.4f}'.format(
         value(m.fs.salt_inventory_hot),
         value(m.fs.previous_salt_inventory_hot)))
@@ -1600,19 +1613,6 @@ def print_results(m, results):
         value(m.fs.salt_storage)))
     print('Salt Amount (mton): {:.4f}'.format(
         value(m.fs.salt_amount)))
-    print()
-    print("***************** Costing Results ******************")
-    print('Obj (M$/year): {:.4f}'.format(value(m.obj) / m.scaling_obj))
-    # print('Plant capital cost (M$/y): {:.4f}'.format(
-    #     value(m.fs.plant_capital_cost) * 1e-6))
-    print('Plant fixed operating costs (M$/y): {:.4f}'.format(
-        value(m.fs.plant_fixed_operating_cost) * 1e-6))
-    print('Plant variable operating costs (M$/y): {:.4f}'.format(
-        value(m.fs.plant_variable_operating_cost) * 1e-6))
-    print('Coal Cost (fuel) ($/h): {:.4f}'.format(
-        value(m.fs.fuel_cost)))
-    print('Storage Capital Cost ($/h): {:.4f}'.format(
-        value(m.fs.storage_capital_cost)/(365*24)))
     print('')
     print("***************** Power Plant Operation ******************")
     print('')
@@ -1640,6 +1640,8 @@ def print_results(m, results):
         print("***************** Charge Heat Exchanger (HXC) ******************")
         print('HXC area (m2): {:.4f}'.format(
             value(m.fs.charge_mode_disjunct.hxc.area)))
+        print('HXC heat duty (MW): {:.4f}'.format(
+            value(m.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6))
         print('HXC salt flow (kg/s): {:.4f}'.format(
             value(m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0])))
         print('HXC steam flow to storage (mol/s): {:.4f}'.format(
@@ -1659,6 +1661,8 @@ def print_results(m, results):
         print('')
         print('HXD area (m2): {:.4f}'.format(
             value(m.fs.discharge_mode_disjunct.hxd.area)))
+        print('HXD heat duty (MW): {:.4f}'.format(
+            value(m.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6))
         print('HXD salt flow (kg/s): {:.4f}'.format(
             value(m.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass[0])))
         print('HXD Steam flow to storage (mol/s): {:.4f}'.format(
@@ -1752,6 +1756,18 @@ def print_model(nlp_model, nlp_data):
     print()
     print('        Obj (M$/year): {:.4f}'.format(
         value(nlp_model.obj) / nlp_model.scaling_obj))
+    print('        Revenue ($/h): {:.4f}'.format(
+        value(nlp_model.fs.revenue)))
+    # print('        Plant capital cost ($/h): {:.4f}'.format(
+    #     value(nlp_model.fs.plant_capital_cost)))
+    print('        Plant fixed operating costs ($/h): {:.4f}'.format(
+        value(nlp_model.fs.plant_fixed_operating_cost)))
+    print('        Plant variable operating costs ($/h): {:.4f}'.format(
+        value(nlp_model.fs.plant_variable_operating_cost)))
+    print('        Coal Cost (fuel) ($/h): {:.4f}'.format(
+        value(nlp_model.fs.fuel_cost)))
+    print('        Storage Capital Cost ($/h): {:.4f}'.format(
+        value(nlp_model.fs.storage_capital_cost)))
     print('        Net Power (MW): {:.4f}'.format(
         value(nlp_model.fs.net_power)))
     print('        Plant Power (MW): {:.4f}'.format(
@@ -1760,9 +1776,8 @@ def print_model(nlp_model, nlp_data):
         value(nlp_model.fs.discharge_turbine_work)))
     print('        HX pump work (MW): {:.4f}'.format(
         value(nlp_model.fs.hx_pump_work)))
-    print('        Boiler efficiency (%): {:.4f}'.format(
-        value(nlp_model.fs.boiler_efficiency) * 100))
-    print('        Cycle efficiency (%): {:.4f}'.format(
+    print('        Boiler/cycle efficiency (%): {:.4f}/{:.4f}'.format(
+        value(nlp_model.fs.boiler_efficiency) * 100,
         value(nlp_model.fs.cycle_efficiency) * 100))
     print('        Hot Previous Salt Inventory (mton): {:.4f}'.format(
         value(nlp_model.fs.previous_salt_inventory_hot)))
@@ -1775,6 +1790,7 @@ def print_model(nlp_model, nlp_data):
         value(nlp_model.fs.salt_inventory_hot)))
     print('        Cold Salt Inventory (mton): {:.4f}'.format(
         value(nlp_model.fs.salt_inventory_cold)))
+
 
     print('       ___________________________________________')
 
@@ -2032,7 +2048,7 @@ def model_analysis(m,
 
     # Add a total cost function as the objective function. Also,
     # include a scaling factor to the objective.
-    m.scaling_obj = 1
+    m.scaling_obj = 1e-1
     m.obj = Objective(
         expr=(
             m.fs.revenue -
