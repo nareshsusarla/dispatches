@@ -1707,7 +1707,7 @@ def print_reports(m):
     for j in m.set_fwh_mixer:
         m.fs.fwh_mixer[j].display()
 
-def print_model(nlp_model, nlp_data):
+def print_model(_, nlp_model, nlp_data):
 
     print('       ___________________________________________')
     if nlp_model.fs.charge_mode_disjunct.indicator_var.value == 1:
@@ -1856,21 +1856,20 @@ def run_gdp(m):
     print('    {} DOFs before solving GDP model '.format(degrees_of_freedom(m)))
 
     opt = SolverFactory('gdpopt')
-    opt.CONFIG.strategy = 'RIC'
-    # opt.CONFIG.OA_penalty_factor = 1e4
-    # opt.CONFIG.max_slack = 1e4
-    opt.CONFIG.call_after_subproblem_solve = print_model
-    opt.CONFIG.mip_solver = 'gurobi_direct'
-    opt.CONFIG.nlp_solver = 'ipopt'
-    opt.CONFIG.tee = True
-    opt.CONFIG.init_strategy = "no_init"
-    opt.CONFIG.time_limit = "2400"
-    opt.CONFIG.subproblem_presolve = False
     _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
 
     results = opt.solve(
         m,
         tee=True,
+        algorithm='RIC',
+        # OA_penalty_factor=1e4,
+        # max_slack=1e4,
+        call_after_subproblem_solve=print_model,
+        mip_solver='gurobi_direct',
+        nlp_solver='ipopt',
+        init_algorithm="no_init",
+        time_limit="2400",
+        subproblem_presolve=False,
         nlp_solver_args=dict(
             tee=True,
             symbolic_solver_labels=True,

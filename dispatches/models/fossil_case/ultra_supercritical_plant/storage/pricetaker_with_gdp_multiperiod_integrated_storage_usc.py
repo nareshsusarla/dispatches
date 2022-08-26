@@ -73,10 +73,10 @@ def _get_lmp(hours_per_day=None, nhours=None):
         # price = [22.9684, 21.1168, 0, 0, 200, 200]
         price = [
             22.9684, 21.1168, 20.4, 20.419,
-            # 20.419, 21.2877, 23.07, 25,
-            # 18.4634, 0, 0, 0,
+            20.419, 21.2877, 23.07, 25,
+            18.4634, 0, 0, 0,
             0, 0, 0, 0,
-            # 19.0342, 23.07, 200, 200,
+            19.0342, 23.07, 200, 200,
             200, 200, 200, 200,
         ]
         max_lmp = max(price)
@@ -103,13 +103,17 @@ def _get_lmp(hours_per_day=None, nhours=None):
     return lmp, nhigh_lmp, nlow_lmp
 
 
-def print_model(mdl,
+def print_model(solver_obj,
+                mdl,
                 mdl_data,
                 csvfile,
                 lmp=None,
                 nweeks=None,
                 nhours=None,
                 n_time_points=None):
+
+    # m_iter = mdl_data.master_iteration
+    m_iter = solver_obj.iteration
 
     mdl.disjunction1_selection = {}
     hot_tank_level_iter = []
@@ -158,7 +162,7 @@ def print_model(mdl,
         print('        No storage: {}'.format(
             blk_process_no_storage.binary_indicator_var.value))
         if blk_process_charge.binary_indicator_var.value == 1:
-            mdl.disjunction1_selection[mdl_data.master_iteration] = 'Charge'
+            mdl.disjunction1_selection[m_iter] = 'Charge'
             print('         HXC area (m2): {:.4f}'.format(
                 value(blk_process_charge.hxc.area)))
             print('         HXC Duty (MW): {:.4f}'.format(
@@ -181,7 +185,7 @@ def print_model(mdl,
                 print('         Cooling heat duty (MW): {:.4f}'.format(
                     value(blk_process_charge.cooler.heat_duty[0]) * 1e-6))
         elif blk_process_discharge.binary_indicator_var.value == 1:
-            mdl.disjunction1_selection[mdl_data.master_iteration] = 'Discharge'
+            mdl.disjunction1_selection[m_iter] = 'Discharge'
             print('         HXD area (m2): {:.4f}'.format(
                 value(blk_process_discharge.hxd.area)))
             print('         HXD Duty (MW): {:.4f}'.format(
@@ -203,7 +207,7 @@ def print_model(mdl,
             print('         ES turbine work (MW): {:.4f}'.format(
                 value(blk_process_discharge.es_turbine.work_mechanical[0]) * -1e-6))
         elif blk_process_no_storage.binary_indicator_var.value == 1:
-            mdl.disjunction1_selection[mdl_data.master_iteration] = 'No_storage'
+            mdl.disjunction1_selection[m_iter] = 'No_storage'
             print('         Salt flow (kg/s): {:.4f}'.format(
                 value(blk_process.fs.salt_storage)))
         else:
@@ -244,11 +248,7 @@ def print_model(mdl,
         mdl.hxc_area_val = {}
         mdl.hxd_area_val = {}
         mdl.hot_salt_temp_val = {}
-        m_iter = mdl_data.master_iteration
-        mdl.objective_val[m_iter] = (
-            (value(mdl.obj) / scaling_cost) / scaling_obj
-        )
-        mdl.iterations = m_iter
+        mdl.objective_val[m_iter] = (value(mdl.obj) / scaling_cost) / scaling_obj
         mdl.period = blk
         mdl.boiler_heat_duty_val[m_iter] = 1e-6 * value(blk_process.fs.boiler.heat_duty[0])
         mdl.discharge_turbine_work_val[m_iter] = value(blk_process.fs.discharge_turbine_work)
@@ -334,7 +334,7 @@ def print_model(mdl,
                     labelcolor=color[2])
     plt.savefig(
         'results/gdp_mp_unfixed_area_{}h/salt_tank_level_master_iter{}.png'.
-        format(nhours, mdl_data.master_iteration))
+        format(nhours, m_iter))
     plt.close(fig1)
 
 
@@ -374,7 +374,7 @@ def print_model(mdl,
                     labelcolor=color[2])
     plt.savefig(
         'results/gdp_mp_unfixed_area_{}h/salt_tank_level_nostep_master_iter{}.png'.
-        format(hours_per_day, mdl_data.master_iteration))
+        format(hours_per_day, m_iter))
     plt.close(fig2)
 
     log_close_to_bounds(mdl)
@@ -569,26 +569,7 @@ def run_pricetaker_analysis(hours_per_day=None,
 
     blks[0].usc.previous_power.fix(400)
 
-    # Select solver
-    csvfile = create_csv_header(nhours=nhours)
-
-    opt = pyo.SolverFactory('gdpopt')
-    opt.CONFIG.strategy = 'RIC'
-    # opt.CONFIG.strategy = 'LOA'
-    opt.CONFIG.OA_penalty_factor = 1e4
-    opt.CONFIG.max_slack = 1e4
-    # opt.CONFIG.call_after_subproblem_solve = print_model
-    opt.CONFIG.call_after_subproblem_solve = (lambda a, b: print_model(
-        a, b, csvfile, nweeks=nweeks, nhours=nhours, lmp=lmp, n_time_points=n_time_points))
-    opt.CONFIG.mip_solver = 'gurobi_direct'
-    opt.CONFIG.nlp_solver = 'ipopt'
-    opt.CONFIG.tee = True
-    opt.CONFIG.init_strategy = "no_init"
-    opt.CONFIG.time_limit = "28000"
-    opt.CONFIG.subproblem_presolve = False
-    opt.CONFIG.iterlim = 200
-    _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
-
+    # Initialize disjunctions
     print()
     print()
     print('>>Initializing disjuncts')
@@ -621,7 +602,12 @@ def run_pricetaker_analysis(hours_per_day=None,
                 blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
                 blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
 
-    # Solve problem
+    # Select solver and solve the model
+    csvfile = create_csv_header(nhours=nhours)
+
+    opt = pyo.SolverFactory('gdpopt')
+    _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
+
     net_power = []
     hot_tank_level = []
     cold_tank_level = []
@@ -633,16 +619,32 @@ def run_pricetaker_analysis(hours_per_day=None,
         print()
         print(">> Solving for week {}: {} hours of operation in {} day(s) ".
               format(week + 1, nhours, ndays))
-        results = opt.solve(m,
-                            tee=True,
-                            nlp_solver_args=dict(
-                                tee=True,
-                                symbolic_solver_labels=True,
-                                options={
-                                    "linear_solver": "ma27",
-                                    "max_iter": 150,
-                                    "halt_on_ampl_error": "yes"
-                                }))
+        results = opt.solve(
+            m,
+            tee=True,
+            algorithm='LOA',
+            mip_solver='gurobi_direct',
+            nlp_solver='ipopt',
+            OA_penalty_factor=1e4,
+            max_slack=1e4,
+            init_algorithm="no_init",
+            subproblem_presolve=False,
+            time_limit="28000",
+            iterlim=200,
+            call_after_subproblem_solve=(
+                lambda c, a, b: print_model(c, a, b,
+                                            csvfile, nweeks=nweeks,
+                                            nhours=nhours, lmp=lmp,
+                                            n_time_points=n_time_points)
+            ),
+            nlp_solver_args=dict(
+                tee=True,
+                symbolic_solver_labels=True,
+                options={"linear_solver": "ma27",
+                         "max_iter": 150,
+                         "halt_on_ampl_error": "yes"}
+            )
+        )
 
         hot_tank_level.append(
             [pyo.value(blks[i].usc.salt_inventory_hot) # in mton
@@ -1061,7 +1063,7 @@ if __name__ == '__main__':
     max_power = design_data_dict["plant_max_power"] # in MW
     pmin = design_data_dict["plant_min_power"] # in MW
 
-    hours_per_day = 12
+    hours_per_day = 24
     ndays = 1
     nhours = hours_per_day * ndays
     nweeks = 1
