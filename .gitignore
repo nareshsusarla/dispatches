@@ -49,4 +49,8 @@ auto-save-list
 
 .ipynb_checkpoints/
 
+<<<<<<< HEAD
+=======
+*_results/
+>>>>>>> main
 sim_*/

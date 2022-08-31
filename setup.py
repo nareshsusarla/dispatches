@@ -80,7 +80,7 @@ SPECIAL_DEPENDENCIES = SpecialDependencies.for_prerelease
 setup(
     name="dispatches",
     url="https://github.com/gmlc-dispatches/dispatches",
-    version="0.3.dev0",
+    version="1.1.dev0",
     description="GMLC DISPATCHES software tools",
     long_description=long_description,
     long_description_content_type="text/plain",
@@ -113,7 +113,7 @@ setup(
     ],
     keywords="market simulation, chemical engineering, process modeling, hybrid power systems",
     packages=find_packages(),
-    python_requires=">=3.6, <4",
+    python_requires=">=3.7, <4",
     install_requires=[
         "pytest",
         # we use jupyter notebooks
@@ -127,11 +127,15 @@ setup(
     package_data={
         "": ["*.json"],
         "dispatches.tests.data.prescient_5bus": ["*.csv"],
-        "dispatches.models.renewables_case": [
+        "dispatches.case_studies.renewables_case.tests": [
             "rts_results_all_prices.npy",
-            "44.21_-101.94_windtoolkit_2012_60min_80m.srw",
         ],
-        "dispatches.models.fossil_case.ultra_supercritical_plant": [
+        "dispatches.case_studies.renewables_case.data": [
+           "Wind_Thermal_Dispatch.csv",
+           "309_WIND_1-SimulationOutputs.csv",
+            "44.21_-101.94_windtoolkit_2012_60min_80m.srw"
+        ],
+        "dispatches.case_studies.fossil_case.ultra_supercritical_plant": [
             "pfd_ultra_supercritical_pc.svg",
         ],
     },
