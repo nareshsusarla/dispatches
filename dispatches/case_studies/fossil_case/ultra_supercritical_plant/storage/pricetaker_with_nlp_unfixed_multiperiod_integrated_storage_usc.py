@@ -65,12 +65,50 @@ def _get_lmp(hours_per_day=None, nhours=None):
         lmp = price[0:nhours].tolist()
     elif use_mod_rts_data:
         print('>>>>>> Using given LMP data')
-        price = [22.9684, 21.1168, 20.4, 20.419,
-                 20.419, 21.2877, 23.07, 25,
-                 18.4634, 0, 0, 0,
-                 0, 0, 0, 0,
-                 19.0342, 23.07, 200, 200,
-                 200, 200, 200, 200]
+        price = [
+            22.9684, 21.1168, 20.4, 20.419,
+            20.419, 21.2877, 23.07, 25,
+            18.4634, 0, 0, 0,
+            0, 0, 0, 0,
+            19.0342, 23.07, 200, 200,
+            200, 200, 200, 200, #1
+            0, 0, 0, 0,
+            20.419, 21.2877, 23.07, 25,
+            18.4634, 0, 0, 0,
+            22.9684, 21.1168, 20.4, 20.419,
+            200, 200, 200, 200,
+            19.0342, 23.07, 200, 200, #2
+            18.4634, 0, 0, 0,
+            0, 0, 0, 0,
+            19.0342, 23.07, 200, 200,
+            200, 200, 200, 200,
+            0, 0, 0, 0,
+            22.9684, 21.1168, 20.4, 20.419, #3
+            20.419, 21.2877, 23.07, 25,
+            18.4634, 0, 0, 0,
+            0, 0, 0, 0,
+            19.0342, 23.07, 200, 200,
+            200, 200, 200, 200,
+            22.9684, 21.1168, 20.4, 20.419,#4
+            0, 0, 0, 0,
+            19.0342, 23.07, 200, 200,
+            200, 200, 200, 200,
+            0, 0, 0, 0,
+            20.419, 21.2877, 23.07, 25,
+            18.4634, 0, 0, 0,#5
+            200, 200, 200, 200,
+            200, 200, 200, 200,
+            0, 0, 0, 0,
+            22.9684, 21.1168, 20.4, 20.419,
+            20.419, 21.2877, 23.07, 25,
+            18.4634, 0, 0, 0,#6
+            0, 0, 0, 0,
+            19.0342, 23.07, 200, 200,
+            200, 200, 200, 200,
+            0, 0, 0, 0,
+            22.9684, 21.1168, 20.4, 20.419,
+            20.419, 21.2877, 23.07, 25#7
+        ]
 
         lmp = price
         if len(price) < hours_per_day:
@@ -148,10 +186,10 @@ def run_pricetaker_analysis(hours_per_day=None,
     tank_min = 1 * factor_mton
     tank_max = max_salt_amount
     if tank_status == "hot_empty":
-        blks[0].usc.previous_salt_inventory_hot.fix(tank_min)
-        blks[0].usc.previous_salt_inventory_cold.fix(tank_max - tank_min)
-        # blks[0].usc.previous_salt_inventory_hot.fix(1103053.48 * factor_mton)
-        # blks[0].usc.previous_salt_inventory_cold.fix(tank_max - 1103053.48 * factor_mton)
+        # blks[0].usc.previous_salt_inventory_hot.fix(tank_min)
+        # blks[0].usc.previous_salt_inventory_cold.fix(tank_max - tank_min)
+        blks[0].usc.previous_salt_inventory_hot.fix(1103053.48 * factor_mton)
+        blks[0].usc.previous_salt_inventory_cold.fix(tank_max - 1103053.48 * factor_mton)
     elif tank_status == "hot_half_full":
         blks[0].usc.previous_salt_inventory_hot.fix(tank_max / 2)
         blks[0].usc.previous_salt_inventory_cold.fix(tank_max / 2)
@@ -161,13 +199,13 @@ def run_pricetaker_analysis(hours_per_day=None,
     else:
         print("Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full")
 
-    blks[0].usc.previous_power.fix(400)
-    # blks[0].usc.previous_power.fix(447.66)
+    # blks[0].usc.previous_power.fix(400)
+    blks[0].usc.previous_power.fix(447.66)
 
 
     # Declare the solver and a set of lists to save the results
     opt = pyo.SolverFactory('ipopt',
-                            options={"max_iter": 150})
+                            options={"max_iter": 300})
 
     hot_tank_level = []
     cold_tank_level = []
@@ -352,7 +390,7 @@ def plot_results(m,
              lw=1, color=color[1])
     ax1.legend(loc="center right", frameon=False)
     ax1.tick_params(axis='y')
-    ax1.set_xticks(np.arange(0, n_time_points * nweeks + 1, step=2))
+    ax1.set_xticks(np.arange(0, n_time_points * nweeks + 1, step=4))
 
     ax2 = ax1.twinx()
     ax2.set_ylabel('LMP ($/MWh)',
@@ -364,7 +402,7 @@ def plot_results(m,
     ax2.tick_params(axis='y',
                     labelcolor=color[2])
     plt.savefig('multiperiod_usc_storage_unfixarea_salt_tank_level_{}.png'.
-                format(hours_per_day))
+                format(hours_per_day * ndays))
 
     font = {'size':18}
     plt.rc('font', **font)
@@ -394,7 +432,7 @@ def plot_results(m,
              lw=1, color=color[1])
     ax3.tick_params(axis='y',
                     labelcolor=color[1])
-    ax3.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
+    ax3.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=4))
 
     ax4 = ax3.twinx()
     ax4.set_ylabel('LMP ($/MWh)',
@@ -406,7 +444,7 @@ def plot_results(m,
     ax4.tick_params(axis='y',
                     labelcolor=color[2])
     plt.savefig('multiperiod_usc_storage_unfixarea_power_{}.png'.
-                format(hours_per_day))
+                format(hours_per_day * ndays))
 
 
     zero_point = True
@@ -449,10 +487,10 @@ def plot_results(m,
                  marker='v', ms=4, lw=1,
                  label='Discharge',
                  color=color[1])
-        ax5.legend(loc="upper left", frameon=False)
-        ax5.tick_params(axis='y',
-                        labelcolor=color[3])
-        ax5.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
+    ax5.legend(loc="upper left", frameon=False)
+    ax5.tick_params(axis='y',
+                    labelcolor=color[3])
+    ax5.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=4))
 
     ax6 = ax5.twinx()
     ax6.set_ylabel('LMP ($/MWh)',
@@ -463,7 +501,7 @@ def plot_results(m,
     ax6.tick_params(axis='y',
                     labelcolor=color[2])
     plt.savefig('multiperiod_usc_storage_unfixarea_hxduty_{}.png'.
-                format(hours_per_day))
+                format(hours_per_day * ndays))
 
     zero_point = True
     boiler_heat_duty_array = np.asarray(boiler_heat_duty[0:nweeks]).flatten()
@@ -499,7 +537,7 @@ def plot_results(m,
     ax7.legend(loc="center right", frameon=False)
     ax7.tick_params(axis='y',
                     labelcolor=color[3])
-    ax7.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
+    ax7.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=4))
 
     ax8 = ax7.twinx()
     ax8.set_ylabel('LMP ($/MWh)',
@@ -510,7 +548,7 @@ def plot_results(m,
     ax8.tick_params(axis='y',
                     labelcolor=color[2])
     plt.savefig('multiperiod_usc_storage_unfixarea_boilerduty_{}hrs.png'.
-                format(hours_per_day))
+                format(hours_per_day * ndays))
 
     plt.show()
 
@@ -523,7 +561,8 @@ if __name__ == '__main__':
 
     lx = True
     if lx:
-        scaling_obj = 1e-3
+        # scaling_obj = 1e-3 # 24 hrs
+        scaling_obj = 1e-4 # > 24 hrs
         scaling_cost = 1
     else:
         scaling_obj = 1
@@ -553,7 +592,7 @@ if __name__ == '__main__':
     pmin_total = pmin + pmin_storage
 
     hours_per_day = 24
-    ndays = 1
+    ndays = 7
     nhours = hours_per_day * ndays
     nweeks = 1
 
