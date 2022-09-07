@@ -82,10 +82,13 @@ from idaes.core.util.exceptions import ConfigurationError
 # Import ultra supercritical power plant model
 # from dispatches.models.fossil_case.ultra_supercritical_plant import (
 #     ultra_supercritical_powerplant_mixcon as usc)
-from dispatches.models.fossil_case.ultra_supercritical_plant import (
+# from dispatches.models.fossil_case.ultra_supercritical_plant import (
+#     ultra_supercritical_powerplant as usc)
+from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
-from dispatches.models.fossil_case.properties import solarsalt_properties
+# from dispatches.models.fossil_case.properties import solarsalt_properties
+from dispatches.properties import solarsalt_properties
 
 from IPython import embed
 logging.basicConfig(level=logging.INFO)
@@ -539,19 +542,19 @@ def charge_mode_disjunct_equations(disj):
         doc="Solar salt charge heat exchanger overall heat transfer coefficient")
     def constraint_hxc_ohtc(b):
         return (
-            solar_hxc.overall_heat_transfer_coefficient[0] *
+            b.overall_heat_transfer_coefficient[0] *
             (2 * m.fs.k_steel *
-             solar_hxc.h_steam +
+             b.h_steam +
              m.fs.tube_outer_dia *
              m.fs.log_tube_dia_ratio *
-             solar_hxc.h_salt *
-             solar_hxc.h_steam +
+             b.h_salt *
+             b.h_steam +
              m.fs.tube_dia_ratio *
-             solar_hxc.h_salt *
+             b.h_salt *
              2 * m.fs.k_steel)
         ) == (2 * m.fs.k_steel *
-              solar_hxc.h_salt *
-              solar_hxc.h_steam)
+              b.h_salt *
+              b.h_steam)
 
 
     # Add constraint to ensure that the mixer 2 outlet is at the
@@ -769,19 +772,19 @@ def discharge_mode_disjunct_equations(disj):
         doc="Solar salt discharge heat exchanger overall heat transfer coefficient")
     def constraint_hxd_ohtc(b):
         return (
-            solar_hxd.overall_heat_transfer_coefficient[0] *
+            b.overall_heat_transfer_coefficient[0] *
             (2 * m.fs.k_steel *
-             solar_hxd.h_steam +
+             b.h_steam +
              m.fs.tube_outer_dia *
              m.fs.log_tube_dia_ratio *
-             solar_hxd.h_salt *
-             solar_hxd.h_steam +
+             b.h_salt *
+             b.h_steam +
              m.fs.tube_dia_ratio *
-             solar_hxd.h_salt *
+             b.h_salt *
              2 * m.fs.k_steel)
         ) == (2 * m.fs.k_steel *
-              solar_hxd.h_salt *
-              solar_hxd.h_steam)
+              b.h_salt *
+              b.h_steam)
 
     # Reconnect arcs that were disconnected in the global model
     m.fs.discharge_mode_disjunct.rh1_to_turb3 = Arc(
@@ -1096,7 +1099,7 @@ def build_costing(m):
         bounds=(0, 1e7),
         doc="Capital cost of charge heat exchanger in $/h")
     def charge_solar_cap_cost_rule(b):
-        return m.fs.charge_mode_disjunct.capital_cost == (
+        return b.capital_cost == (
             m.fs.charge_mode_disjunct.hxc.costing.capital_cost /
             (m.fs.num_of_years * 365 * 24)
         )
@@ -1108,7 +1111,7 @@ def build_costing(m):
         bounds=(0, 1e7),
         doc="Capital cost of discharge heat exhcnager in $/h")
     def discharge_solar_cap_cost_rule(b):
-        return m.fs.discharge_mode_disjunct.capital_cost == (
+        return b.capital_cost == (
             m.fs.discharge_mode_disjunct.hxd.costing.capital_cost /
             (m.fs.num_of_years * 365 * 24)
         )
@@ -1143,10 +1146,10 @@ def build_costing(m):
         doc="Operating cost in $/h")
 
     def fuel_cost_rule(b):
-        return m.fs.fuel_cost == (
-            m.fs.operating_hours *
-            m.fs.coal_price *
-            (m.fs.coal_heat_duty * 1e6)
+        return b.fuel_cost == (
+            b.operating_hours *
+            b.coal_price *
+            (b.coal_heat_duty * 1e6)
         ) / (365 * 24)
     m.fs.fuel_cost_eq = pyo.Constraint(rule=fuel_cost_rule)
 
@@ -1178,17 +1181,17 @@ def build_costing(m):
     # m.fs.plant_cap_cost_eq = pyo.Constraint(rule=plant_cap_cost_rule)
 
     def op_fixed_plant_cost_rule(b):
-        return m.fs.plant_fixed_operating_cost == (
-            ((16657.5 * m.fs.plant_power_out[0]
+        return b.plant_fixed_operating_cost == (
+            ((16657.5 * b.plant_power_out[0]
               + 6109833.3) /
-             (m.fs.num_of_years * 365 * 24)
+             (b.num_of_years * 365 * 24)
             ) * (m.CE_index / 575.4)
         )
     m.fs.op_fixed_plant_cost_eq = pyo.Constraint(rule=op_fixed_plant_cost_rule)
 
     def op_variable_plant_cost_rule(b):
-        return m.fs.plant_variable_operating_cost == (
-            (31754.7 * m.fs.plant_power_out[0]
+        return b.plant_variable_operating_cost == (
+            (31754.7 * b.plant_power_out[0]
             ) * (m.CE_index / 575.4)
         ) / (365 * 24)
     m.fs.op_variable_plant_cost_eq = pyo.Constraint(

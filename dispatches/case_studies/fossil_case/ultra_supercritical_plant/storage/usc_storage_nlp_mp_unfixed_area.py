@@ -77,7 +77,9 @@ import idaes.logger as idaeslog
 # Import ultra supercritical power plant model
 # from dispatches.models.fossil_case.ultra_supercritical_plant import (
 #     ultra_supercritical_powerplant_mixcon as usc)
-from dispatches.models.fossil_case.ultra_supercritical_plant import (
+# from dispatches.models.fossil_case.ultra_supercritical_plant import (
+#     ultra_supercritical_powerplant as usc)
+from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
 from pyomo.util.infeasible import (log_infeasible_constraints,
@@ -85,7 +87,8 @@ from pyomo.util.infeasible import (log_infeasible_constraints,
 # from dispatches.models.fossil_case.ultra_supercritical_plant.storage import (
 #     solarsalt_properties)
 # import solarsalt_properties
-from dispatches.models.fossil_case.properties import solarsalt_properties
+# from dispatches.models.fossil_case.properties import solarsalt_properties
+from dispatches.properties import solarsalt_properties
 
 from pyomo.network.plugins import expand_arcs
 
