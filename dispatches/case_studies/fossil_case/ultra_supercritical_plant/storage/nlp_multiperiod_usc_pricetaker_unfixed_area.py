@@ -40,12 +40,21 @@ from idaes.apps.grid_integration.multiperiod.multiperiod import MultiPeriodModel
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes.core.solvers.get_solver import get_solver
 
-# Import integrated ultrasupercritical power plant model
-import usc_storage_nlp_mp_unfixed_area as usc
 
-# Add design data from .json file
-# data_path = 'uscp_nlp_design_data.json'
-data_path = 'uscp_design_data.json'
+# Import integrated ultrasupercritical power plant model depending on
+# the storage design. Note that when this should match the call
+new_design = True
+if new_design:
+    print('>>>>> Solving for new storage design')
+    import usc_storage_nlp_mp_unfixed_area_new_storage_design as usc
+    # Add design data from .json file
+    data_path = 'uscp_design_data_new_storage_design.json'
+else:
+    print('>>>>> Solving for original storage design')
+    import usc_storage_nlp_mp_unfixed_area as usc
+    # Add design data from .json file
+    data_path = 'uscp_design_data.json'
+
 with open(data_path) as design_data:
     design_data_dict = json.load(design_data)
 
@@ -123,9 +132,10 @@ def create_ss_model():
         discharge_hxd.area.unfix()
         discharge_hxd.inlet_1.temperature[0].unfix()
 
-    for unit in [m.usc.fs.cooler]:
-        unit.inlet.unfix()
-    m.usc.fs.cooler.outlet.enth_mol[0].unfix()
+    if not new_design:
+        for unit in [m.usc.fs.cooler]:
+            unit.inlet.unfix()
+        m.usc.fs.cooler.outlet.enth_mol[0].unfix()
 
     # Fix storage heat exchangers area and salt temperatures
     cold_salt_temperature = design_data_dict["cold_salt_temperature"]
