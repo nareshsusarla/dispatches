@@ -42,9 +42,6 @@ from nlp_multiperiod_usc_pricetaker_unfixed_area import create_nlp_multiperiod_u
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes.core.solvers.get_solver import get_solver
 
-# Import NLP model for integrated ultrasupercritical power plant
-import usc_storage_nlp_mp_unfixed_area as usc
-
 # Import objects for plots
 from matplotlib import pyplot as plt
 import matplotlib
@@ -72,42 +69,42 @@ def _get_lmp(hours_per_day=None, nhours=None):
             0, 0, 0, 0,
             19.0342, 23.07, 200, 200,
             200, 200, 200, 200, #1
-            0, 0, 0, 0,
-            20.419, 21.2877, 23.07, 25,
-            18.4634, 0, 0, 0,
-            22.9684, 21.1168, 20.4, 20.419,
-            200, 200, 200, 200,
-            19.0342, 23.07, 200, 200, #2
-            18.4634, 0, 0, 0,
-            0, 0, 0, 0,
-            19.0342, 23.07, 200, 200,
-            200, 200, 200, 200,
-            0, 0, 0, 0,
-            22.9684, 21.1168, 20.4, 20.419, #3
-            20.419, 21.2877, 23.07, 25,
-            18.4634, 0, 0, 0,
-            0, 0, 0, 0,
-            19.0342, 23.07, 200, 200,
-            200, 200, 200, 200,
-            22.9684, 21.1168, 20.4, 20.419,#4
-            0, 0, 0, 0,
-            19.0342, 23.07, 200, 200,
-            200, 200, 200, 200,
-            0, 0, 0, 0,
-            20.419, 21.2877, 23.07, 25,
-            18.4634, 0, 0, 0,#5
-            200, 200, 200, 200,
-            200, 200, 200, 200,
-            0, 0, 0, 0,
-            22.9684, 21.1168, 20.4, 20.419,
-            20.419, 21.2877, 23.07, 25,
-            18.4634, 0, 0, 0,#6
-            0, 0, 0, 0,
-            19.0342, 23.07, 200, 200,
-            200, 200, 200, 200,
-            0, 0, 0, 0,
-            22.9684, 21.1168, 20.4, 20.419,
-            20.419, 21.2877, 23.07, 25#7
+            # 0, 0, 0, 0,
+            # 20.419, 21.2877, 23.07, 25,
+            # 18.4634, 0, 0, 0,
+            # 22.9684, 21.1168, 20.4, 20.419,
+            # 200, 200, 200, 200,
+            # 19.0342, 23.07, 200, 200, #2
+            # 18.4634, 0, 0, 0,
+            # 0, 0, 0, 0,
+            # 19.0342, 23.07, 200, 200,
+            # 200, 200, 200, 200,
+            # 0, 0, 0, 0,
+            # 22.9684, 21.1168, 20.4, 20.419, #3
+            # 20.419, 21.2877, 23.07, 25,
+            # 18.4634, 0, 0, 0,
+            # 0, 0, 0, 0,
+            # 19.0342, 23.07, 200, 200,
+            # 200, 200, 200, 200,
+            # 22.9684, 21.1168, 20.4, 20.419,#4
+            # 0, 0, 0, 0,
+            # 19.0342, 23.07, 200, 200,
+            # 200, 200, 200, 200,
+            # 0, 0, 0, 0,
+            # 20.419, 21.2877, 23.07, 25,
+            # 18.4634, 0, 0, 0,#5
+            # 200, 200, 200, 200,
+            # 200, 200, 200, 200,
+            # 0, 0, 0, 0,
+            # 22.9684, 21.1168, 20.4, 20.419,
+            # 20.419, 21.2877, 23.07, 25,
+            # 18.4634, 0, 0, 0,#6
+            # 0, 0, 0, 0,
+            # 19.0342, 23.07, 200, 200,
+            # 200, 200, 200, 200,
+            # 0, 0, 0, 0,
+            # 22.9684, 21.1168, 20.4, 20.419,
+            # 20.419, 21.2877, 23.07, 25#7
         ]
 
         lmp = price
@@ -214,6 +211,7 @@ def run_pricetaker_analysis(hours_per_day=None,
     hxd_duty = []
     boiler_heat_duty = []
     discharge_work = []
+    tank_max_list = []
     for week in range(nweeks):
         print()
         print(">>>>>> Solving for week {}: {} hours of operation in {} day(s) ".format(
@@ -222,6 +220,7 @@ def run_pricetaker_analysis(hours_per_day=None,
         results = opt.solve(m, tee=True)
 
         # Save results in lists
+        tank_max_list.append(value(tank_max))
         boiler_heat_duty.append([pyo.value(blks[i].usc.fs.boiler.heat_duty[0]) * 1e-6
                                  for i in range(n_time_points)]) # in MW
         discharge_work.append([pyo.value(blks[i].usc.fs.es_turbine.work[0]) * (-1e-6)
@@ -251,6 +250,7 @@ def run_pricetaker_analysis(hours_per_day=None,
             net_power,
             results,
             tank_max,
+            tank_max_list,
             hot_tank_level,
             cold_tank_level,
             hxc_duty,
@@ -344,6 +344,7 @@ def plot_results(m,
                  n_time_points=None,
                  net_power=None,
                  tank_max=None,
+                 tank_max_list=None,
                  hot_tank_level=None,
                  cold_tank_level=None,
                  hxc_duty=None,
@@ -550,6 +551,55 @@ def plot_results(m,
     plt.savefig('multiperiod_usc_storage_unfixarea_boilerduty_{}hrs.png'.
                 format(hours_per_day * ndays))
 
+    font = {'size':16}
+    plt.rc('font', **font)
+    fig5, ax9 = plt.subplots(figsize=(12, 8))
+
+    color = ['r', 'b', 'tab:green', 'k', 'tab:orange']
+    ax9.set_xlabel('Time Period (hr)')
+    ax9.set_ylabel('Salt Tank Level (metric ton)',
+                   color=color[3])
+    ax9.spines["top"].set_visible(False)
+    ax9.spines["right"].set_visible(False)
+    ax9.grid(linestyle=':', which='both',
+             color='gray', alpha=0.30)
+    plt.axhline(tank_max, ls=':', lw=1.5,
+                color='k', alpha=0.85)
+    plt.text(nhours / 2 + 2, tank_max + 100,
+             'max inventory',
+             color='k')
+    ax9.step(hours_list, hot_tank_list,
+             marker='o', ms=8, label='Hot Salt',
+             lw=2, color='darkred', alpha=0.85)
+    ax9.fill_between(hours_list, hot_tank_list,
+                     step="pre", color='darkred',
+                     alpha=0.25)
+    ax9.step(hours_list, cold_tank_list,
+             marker='o', ms=6, label='Cold Salt',
+             lw=2, color='midnightblue', alpha=0.10)
+    ax9.fill_between(hours_list, cold_tank_list,
+                     np.max(tank_max_list),
+                     step="pre", color='midnightblue',
+                     alpha=0.15)
+    ax9.legend(loc="center left", frameon=False)
+    ax9.tick_params(axis='y')
+    ax9.set_xticks(np.arange(0, n_time_points * nweeks + 1, step=4))
+
+    ax10 = ax9.twinx()
+    ax10.set_ylabel('Local Marginal Price ($/MWh)',
+                    color=color[2])
+    ax10.step([x + 1 for x in hours], lmp_array,
+              marker='o', ms=8, alpha=0.5,
+              ls='-', lw=2,
+              color=color[2])
+    ax10.fill_between([x + 1 for x in hours], lmp_array,
+                      step="pre", color='tab:green',
+                      alpha=0.05)
+    ax10.tick_params(axis='y',
+                     labelcolor=color[2])
+    plt.savefig('multiperiod_usc_storage_new_unfixarea_salt_tank_level_{}.png'.
+                format(hours_per_day * ndays))
+
     plt.show()
 
 if __name__ == '__main__':
@@ -559,11 +609,24 @@ if __name__ == '__main__':
     }
     solver = get_solver('ipopt', optarg)
 
+    # If new_design is set to True, use GDP design for charge and
+    # discharge heat exchanger from 4-12 disjunctions model. When set
+    # to False, use the GDP design from 4-5 disjunctions
+    # model. **Note** When changing this, make sure to change it in
+    # the gdp_multiperiod... python script too.
+    new_design = True
+    
     lx = True
     if lx:
-        # scaling_obj = 1e-3 # 24 hrs
-        scaling_obj = 1e-4 # > 24 hrs
-        scaling_cost = 1
+        if new_design:
+            scaling_obj = 1e-2 # 24 hrs
+            scaling_cost = 1e-3
+        else:
+            # Old design
+            scaling_obj = 1e-3 # 24 hrs
+            # scaling_obj = 1e-2 # < 24 hrs
+            # scaling_obj = 1e-4 # > 24 hrs
+            scaling_cost = 1
     else:
         scaling_obj = 1
         scaling_cost = 1
@@ -573,8 +636,11 @@ if __name__ == '__main__':
     print('scaling_cost:', scaling_cost)
 
     # Add design data from .json file
-    # data_path = 'uscp_nlp_design_data.json'
-    data_path = 'uscp_design_data.json'
+    if new_design:
+        data_path = 'uscp_design_data_new_storage_design.json'
+    else:
+        data_path = 'uscp_design_data.json'
+
     with open(data_path) as design_data:
         design_data_dict = json.load(design_data)
 
@@ -592,7 +658,7 @@ if __name__ == '__main__':
     pmin_total = pmin + pmin_storage
 
     hours_per_day = 24
-    ndays = 7
+    ndays = 1
     nhours = hours_per_day * ndays
     nweeks = 1
 
@@ -607,6 +673,7 @@ if __name__ == '__main__':
      net_power,
      results,
      tank_max,
+     tank_max_list,
      hot_tank_level,
      cold_tank_level,
      hxc_duty,
@@ -637,6 +704,7 @@ if __name__ == '__main__':
                  hxc_duty=hxc_duty,
                  hxd_duty=hxd_duty,
                  tank_max=tank_max,
+                 tank_max_list=tank_max_list,
                  boiler_heat_duty=boiler_heat_duty,
                  discharge_work=discharge_work,
                  pmax_total=pmax_total)
