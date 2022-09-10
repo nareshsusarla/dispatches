@@ -61,6 +61,8 @@ with open(data_path) as design_data:
 pmax = design_data_dict["plant_max_power"]
 pmin = design_data_dict["plant_min_power"]
 pmax_storage = design_data_dict["max_discharge_turbine_power"]
+min_area = design_data_dict["min_storage_area_design"]
+max_area = design_data_dict["max_storage_area_design"]
 
 def create_ss_model():
 
@@ -72,10 +74,11 @@ def create_ss_model():
 
     # Add data from .json file
     # min_storage_heat_duty = design_data_dict["min_storage_heat_duty"]
-    min_storage_heat_duty = 10
+    min_storage_heat_duty = design_data_dict["min_storage_heat_duty"]
     max_storage_heat_duty = design_data_dict["max_storage_heat_duty"]
     factor_mton = design_data_dict["factor_mton"]
     max_salt_amount = design_data_dict["max_salt_amount"] * factor_mton
+    max_salt_flow = design_data_dict["max_salt_flow"] # in kg/s
 
     # Add options needed in the integrated model
     method = "with_efficiency" # adds boiler and cycle efficiencies
@@ -87,7 +90,11 @@ def create_ss_model():
                      pmax=pmax,
                      load_from_file=load_from_file,
                      solver=solver,
-                     max_salt_amount=max_salt_amount)
+                     max_salt_amount=max_salt_amount,
+                     max_storage_heat_duty=max_storage_heat_duty,
+                     min_area=min_area,
+                     max_area=max_area,
+                     max_salt_flow=max_salt_flow)
 
     # Set bounds for power produced by the plant without storage
     m.usc.fs.plant_min_power_eq = pyo.Constraint(
@@ -155,9 +162,11 @@ def create_mp_block():
 
     # Add data from .json file
     ramp_rate = design_data_dict["ramp_rate"]
-    min_area = design_data_dict["min_storage_area"]
+    # min_area = design_data_dict["min_storage_area"]
+    # min_area = design_data_dict["min_storage_area_design"]
     # min_area = 100
-    max_area = design_data_dict["max_storage_area"]
+    # max_area = design_data_dict["max_storage_area"]
+    # max_area = design_data_dict["max_storage_area_design"]
     pmax_total = pmax + pmax_storage
     factor_mton = design_data_dict["factor_mton"]
 
