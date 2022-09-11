@@ -89,15 +89,19 @@ logging.basicConfig(level=logging.INFO)
 
 scaling_obj = 1e-2
 
+# Add design data from .json file
+with open('uscp_design_data_new_storage_design.json') as design_data:
+    design_data_dict = json.load(design_data)
+
+
 def create_charge_model(m,
                         method=None,
-                        pmax=None,
-                        max_salt_amount=None):
+                        pmax=None):
     """Create flowsheet and add unit models.
     """
 
     # Add data
-    add_data(m, max_salt_amount=max_salt_amount)
+    add_data(m)
 
     # Add molten salt properties (Solar and Hitec salt)
     m.fs.solar_salt_properties = solarsalt_properties.SolarsaltParameterBlock()
@@ -412,7 +416,16 @@ def create_charge_model(m,
     return m
 
 
-def add_data(m, max_salt_amount=None):
+def add_data(m):
+
+    m.pmin_storage = design_data_dict["min_discharge_turbine_power"]
+    m.pmax_storage = design_data_dict["max_discharge_turbine_power"]
+    m.factor_mton = design_data_dict["factor_mton"]
+    m.max_salt_amount = design_data_dict["max_salt_amount"] * m.factor_mton
+    m.max_storage_heat_duty = design_data_dict["max_storage_heat_duty"] # in MW
+    m.min_area = design_data_dict["min_storage_area_design"]
+    m.max_area = design_data_dict["max_storage_area_design"]
+    m.max_salt_flow = design_data_dict["max_salt_flow"] # in kg/s
 
     # Chemical engineering cost index for 2019
     m.CE_index = 607.5
@@ -497,7 +510,7 @@ def add_data(m, max_salt_amount=None):
 
     # Define the amount of storage material
     m.fs.salt_amount = pyo.Param(
-        initialize=max_salt_amount,
+        initialize=m.max_salt_amount,
         doc="Solar salt amount in mton"
     )
 
@@ -524,7 +537,7 @@ def _make_constraints(m, method=None, pmax=None):
     @m.fs.Constraint(m.fs.time,
                      doc="HX pump out pressure equal to BFP out pressure")
     def constraint_hxpump_presout(b, t):
-        return (m.fs.hx_pump.outlet.pressure[t] ==
+        return (b.hx_pump.outlet.pressure[t] ==
                 m.main_steam_pressure * 1.1231)
 
     # Recycle mixer
@@ -538,21 +551,23 @@ def _make_constraints(m, method=None, pmax=None):
     @m.fs.Constraint(m.fs.time)
     def production_cons_with_storage(b, t):
         return (
-            (-1 * sum(m.fs.turbine[p].work_mechanical[t]
+            (-1 * sum(b.turbine[p].work_mechanical[t]
                       for p in m.set_turbine)
-             - m.fs.hx_pump.control_volume.work[0]
+             - b.hx_pump.control_volume.work[0]
              # + ((-1) * b.es_turbine.work_mechanical[0]) # add es turbine work
             ) ==
-            m.fs.plant_power_out[t] * 1e6 * (pyunits.W/pyunits.MW)
+            b.plant_power_out[t] * 1e6 * (pyunits.W/pyunits.MW)
         )
     m.fs.net_power = pyo.Expression(
         expr=(m.fs.plant_power_out[0]
               + (-1e-6) * m.fs.es_turbine.work_mechanical[0])
     )
 
+    def rule_boiler_efficiency(b):
+        return (0.2143 * (b.net_power / pmax)
+                + 0.7357)
     m.fs.boiler_efficiency = pyo.Expression(
-        expr=0.2143 * (m.fs.net_power / pmax)
-        + 0.7357,
+        rule=rule_boiler_efficiency,
         doc="Boiler efficiency in fraction"
     )
     # m.fs.boiler_efficiency = pyo.Var(
@@ -569,32 +584,27 @@ def _make_constraints(m, method=None, pmax=None):
         doc="Coal heat duty supplied to Boiler (MW)")
 
     if method == "with_efficiency":
-        m.fs.coal_heat_duty_eq = pyo.Constraint(
-            expr=m.fs.coal_heat_duty * m.fs.boiler_efficiency == (
-                m.fs.plant_heat_duty[0])
-        )
-        # def coal_heat_duty_rule(b):
-        #     return b.coal_heat_duty * b.boiler_efficiency == (
-        #         b.plant_heat_duty[0])
-        # m.fs.coal_heat_duty_eq = pyo.Constraint(rule=coal_heat_duty_rule)
+        def rule_coal_heat_duty(b):
+            return b.coal_heat_duty * b.boiler_efficiency == (
+                b.plant_heat_duty[0])
+        m.fs.coal_heat_duty_eq = pyo.Constraint(rule=rule_coal_heat_duty)
         # @m.fs.Expression()
         # def coal_heat_duty(b):
         #     return (m.fs.plant_heat_duty[0] / m.fs.boiler_efficiency)
 
     else:
-        m.fs.coal_heat_duty_eq = pyo.Constraint(
-            expr=m.fs.coal_heat_duty == m.fs.plant_heat_duty[0]
-        )
-        # def coal_heat_duty_rule(b):
-        #     return b.coal_heat_duty == (
-        #         b.plant_heat_duty[0])
-        # m.fs.coal_heat_duty_eq = pyo.Constraint(rule=coal_heat_duty_rule)
+        def coal_heat_duty_rule(b):
+            return b.coal_heat_duty == (
+                b.plant_heat_duty[0])
+        m.fs.coal_heat_duty_eq = pyo.Constraint(rule=coal_heat_duty_rule)
         # @m.fs.Expression()
         # def coal_heat_duty(b):
         #     return m.fs.plant_heat_duty[0]
 
+    def rule_cycle_efficiency(b):
+        return b.net_power / b.coal_heat_duty * 100
     m.fs.cycle_efficiency = pyo.Expression(
-        expr=m.fs.net_power / m.fs.coal_heat_duty * 100,
+        rule=rule_cycle_efficiency,
         doc="Cycle efficiency in %"
     )
     # m.fs.cycle_efficiency = pyo.Var(
@@ -894,8 +904,8 @@ def build_costing(m,
         expr=365 * 3600 * m.fs.hours_per_day,
         doc="Number of operating hours per year")
     m.fs.fuel_cost = pyo.Var(
-        initialize=10000,
-        bounds=(0, 1e12),
+        initialize=1e3,
+        bounds=(0, 1e6),
         doc="Fuel (coal) cost in $/hour")  # add units
 
     def fuel_cost_rule(b):
@@ -916,12 +926,12 @@ def build_costing(m,
     #     bounds=(0, 1e12),
     #     doc="Annualized capital cost for the plant in $")
     m.fs.plant_fixed_operating_cost = pyo.Var(
-        initialize=10000,
-        bounds=(0, 1e10),
+        initialize=1e3,
+        bounds=(0, 1e4),
         doc="Plant fixed operating cost in $/hour")
     m.fs.plant_variable_operating_cost = pyo.Var(
-        initialize=10000,
-        bounds=(0, 1e10),
+        initialize=1e3,
+        bounds=(0, 1e6),
         doc="Plant variable operating cost in $/hour")
 
     # def plant_cap_cost_rule(b):
@@ -981,11 +991,7 @@ def initialize_with_costing(m, solver=None):
     print('')
 
 
-def add_bounds(m,
-               max_storage_heat_duty=None,
-               min_area=None,
-               max_area=None,
-               max_salt_flow=None):
+def add_bounds(m):
     """Add bounds to units in charge model
 
     """
@@ -1003,8 +1009,7 @@ def add_bounds(m,
     m.flow_min = 1e-3  # in mol/s
     m.flow_max = m.main_flow * 1.5  # in mol/s
     m.flow_max_storage = 0.2 * m.flow_max
-    m.max_salt_flow = max_salt_flow  # in kg/s
-    m.heat_duty_max = (max_storage_heat_duty * 1e6) * 1.01 # in MW
+    m.heat_duty_max = (m.max_storage_heat_duty * 1e6) * 1.01 # in MW
     m.factor = 3
 
     # Charge heat exchanger
@@ -1032,8 +1037,8 @@ def add_bounds(m,
     m.fs.hxc.tube.properties_out[0].enth_mass.setub(1.5e6)
     m.fs.hxc.overall_heat_transfer_coefficient.setlb(1)
     m.fs.hxc.overall_heat_transfer_coefficient.setub(10000)
-    m.fs.hxc.area.setlb(min_area)
-    m.fs.hxc.area.setub(max_area)
+    m.fs.hxc.area.setlb(m.min_area)
+    m.fs.hxc.area.setub(m.max_area)
     m.fs.hxc.delta_temperature_in.setlb(9)
     m.fs.hxc.delta_temperature_out.setlb(5)
     m.fs.hxc.delta_temperature_in.setub(80.5)
@@ -1064,8 +1069,8 @@ def add_bounds(m,
     m.fs.hxd.shell.properties_out[0].enth_mass.setub(1.5e6)
     m.fs.hxd.overall_heat_transfer_coefficient.setlb(1)
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
-    m.fs.hxd.area.setlb(min_area)
-    m.fs.hxd.area.setub(max_area)
+    m.fs.hxd.area.setlb(m.min_area)
+    m.fs.hxd.area.setub(m.max_area)
     m.fs.hxd.delta_temperature_in.setlb(4.9)
     m.fs.hxd.delta_temperature_out.setlb(10)
     m.fs.hxd.delta_temperature_in.setub(300)
@@ -1132,12 +1137,7 @@ def add_bounds(m,
 def main(method=None,
          pmax=None,
          load_from_file=None,
-         solver=None,
-         max_salt_amount=None,
-         max_storage_heat_duty=None,
-         min_area=None,
-         max_area=None,
-         max_salt_flow=None):
+         solver=None):
 
     if load_from_file is not None:
 
@@ -1147,8 +1147,7 @@ def main(method=None,
         # Create a flowsheet, add properties, unit models, and arcs
         m = create_charge_model(m,
                                 method=method,
-                                pmax=pmax,
-                                max_salt_amount=max_salt_amount)
+                                pmax=pmax)
 
         # Give all the required inputs to the model
         set_model_input(m)
@@ -1171,8 +1170,7 @@ def main(method=None,
         # Create a flowsheet, add properties, unit models, and arcs
         m = create_charge_model(m,
                                 method=method,
-                                pmax=pmax,
-                                max_salt_amount=max_salt_amount)
+                                pmax=pmax)
 
         # Give all the required inputs to the model
         set_model_input(m)
@@ -1195,11 +1193,7 @@ def main(method=None,
         initialize_with_costing(m, solver=solver)
 
     # Add bounds
-    add_bounds(m,
-               max_storage_heat_duty=max_storage_heat_duty,
-               min_area=min_area,
-               max_area=max_area,
-               max_salt_flow=max_salt_flow)
+    add_bounds(m)
     # print('DOF after bounds: ', degrees_of_freedom(m))
 
     # # storing the initialization file
@@ -1343,12 +1337,8 @@ def model_analysis(m,
                    power=None,
                    pmax=None,
                    pmin=None,
-                   pmax_storage=None,
-                   pmin_storage=None,
                    tank_status=None,
-                   fix_power=None,
-                   max_salt_amount=None,
-                   factor_mton=None):
+                   fix_power=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
@@ -1365,10 +1355,10 @@ def model_analysis(m,
             expr=m.fs.plant_power_out[0] <= pmax
         )
         m.fs.storage_power_min = pyo.Constraint(
-            expr=m.fs.es_turbine.work[0] * (-1e-6) >= pmin_storage
+            expr=m.fs.es_turbine.work[0] * (-1e-6) >= m.pmin_storage
         )
         m.fs.storage_power_max = pyo.Constraint(
-            expr=m.fs.es_turbine.work[0] * (-1e-6) <= pmax_storage
+            expr=m.fs.es_turbine.work[0] * (-1e-6) <= m.pmax_storage
         )
 
     # Fix variables in the flowsheet
@@ -1400,7 +1390,7 @@ def model_analysis(m,
     m.fs.hxd.outlet_1.temperature.fix(cold_salt_temperature)
 
     # Add salt inventory mass balances
-    max_inventory = 1e7 * factor_mton
+    max_inventory = 1e7 * m.factor_mton
     m.fs.previous_salt_inventory_hot = pyo.Var(
         m.fs.time,
         domain=NonNegativeReals,
@@ -1436,7 +1426,7 @@ def model_analysis(m,
             b.salt_inventory_hot[0] == (
                 b.previous_salt_inventory_hot[0]
                 + (3600 * b.hxc.inlet_2.flow_mass[0]
-                   - 3600 * b.hxd.inlet_1.flow_mass[0]) * factor_mton # in mton
+                   - 3600 * b.hxd.inlet_1.flow_mass[0]) * m.factor_mton # in mton
             )
         )
 
@@ -1447,8 +1437,8 @@ def model_analysis(m,
             b.salt_inventory_cold[0] == b.salt_amount)
 
     # Fix the previous salt inventory based on the tank scenario
-    tank_min = 1 * factor_mton # in mton
-    tank_max = max_salt_amount  # in mton
+    tank_min = 1 * m.factor_mton # in mton
+    tank_max = m.max_salt_amount  # in mton
     if tank_status == "hot_empty":
         m.fs.previous_salt_inventory_hot[0].fix(tank_min)
         m.fs.previous_salt_inventory_cold[0].fix(tank_max - tank_min)
@@ -1511,26 +1501,9 @@ if __name__ == "__main__":
     }
     solver = get_solver('ipopt', optarg)
 
-    # Add design data from .json file
-    # data_path = 'uscp_nlp_design_data.json'
-    data_path = 'uscp_design_data_new_storage_design.json'
-    with open(data_path) as design_data:
-        design_data_dict = json.load(design_data)
-
     pmax = design_data_dict["plant_max_power"]
     pmin = design_data_dict["plant_min_power"]
-    pmin_storage = design_data_dict["min_discharge_turbine_power"]
-    pmax_storage = design_data_dict["max_discharge_turbine_power"]
-    factor_mton = design_data_dict["factor_mton"]
-    max_salt_amount = design_data_dict["max_salt_amount"] * factor_mton
-    min_storage_heat_duty = design_data_dict["min_storage_heat_duty"] # in MW
-    max_storage_heat_duty = design_data_dict["max_storage_heat_duty"] # in MW
-    min_area = design_data_dict["min_storage_area_design"]
-    max_area = design_data_dict["max_storage_area_design"]
-    max_salt_flow = design_data_dict["max_salt_flow"] # in kg/s
 
-    print(max_storage_heat_duty)
-    quit()
     # Tank scenarios: "hot_empty", "hot_full", "hot_half_full"
     power_demand = 436 # in MW
     method = "with_efficiency"
@@ -1541,12 +1514,7 @@ if __name__ == "__main__":
     m_nlp = main(method=method,
                  pmax=pmax,
                  load_from_file=load_from_file,
-                 solver=solver,
-                 max_salt_amount=max_salt_amount,
-                 max_storage_heat_duty=max_storage_heat_duty,
-                 min_area=min_area,
-                 max_area=max_area,
-                 max_salt_flow=max_salt_flow)
+                 solver=solver)
 
     m_nlp.fs.lmp = pyo.Param(
         initialize=22,
@@ -1558,10 +1526,6 @@ if __name__ == "__main__":
                        power=power_demand,
                        pmax=pmax,
                        pmin=pmin,
-                       pmax_storage=pmax_storage,
-                       pmin_storage=pmin_storage,
                        tank_status=tank_status,
-                       fix_power=fix_power,
-                       max_salt_amount=max_salt_amount,
-                       factor_mton=factor_mton)
+                       fix_power=fix_power)
 
