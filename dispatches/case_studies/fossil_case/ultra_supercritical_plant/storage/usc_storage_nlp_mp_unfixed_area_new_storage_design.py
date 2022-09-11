@@ -274,14 +274,6 @@ def create_charge_model(m,
         ) == (2 * m.fs.k_steel *
               b.h_salt *
               b.h_steam)
-        # return b.overall_heat_transfer_coefficient[t] == (
-        #     1 / ((1 / m.fs.hxc.h_salt)
-        #          + ((m.fs.tube_outer_dia *
-        #              m.fs.log_tube_dia_ratio) /
-        #             (2 * m.fs.k_steel))
-        #          + (m.fs.tube_dia_ratio /
-        #             m.fs.hxc.h_steam))
-        # )
 
     m.fs.hxc_to_hxpump = Arc(
         source=m.fs.hxc.outlet_1,
@@ -393,14 +385,6 @@ def create_charge_model(m,
         ) == (2 * m.fs.k_steel *
               b.h_salt *
               b.h_steam)
-        # return b.overall_heat_transfer_coefficient[t] == (
-        #     1 / ((1 / m.fs.hxd.h_salt)
-        #          + ((m.fs.tube_outer_dia *
-        #              m.fs.log_tube_dia_ratio) /
-        #             (2 * m.fs.k_steel))
-        #          + (m.fs.tube_dia_ratio /
-        #             m.fs.hxd.h_steam))
-        # )
 
     m.fs.es_turbine = HelmTurbineStage(
         default={
@@ -554,7 +538,6 @@ def _make_constraints(m, method=None, pmax=None):
             (-1 * sum(b.turbine[p].work_mechanical[t]
                       for p in m.set_turbine)
              - b.hx_pump.control_volume.work[0]
-             # + ((-1) * b.es_turbine.work_mechanical[0]) # add es turbine work
             ) ==
             b.plant_power_out[t] * 1e6 * (pyunits.W/pyunits.MW)
         )
@@ -570,16 +553,9 @@ def _make_constraints(m, method=None, pmax=None):
         rule=rule_boiler_efficiency,
         doc="Boiler efficiency in fraction"
     )
-    # m.fs.boiler_efficiency = pyo.Var(
-    #     initialize=0.9,
-    #     bounds=(0, 1)
-    # )
-    # m.fs.boiler_efficiency_eq = pyo.Constraint(
-    #     expr=(0.2143 * (m.fs.net_power / pmax)
-    #           + 0.7357)
-    # )
+
     m.fs.coal_heat_duty = pyo.Var(
-        initialize=1000,
+        initialize=1e3,
         bounds=(0, 1e5),
         doc="Coal heat duty supplied to Boiler (MW)")
 
@@ -591,7 +567,6 @@ def _make_constraints(m, method=None, pmax=None):
         # @m.fs.Expression()
         # def coal_heat_duty(b):
         #     return (m.fs.plant_heat_duty[0] / m.fs.boiler_efficiency)
-
     else:
         def coal_heat_duty_rule(b):
             return b.coal_heat_duty == (
@@ -607,14 +582,6 @@ def _make_constraints(m, method=None, pmax=None):
         rule=rule_cycle_efficiency,
         doc="Cycle efficiency in %"
     )
-    # m.fs.cycle_efficiency = pyo.Var(
-    #     initialize=0.4,
-    #     bounds=(0, 1)
-    # )
-    # m.fs.cycle_efficiency_eq = pyo.Constraint(
-    #     expr=m.fs.net_power / m.fs.coal_heat_duty,
-    #     doc="Cycle efficiency in fraction"
-    # )
 
 
 def _create_arcs(m):
@@ -627,15 +594,6 @@ def _create_arcs(m):
         arc_s.expanded_block.enth_mol_equality.deactivate()
         arc_s.expanded_block.flow_mol_equality.deactivate()
         arc_s.expanded_block.pressure_equality.deactivate()
-
-    # m.fs.charge.t4split_to_rh2_recon = Arc(
-    #     source=m.fs.turbine_splitter[4].outlet_1,
-    #     destination=m.fs.reheater[2].inlet
-    # )
-    # m.fs.charge.condpump_to_fwh1_recon = Arc(
-    #     source=m.fs.cond_pump.outlet,
-    #     destination=m.fs.fwh[1].inlet_2
-    # )
 
     m.fs.rh1_to_esshp = Arc(
         source=m.fs.reheater[1].outlet,
@@ -869,26 +827,6 @@ def build_costing(m,
 
     ###### 2. Calculate total capital cost for charge and discharge
     ###### heat exchangers
-    # m.fs.storage_capital_cost = pyo.Var(
-    #     initialize=1000000,
-    #     bounds=(0, 1e9),
-    #     doc="Capital cost for solar salt heat exchangers in $/hour")
-
-    # def solar_cap_cost_rule(b):
-    #     return m.fs.storage_capital_cost == (
-    #         (m.fs.hxc.costing.capital_cost
-    #          + m.fs.hxd.costing.capital_cost)
-    #         / (m.fs.num_of_years * 365 * 24)
-    #     )
-    # m.fs.cap_cost_eq = pyo.Constraint(
-    #     rule=solar_cap_cost_rule)
-    # m.fs.storage_capital_cost = pyo.Expression(
-    #     expr=(
-    #         (m.fs.hxc.costing.capital_cost
-    #          + m.fs.hxd.costing.capital_cost)
-    #         / (m.fs.num_of_years * 365 * 24)
-    #     )
-    # )
     def solar_cap_cost_rule(b):
         return (
             (b.hxc.costing.capital_cost
@@ -904,7 +842,7 @@ def build_costing(m,
         expr=365 * 3600 * m.fs.hours_per_day,
         doc="Number of operating hours per year")
     m.fs.fuel_cost = pyo.Var(
-        initialize=1e3,
+        initialize=1e4,
         bounds=(0, 1e6),
         doc="Fuel (coal) cost in $/hour")  # add units
 
