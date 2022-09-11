@@ -7,7 +7,7 @@
     "hxd_area": 1978,
     "min_discharge_turbine_power": 8,
     "max_discharge_turbine_power": 22.5,
-    "min_storage_heat_duty": 50,
+    "min_storage_heat_duty": 10,
     "max_storage_heat_duty": 250,
     "max_salt_amount": 6739292,
     "max_salt_flow": 500,
