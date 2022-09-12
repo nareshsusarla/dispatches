@@ -70,7 +70,7 @@ def _get_lmp(hours_per_day=None, nhours=None):
             price = np.load(f)
         lmp = price[0:nhours].tolist()
     elif use_mod_rts_data:
-        # price = [22.9684, 21.1168, 0, 0, 200, 200]
+        # price = [22.9684, 21.1168, 20.4, 20.419, 0, 0, 200, 200]
         price = [
             22.9684, 21.1168, 20.4, 20.419,
             20.419, 21.2877, 23.07, 25,
@@ -214,6 +214,7 @@ def print_model(solver_obj,
         else:
             print('        No other operation mode is available!')
         print('        Net power: {:.4f}'.format(value(blk_process.fs.net_power)))
+        print('        Coal heat duty: {:.4f}'.format(value(blk_process.fs.coal_heat_duty)))
         print('        Discharge turbine work (MW): {:.4f}'.format(
             value(blk_process.fs.discharge_turbine_work)))
         if not new_design:
@@ -238,8 +239,14 @@ def print_model(solver_obj,
             value(mdl.blocks[blk].process.revenue)))
         print('        Total op cost ($/h): {:.4f}'.format(
             value(mdl.blocks[blk].process.total_operating_cost)))
-        # print('        Total cap cost ($/h): {:.4f}'.format(
-        #     value(mdl.blocks[blk].process.capital_cost) / scaling_cost))
+        print('        Storage cost ($/h): {:.4f}'.format(
+            value(blk_process.fs.storage_capital_cost)))
+        print('        Fuel cost ($/h): {:.4f}'.format(
+            value(blk_process.fs.fuel_cost)))
+        print('        Plant fixed op cost ($/h): {:.4f}'.format(
+            value(blk_process.fs.plant_fixed_operating_cost)))
+        print('        Plant variable op cost ($/h): {:.4f}'.format(
+            value(blk_process.fs.plant_variable_operating_cost)))
         print()
 
         # Save data for each NLP subproblem and plot results
@@ -284,17 +291,15 @@ def print_model(solver_obj,
                       for i in range(n_time_points)])
 
     # Plot results
+    c = ['darkred', 'midnightblue', 'tab:green', 'k', 'gray']
     hours = np.arange(n_time_points * nweeks)
     lmp_array = np.asarray(lmp[0:n_time_points])
-    color = ['r', 'b', 'tab:green', 'k', 'slategrey']
     hot_tank_array = np.asarray(hot_tank_level_iter[0:nweeks]).flatten()
     cold_tank_array = np.asarray(cold_tank_level_iter[0:nweeks]).flatten()
 
     # Convert array to list to include hot tank level at time zero
-    hot_tank_array0 = (
-        value(mdl.blocks[0].process.usc.previous_salt_inventory_hot))
-    cold_tank_array0 = (
-        value(mdl.blocks[0].process.usc.previous_salt_inventory_cold))
+    hot_tank_array0 = value(mdl.blocks[0].process.usc.previous_salt_inventory_hot)
+    cold_tank_array0 = value(mdl.blocks[0].process.usc.previous_salt_inventory_cold)
     hours_list = hours.tolist() + [nhours]
     hot_tank_list = [hot_tank_array0] + hot_tank_array.tolist()
     cold_tank_list = [cold_tank_array0] + cold_tank_array.tolist()
@@ -303,168 +308,56 @@ def print_model(solver_obj,
     plt.rc('font', **font)
     fig1, ax1 = plt.subplots(figsize=(12, 8))
     ax1.set_xlabel('Time Period (hr)')
-    ax1.set_ylabel('Salt Tank Level (metric ton)',
-                   color=color[3])
+    ax1.set_ylabel('Salt Tank Level (metric ton)', color=c[3])
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
-    ax1.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    plt.axhline(tank_max,
-                ls=':', lw=1.75,
-                color=color[4])
-    plt.text(nhours / 2 - 1.5,
-             tank_max + 100, 'max salt',
-             color=color[4])
-    ax1.step(hours_list, hot_tank_list,
-             marker='^', ms=4, label='Hot Salt',
-             lw=1, color=color[0])
-    ax1.step(hours_list, cold_tank_list,
-             marker='v', ms=4, label='Cold Salt',
-             lw=1, color=color[1])
-    ax1.legend(loc="center right", frameon=False)
+    ax1.grid(linestyle=':', which='both', color=c[4], alpha=0.30)
+    plt.axhline(tank_max, ls=':', lw=1.75, color=c[3], alpha=0.85)
+    # plt.text(nhours / 2 - 1.5, tank_max + 100, 'max inventory', color=c[3])
+    ax1.step(hours_list, hot_tank_list, marker='o', ms=8, lw=1, color=c[0], alpha=0.85,
+             label='Hot Salt')
+    ax1.fill_between(hours_list, hot_tank_list, step="pre", color=c[0], alpha=0.25)
+    ax1.step(hours_list, cold_tank_list, marker='o', ms=4, lw=1, color=c[1], alpha=0.10,
+             label='Cold Salt')
+    ax1.fill_between(hours_list, cold_tank_list, tank_max, step="pre", color=c[1], alpha=0.15)
+    ax1.legend(loc="center left", frameon=False)
     ax1.tick_params(axis='y')
-    ax1.set_xticks(np.arange(0, n_time_points * nweeks + 1, step=2))
+    ax1.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
     ax2 = ax1.twinx()
-    ax2.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax2.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=3, alpha=0.5,
-             ls='-', lw=1,
-             color=color[2])
-    ax2.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig(
-        'results/gdp_mp_unfixed_area_{}h/salt_tank_level_master_iter{}.png'.
-        format(nhours, m_iter))
+    ax2.set_ylabel('Local Marginal Price ($/MWh)', color=c[2])
+    ax2.step([x + 1 for x in hours], lmp_array, marker='o', ms=8, alpha=0.5, ls='-', lw=2, color=c[2])
+    ax2.fill_between([x + 1 for x in hours], lmp_array, step="pre", color=c[2], alpha=0.05)
+    ax2.tick_params(axis='y', labelcolor=c[2])
+    plt.savefig('results/gdp_mp_unfixed_area_{}h/salt_tank_level_master_iter{}.png'.format(
+        nhours, m_iter))
     plt.close(fig1)
 
 
-    fig2, ax3 = plt.subplots(figsize=(12, 8))
-    ax3.set_xlabel('Time Period (hr)')
-    ax3.set_ylabel('Salt Tank Level (metric ton)',
-                   color=color[3])
-    ax3.spines["top"].set_visible(False)
-    ax3.spines["right"].set_visible(False)
-    ax3.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    plt.axhline(tank_max,
-                ls=':', lw=1.75,
-                color=color[4])
-    plt.text(nhours / 2 - 1.5,
-             tank_max + 100, 'max salt',
-             color=color[4])
-    ax3.plot(hours_list, hot_tank_list,
-             marker='^', ms=4, label='Hot Salt',
-             lw=1, color=color[0])
-    ax3.plot(hours_list, cold_tank_list,
-             marker='v', ms=4, label='Cold Salt',
-             lw=1, color=color[1])
-    ax3.legend(loc="center right", frameon=False)
-    ax3.tick_params(axis='y')
-    ax3.set_xticks(np.arange(0, n_time_points * nweeks + 1, step=2))
-    ax4 = ax3.twinx()
-    ax4.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax4.plot([x + 1 for x in hours], lmp_array,
-             marker='o', ms=3, alpha=0.5,
-             ls='-', lw=1,
-             color=color[2])
-    ax4.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig(
-        'results/gdp_mp_unfixed_area_{}h/salt_tank_level_nostep_master_iter{}.png'.
-        format(hours_per_day, m_iter))
-    plt.close(fig2)
-
     font = {'size':16}
     plt.rc('font', **font)
-    fig3, ax5 = plt.subplots(figsize=(12, 8))
-    ax5.set_xlabel('Time Period (hr)')
-    ax5.set_ylabel('Salt Tank Level (metric ton)',
-                   color=color[3])
-    ax5.spines["top"].set_visible(False)
-    ax5.spines["right"].set_visible(False)
-    ax5.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    plt.axhline(tank_max, ls=':', lw=1.75,
-                color='k', alpha=0.85)
-    # plt.text(nhours / 2 - 1.5, tank_max + 100, 'max inventory',
-    #          color='k')
-    ax5.step(hours_list, hot_tank_list,
-             marker='o', ms=8, label='Hot Salt',
-             lw=1, color='darkred', alpha=0.85)
-    ax5.fill_between(hours_list, hot_tank_list,
-                     step="pre", color='darkred',
-                     alpha=0.25)
-    ax5.step(hours_list, cold_tank_list,
-             marker='o', ms=4, label='Cold Salt',
-             lw=1, color='midnightblue', alpha=0.10)
-    ax5.fill_between(hours_list, cold_tank_list,
-                     tank_max, step="pre", color='midnightblue',
-                     alpha=0.15)
-    ax5.legend(loc="center left", frameon=False)
-    ax5.tick_params(axis='y')
-    ax5.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
-
-    ax6 = ax5.twinx()
-    ax6.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax6.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=8, alpha=0.5,
-             ls='-', lw=2,
-             color=color[2])
-    ax6.fill_between([x + 1 for x in hours], lmp_array,
-                     step="pre", color='tab:green',
-                     alpha=0.05)
-    ax6.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig(
-        'results/gdp_mp_unfixed_area_{}h/colored_salt_tank_level_master_iter{}.png'.
-        format(nhours, m_iter))
-    plt.close(fig3)
-
     power_array = np.asarray(net_power[0:nweeks]).flatten()
     power_array0 = value(mdl.blocks[0].process.usc.previous_power)
     power_list = [power_array0] + power_array.tolist()
     font = {'size':18}
     plt.rc('font', **font)
-    fig4, ax7 = plt.subplots(figsize=(12, 8))
-    ax7.set_xlabel('Time Period (hr)')
-    ax7.set_ylabel('Net Power Output (MW)',
-                   color='slategrey')
-    ax7.spines["top"].set_visible(False)
-    ax7.spines["right"].set_visible(False)
-    ax7.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    # plt.text(nhours / 2 - 3, max_power - 5.5, 'max plant power',
-    #          color=color[4])
-    # plt.axhline(max_power, ls=':', lw=1.75,
-    #             color='k', alpha=0.85)
-    ax7.step(hours_list, power_list,
-             marker='o', ms=8,
-             lw=2, color='slategrey', alpha=0.85)
-    ax7.fill_between(hours_list, power_list,
-                     step="pre",
-                     color='slategrey',
-                     alpha=0.15)
-    ax7.tick_params(axis='y', labelcolor='slategrey')
-    ax7.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
-    ax8 = ax7.twinx()
-    ax8.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax8.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=8, alpha=0.5,
-             ls='-', lw=2,
-             color=color[2])
-    ax8.fill_between([x + 1 for x in hours], lmp_array,
-                     step="pre", color='tab:green',
-                     alpha=0.05)
-    ax8.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig(
-        'results/gdp_mp_unfixed_area_{}h/colored_optimal_power_master_iter{}.png'.
-        format(nhours, m_iter))
-    plt.close(fig4)
+    fig2, ax3 = plt.subplots(figsize=(12, 8))
+    ax3.set_xlabel('Time Period (hr)')
+    ax3.set_ylabel('Net Power Output (MW)', color=c[1])
+    ax3.spines["top"].set_visible(False)
+    ax3.spines["right"].set_visible(False)
+    ax3.grid(linestyle=':', which='both', color=c[4], alpha=0.30)
+    ax3.step(hours_list, power_list, marker='o', ms=8, lw=2, color=c[1], alpha=0.85)
+    ax3.fill_between(hours_list, power_list, step="pre", color=c[1], alpha=0.25)
+    ax3.tick_params(axis='y', labelcolor=c[1])
+    ax3.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
+    ax4 = ax3.twinx()
+    ax4.set_ylabel('Local Marginal Price ($/MWh)', color=c[2])
+    ax4.step([x + 1 for x in hours], lmp_array, marker='o', ms=8, alpha=0.5, ls='-', lw=2, color=c[2])
+    ax4.fill_between([x + 1 for x in hours], lmp_array, step="pre", color=c[2], alpha=0.05)
+    ax4.tick_params(axis='y', labelcolor=c[2])
+    plt.savefig('results/gdp_mp_unfixed_area_{}h/net_power_master_iter{}.png'.format(
+        nhours, m_iter))
+    plt.close(fig2)
 
     log_close_to_bounds(mdl)
     log_infeasible_constraints(mdl)
@@ -525,45 +418,45 @@ def run_pricetaker_analysis(hours_per_day=None,
     # Add constraint to save calculate charge and discharge area in a
     # global variable
     @m.Constraint(m.hours_set2)
-    def constraint_charge_previous_area(m, h):
+    def constraint_charge_previous_area(b, h):
         return (
-            m.blocks[h + 1].process.usc.fs.charge_area ==
-            m.blocks[h].process.usc.fs.charge_area
+            b.blocks[h + 1].process.usc.fs.charge_area ==
+            b.blocks[h].process.usc.fs.charge_area
         )
 
     @m.Constraint(m.hours_set2)
-    def constraint_discharge_previous_area(m, h):
+    def constraint_discharge_previous_area(b, h):
         return (
-            m.blocks[h + 1].process.usc.fs.discharge_area ==
-            m.blocks[h].process.usc.fs.discharge_area
+            b.blocks[h + 1].process.usc.fs.discharge_area ==
+            b.blocks[h].process.usc.fs.discharge_area
         )
 
     # Declare constraint to ensure that the discharge heat exchanger
     # has the same temperature for the hot salt than the one obtained
     # during charge cycle.
     @m.Constraint(m.hours_set)
-    def constraint_discharge_hot_salt_temperature(m, h):
+    def constraint_discharge_hot_salt_temperature(b, h):
         return (
-            m.blocks[h].process.usc.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0] ==
-            m.blocks[h].process.usc.fs.hot_salt_temp
+            b.blocks[h].process.usc.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0] ==
+            b.blocks[h].process.usc.fs.hot_salt_temp
         )
 
     ##################################################################
     # Add logical constraints
     ##################################################################
     discharge_min_salt = 379 # in mton, 8MW min es turbine
+    # discharge_min_salt = 1 # in mton, 8MW min es turbine
     min_hot_salt = 2000
     @m.Constraint(m.hours_set)
-    def _constraint_no_discharge_with_min_hot_tank(m, h):
+    def _constraint_no_discharge_with_min_hot_tank(b, h):
         if h <= 2:
-            b = min_hot_salt
+            a = min_hot_salt
         else:
-            b = discharge_min_salt
+            a = discharge_min_salt
         return (
-            (m.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var * b) <=
+            (b.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var * a) <=
             blks[h].usc.previous_salt_inventory_hot
         )
-
 
     # Add a minimum number of charge, discharge, and no storage
     # operation modes. Note: For charge, the minimum number of cycles
@@ -730,30 +623,25 @@ def run_pricetaker_analysis(hours_per_day=None,
                 tee=True,
                 symbolic_solver_labels=True,
                 options={"linear_solver": "ma27",
-                         "max_iter": 180,
+                         "max_iter": 150,
                          "halt_on_ampl_error": "yes"}
             )
         )
 
-        hot_tank_level.append(
-            [pyo.value(blks[i].usc.salt_inventory_hot) # in mton
-             for i in range(n_time_points)])
-        cold_tank_level.append(
-            [pyo.value(blks[i].usc.salt_inventory_cold) # in mton
-             for i in range(n_time_points)])
-        net_power.append(
-            [pyo.value(blks[i].usc.fs.net_power)
-             for i in range(n_time_points)])
+        hot_tank_level.append([pyo.value(blks[i].usc.salt_inventory_hot) # in mton
+                               for i in range(n_time_points)])
+        cold_tank_level.append([pyo.value(blks[i].usc.salt_inventory_cold) # in mton
+                                for i in range(n_time_points)])
+        net_power.append([pyo.value(blks[i].usc.fs.net_power)
+                          for i in range(n_time_points)])
         boiler_heat_duty.append([pyo.value(blks[i].usc.fs.boiler.heat_duty[0]) * 1e-6
                                  for i in range(n_time_points)])
         discharge_work.append([pyo.value(blks[i].usc.fs.discharge_turbine_work)
                                for i in range(n_time_points)])
-        hxc_duty.append(
-            [pyo.value(blks[i].usc.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6
-             for i in range(n_time_points)])
-        hxd_duty.append(
-            [pyo.value(blks[i].usc.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6
-             for i in range(n_time_points)])
+        hxc_duty.append([pyo.value(blks[i].usc.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6
+                         for i in range(n_time_points)])
+        hxd_duty.append([pyo.value(blks[i].usc.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6
+                         for i in range(n_time_points)])
 
     csvfile.close()
 
@@ -890,11 +778,11 @@ def plot_results(m,
                  discharge_work=None):
 
 
+    c = ['darkred', 'midnightblue', 'tab:green', 'k', 'gray']
     hours = np.arange(n_time_points * nweeks)
     lmp_array = np.asarray(lmp[0:n_time_points])
     hot_tank_array = np.asarray(hot_tank_level[0:nweeks]).flatten()
     cold_tank_array = np.asarray(cold_tank_level[0:nweeks]).flatten()
-    color = ['r', 'b', 'tab:green', 'k', 'slategrey']
 
     # Plot molten salt tank levels for each period. First, convert
     # array to list to include hot tank level at initial period zero.
@@ -906,82 +794,62 @@ def plot_results(m,
 
     font = {'size':16}
     plt.rc('font', **font)
-    fig5, ax1 = plt.subplots(figsize=(12, 8))
+    fig3, ax1 = plt.subplots(figsize=(12, 8))
     ax1.set_xlabel('Time Period (hr)')
-    ax1.set_ylabel('Salt Tank Level (metric ton)',
-                   color=color[3])
+    ax1.set_ylabel('Salt Tank Level (metric ton)', color=c[3])
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
-    ax1.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    plt.axhline(tank_max, ls=':', lw=1.75,
-                color=color[4])
-    plt.text(nhours / 2 - 1.5, tank_max + 100, 'max salt',
-             color=color[4])
-    ax1.step(hours_list, hot_tank_list,
-             marker='^', ms=4, label='Hot Salt',
-             lw=1, color=color[0])
-    ax1.step(hours_list, cold_tank_list,
-             marker='v', ms=4, label='Cold Salt',
-             lw=1, color=color[1])
-    ax1.legend(loc="center right", frameon=False)
+    ax1.grid(linestyle=':', which='both', color=c[4], alpha=0.30)
+    plt.axhline(tank_max, ls=':', lw=1.75, color='k', alpha=0.85)
+    # plt.text(nhours / 2 - 1.5, tank_max + 100, 'max inventory', color=c[4])
+    ax1.step(hours_list, hot_tank_list, marker='o', ms=8, lw=1, color=c[0], alpha=0.85,
+             label='Hot Salt')
+    ax1.fill_between(hours_list, hot_tank_list, step="pre", color=c[0], alpha=0.25)
+    ax1.step(hours_list, cold_tank_list, marker='o', ms=4, lw=1, color=c[1], alpha=0.10,
+             label='Cold Salt')
+    ax1.fill_between(hours_list, cold_tank_list, tank_max, step="pre", color=c[1], alpha=0.15)
+    ax1.legend(loc="center left", frameon=False)
     ax1.tick_params(axis='y')
     ax1.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
-
     ax2 = ax1.twinx()
-    ax2.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax2.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=3, alpha=0.5,
-             ls='-', lw=1,
-             color=color[2])
-    ax2.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig('results/gdp_mp_unfixed_area_{}h/optimal_salt_tank_level.png'.format(nhours))
+    ax2.set_ylabel('Local Marginal Price ($/MWh)', color=c[2])
+    ax2.step([x + 1 for x in hours], lmp_array, marker='o', ms=8, alpha=0.5, ls='-', lw=2, color=c[2])
+    ax2.fill_between([x + 1 for x in hours], lmp_array, step="pre", color=c[2], alpha=0.05)
+    ax2.tick_params(axis='y', labelcolor=c[2])
+    plt.savefig('results/gdp_mp_unfixed_area_{}h/final_salt_tank_level.png'.format(
+        nhours))
 
     # Plot power production for each period. First, convert power array
     # to list to include the pwoer value at initial period zero.
-    font = {'size':18}
-    plt.rc('font', **font)
     power_array = np.asarray(net_power[0:nweeks]).flatten()
     power_array0 = value(blks[0].usc.previous_power)
     power_list = [power_array0] + power_array.tolist()
 
-    fig6, ax3 = plt.subplots(figsize=(12, 8))
+    font = {'size':18}
+    plt.rc('font', **font)
+    fig4, ax3 = plt.subplots(figsize=(12, 8))
     ax3.set_xlabel('Time Period (hr)')
-    ax3.set_ylabel('Net Power Output (MW)',
-                   color='slategrey')
+    ax3.set_ylabel('Net Power Output (MW)', color=c[1])
     ax3.spines["top"].set_visible(False)
     ax3.spines["right"].set_visible(False)
-    ax3.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    plt.text(nhours / 2 - 3, max_power - 5.5, 'max plant power',
-             color=color[4])
-    plt.axhline(max_power, ls='-.', lw=1.75,
-                color=color[4])
-    ax3.step(hours_list, power_list,
-             marker='o', ms=4,
-             lw=1, color=color[1])
-    ax3.tick_params(axis='y',
-                    labelcolor=color[1])
+    ax3.grid(linestyle=':', which='both', color=c[4], alpha=0.30)
+    # plt.text(nhours / 2 - 3, max_power - 5.5, 'max plant power', color=c[4])
+    # plt.axhline(max_power, ls=':', lw=1.75, color=c[3], alpha=0.85)
+    ax3.step(hours_list, power_list, marker='o', ms=8, lw=1, color=c[1])
+    ax3.fill_between(hours_list, power_list, step="pre", color=c[1], alpha=0.15)
+    ax3.tick_params(axis='y', labelcolor=c[1])
     ax3.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
-
     ax4 = ax3.twinx()
-    ax4.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax4.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=3, alpha=0.5,
-             ls='-', lw=1,
-             color=color[2])
-    ax4.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig('results/gdp_mp_unfixed_area_{}h/optimal_power.png'.format(nhours))
+    ax4.set_ylabel('Local Marginal Price ($/MWh)', color=c[2])
+    ax4.step([x + 1 for x in hours], lmp_array, marker='o', ms=8, alpha=0.5, ls='-', lw=2, color=c[2])
+    ax4.fill_between([x + 1 for x in hours], lmp_array, step="pre", color=c[2], alpha=0.05)
+    ax4.tick_params(axis='y', labelcolor=c[2])
+    plt.savefig('results/gdp_mp_unfixed_area_{}h/final_net_power.png'.format(nhours))
 
     # Plot charge and discharge heat exchangers heat duty values for
     # each time period. First, convert array to list to include the
     # value at period zero, which for this analysis is zero since the
     # plant is not operating.
-    zero_point = True
     hxc_array = np.asarray(hxc_duty[0:nweeks]).flatten()
     hxd_array = np.asarray(hxd_duty[0:nweeks]).flatten()
     hxc_duty0 = 0
@@ -989,58 +857,34 @@ def plot_results(m,
     hxd_duty0 = 0
     hxd_duty_list = [hxd_duty0] + hxd_array.tolist()
 
-    fig7, ax5 = plt.subplots(figsize=(12, 8))
+    fig5, ax5 = plt.subplots(figsize=(12, 8))
     ax5.set_xlabel('Time Period (hr)')
-    ax5.set_ylabel('Storage Heat Duty (MW)',
-                   color=color[3])
+    ax5.set_ylabel('Storage Heat Duty (MW)', color=c[3])
     ax5.spines["top"].set_visible(False)
     ax5.spines["right"].set_visible(False)
-    ax5.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    # plt.text(number_hours / 2 - 2.2, max_storage_heat_duty + 1, 'max storage',
-    #          color=color[4])
-    plt.text(nhours / 2 - 2, min_storage_heat_duty - 6.5, 'min storage',
-             color=color[4])
-    # plt.axhline(max_storage_heat_duty, ls=':', lw=1.75,
-    #             color=color[4])
-    plt.axhline(min_storage_heat_duty, ls=':', lw=1.75,
-                color=color[4])
-    if zero_point:
-        ax5.step(hours_list, hxc_duty_list,
-                 marker='^', ms=4, label='Charge',
-                 color=color[0])
-        ax5.step(hours_list, hxd_duty_list,
-                 marker='v', ms=4, label='Discharge',
-                 color=color[1])
-    else:
-        ax5.step([x + 1 for x in hours], hxc_array,
-                 marker='^', ms=4, lw=1,
-                 label='Charge',
-                 color=color[0])
-        ax5.step([x + 1 for x in hours], hxd_array,
-                 marker='v', ms=4, lw=1,
-                 label='Discharge',
-                 color=color[1])
-        ax5.legend(loc="center right", frameon=False)
-        ax5.tick_params(axis='y',
-                        labelcolor=color[3])
-        ax5.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
-
+    ax5.grid(linestyle=':', which='both', color=c[4], alpha=0.30)
+    # plt.text(number_hours / 2 - 2.2, max_storage_heat_duty + 1, 'max storage', color=c[4])
+    plt.text(nhours / 2 - 2, min_storage_heat_duty - 6.5, 'min storage')
+    # plt.axhline(max_storage_heat_duty, ls=':', lw=1.75, color=c[4])
+    plt.axhline(min_storage_heat_duty, ls=':', lw=1.75, color=c[4])
+    ax5.step(hours_list, hxc_duty_list, marker='o', ms=4, label='Charge', color=c[0])
+    ax5.fill_between(hours_list, hxc_duty_list, step="pre", color=c[0], alpha=0.25)
+    ax5.step(hours_list, hxd_duty_list, marker='o', ms=4, label='Discharge', color=c[1])
+    ax5.fill_between(hours_list, hxd_duty_list, step="pre", color=c[1], alpha=0.15)
+    ax5.legend(loc="center right", frameon=False)
+    ax5.tick_params(axis='y')
+    ax5.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
     ax6 = ax5.twinx()
-    ax6.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax6.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=3, alpha=0.5,
-             ls='-', color=color[2])
-    ax6.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig('results/gdp_mp_unfixed_area_{}h/optimal_hxduty.png'.format(nhours))
+    ax6.set_ylabel('Local Marginal Price ($/MWh)', color=c[2])
+    ax6.step([x + 1 for x in hours], lmp_array, marker='o', ms=3, alpha=0.5, ls='-', color=c[2])
+    ax6.fill_between([x + 1 for x in hours], lmp_array, step="pre", color=c[2], alpha=0.05)
+    ax6.tick_params(axis='y', labelcolor=c[2])
+    plt.savefig('results/gdp_mp_unfixed_area_{}h/final_hx_heat_duty.png'.format(nhours))
 
     # Plot boiler heat duty values and discharge work for each time
     # period. First, convert arrays to lists to include the value at
     # period zero, which for this analysis is zero for both since the
     # plant is not operating.
-    zero_point = True
     boiler_heat_duty_array = np.asarray(boiler_heat_duty[0:nweeks]).flatten()
     boiler_heat_duty0 = 0
     boiler_heat_duty_list = [boiler_heat_duty0] + boiler_heat_duty_array.tolist()
@@ -1048,126 +892,27 @@ def plot_results(m,
     discharge_work0 = 0
     discharge_work_list = [discharge_work0] + discharge_work_array.tolist()
 
-    fig8, ax7 = plt.subplots(figsize=(12, 8))
+    fig6, ax7 = plt.subplots(figsize=(12, 8))
     ax7.set_xlabel('Time Period (hr)')
-    ax7.set_ylabel('(MW)',
-                   color=color[3])
+    ax7.set_ylabel('(MW)', color=c[3])
     ax7.spines["top"].set_visible(False)
     ax7.spines["right"].set_visible(False)
-    ax7.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    if zero_point:
-        ax7.step(hours_list, boiler_heat_duty_list,
-                 marker='^', ms=4, label='Boiler Heat Duty',
-                 color=color[0])
-        ax7.step(hours_list, discharge_work_list,
-                 marker='^', ms=4, label='Discharge Work',
-                 color=color[1])
-    else:
-        ax7.step([x + 1 for x in hours], boiler_heat_duty_array,
-                 marker='^', ms=4, lw=1,
-                 label='Boiler Heat Duty',
-                 color=color[0])
-        ax7.step([x + 1 for x in hours], discharge_work_list,
-                 marker='^', ms=4, label='Discharge Work',
-                 color=color[1])
+    ax7.grid(linestyle=':', which='both', color=c[4], alpha=0.30)
+    ax7.step(hours_list, boiler_heat_duty_list, marker='o', ms=4, color=c[0],
+             label='Boiler Heat Duty')
+    ax7.fill_between(hours_list, boiler_heat_duty_list, step="pre", color=c[0], alpha=0.25)
+    ax7.step(hours_list, discharge_work_list, marker='o', ms=4, color=c[1], label='Discharge Work')
+    ax7.fill_between(hours_list, discharge_work_list, step="pre", color=c[1], alpha=0.15)
     ax7.legend(loc="center right", frameon=False)
-    ax7.tick_params(axis='y',
-                    labelcolor=color[3])
+    ax7.tick_params(axis='y')
     ax7.set_xticks(np.arange(0, n_time_points * nweeks + 1, step=2))
-
     ax8 = ax7.twinx()
-    ax8.set_ylabel('Local Marginal Price ($/MWh)',
-                   color=color[2])
-    ax8.step([x + 1 for x in hours], lmp_array,
-             marker='o', ms=3, alpha=0.5,
-             ls='-', color=color[2])
-    ax8.tick_params(axis='y',
-                    labelcolor=color[2])
-    plt.savefig('results/gdp_mp_unfixed_area_{}h/optimal_boilerduty.png'.format(nhours))
-
-    font = {'size':16}
-    plt.rc('font', **font)
-    fig9, ax9 = plt.subplots(figsize=(12, 8))
-    ax9.set_xlabel('Time Period (hr)')
-    ax9.set_ylabel('Salt Tank Level (metric ton)',
-                   color=color[3])
-    ax9.spines["top"].set_visible(False)
-    ax9.spines["right"].set_visible(False)
-    ax9.grid(linestyle=':', which='both',
-             color='gray', alpha=0.30)
-    plt.axhline(tank_max, ls=':', lw=1.75,
-                color='k', alpha=0.85)
-    # plt.text(nhours / 2 - 1.5, tank_max + 100, 'max inventory',
-    #          color=color[4])
-    ax9.step(hours_list, hot_tank_list,
-             marker='o', ms=8, label='Hot Salt',
-             lw=1, color='darkred', alpha=0.85)
-    ax9.fill_between(hours_list, hot_tank_list,
-                     step="pre", color='darkred',
-                     alpha=0.25)
-    ax9.step(hours_list, cold_tank_list,
-             marker='o', ms=4, label='Cold Salt',
-             lw=1, color='midnightblue', alpha=0.10)
-    ax9.fill_between(hours_list, cold_tank_list,
-                     tank_max, step="pre", color='midnightblue',
-                     alpha=0.15)
-    ax9.legend(loc="center left", frameon=False)
-    ax9.tick_params(axis='y')
-    ax9.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
-    ax10 = ax9.twinx()
-    ax10.set_ylabel('Local Marginal Price ($/MWh)',
-                    color=color[2])
-    ax10.step([x + 1 for x in hours], lmp_array,
-              marker='o', ms=8, alpha=0.5,
-              ls='-', lw=2,
-              color=color[2])
-    ax10.fill_between([x + 1 for x in hours], lmp_array,
-                      step="pre", color='tab:green',
-                      alpha=0.05)
-    ax10.tick_params(axis='y',
-                     labelcolor=color[2])
-    plt.savefig('results/gdp_mp_unfixed_area_{}h/colored_optimal_salt_tank_level.png'.format(nhours))
-
-    # plt.show()
-
-    font = {'size':18}
-    plt.rc('font', **font)
-    fig10, ax11 = plt.subplots(figsize=(12, 8))
-    ax11.set_xlabel('Time Period (hr)')
-    ax11.set_ylabel('Net Power Output (MW)',
-                    color='slategrey')
-    ax11.spines["top"].set_visible(False)
-    ax11.spines["right"].set_visible(False)
-    ax11.grid(linestyle=':', which='both',
-              color='gray', alpha=0.30)
-    # plt.text(nhours / 2 - 3, max_power - 5.5, 'max plant power',
-    #          color=color[4])
-    # plt.axhline(max_power, ls=':', lw=1.75,
-    #             color='k', alpha=0.85)
-    ax11.step(hours_list, power_list,
-              marker='o', ms=8,
-              lw=1, color='slategrey')
-    ax11.fill_between(hours_list, power_list,
-                      step="pre",
-                      color='slategrey',
-                      alpha=0.15)
-    ax11.tick_params(axis='y',
-                     labelcolor='slategrey')
-    ax11.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=2))
-    ax12 = ax11.twinx()
-    ax12.set_ylabel('Local Marginal Price ($/MWh)',
-                    color=color[2])
-    ax12.step([x + 1 for x in hours], lmp_array,
-              marker='o', ms=8, alpha=0.5,
-              ls='-', lw=2,
-              color=color[2])
-    ax12.fill_between([x + 1 for x in hours], lmp_array,
-                      step="pre", color='tab:green',
-                      alpha=0.05)
-    ax12.tick_params(axis='y',
-                     labelcolor=color[2])
-    plt.savefig('results/gdp_mp_unfixed_area_{}h/colored_optimal_power.png'.format(nhours))
+    ax8.set_ylabel('Local Marginal Price ($/MWh)', color=c[2])
+    ax8.step([x + 1 for x in hours], lmp_array, marker='o', ms=3, alpha=0.5, ls='-', color=c[2])
+    ax8.fill_between([x + 1 for x in hours], lmp_array, step="pre", color=c[2], alpha=0.05)
+    ax8.tick_params(axis='y', labelcolor=c[2])
+    plt.savefig('results/gdp_mp_unfixed_area_{}h/final_boiler_duty_and_storage_work.png'.format(
+        nhours))
 
 
 def _mkdir(dir):
@@ -1202,7 +947,6 @@ if __name__ == '__main__':
 
     lx = True
     if lx:
-        # scaling_obj = 1e-2 # 12 hrs
         if new_design:
             scaling_obj = 1e-2
             scaling_cost = 1e-3
