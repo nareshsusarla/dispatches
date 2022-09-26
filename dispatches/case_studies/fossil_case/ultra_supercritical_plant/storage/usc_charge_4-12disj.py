@@ -57,6 +57,7 @@ from math import pi
 import logging
 import os
 from IPython import embed
+import csv
 
 # Import Pyomo libraries
 import pyomo.environ as pyo
@@ -108,18 +109,19 @@ import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
 
 # Import ultra supercritical power plant model
-from dispatches.models.fossil_case.ultra_supercritical_plant import (
+from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant_mixcon as usc)
 
 # Import properties package for storage materials
-from dispatches.models.fossil_case.properties import (solarsalt_properties,
-                                                      hitecsalt_properties,
-                                                      thermaloil_properties)
+from dispatches.properties import (solarsalt_properties,
+                                   hitecsalt_properties,
+                                   thermaloil_properties)
 
 logging.basicConfig(level=logging.INFO)
 
 scaling_factor = 1
 scaling_obj = 1e-3
+save_csv = True
 
 def create_charge_model(m, method=None, max_power=None):
     """Create flowsheet and add unit models.
@@ -3122,10 +3124,16 @@ def run_nlps(m,
     return m, results
 
 
-def print_model(nlp_model, nlp_data):
+def print_model(solver_obj, nlp_model, nlp_data, csvfile):
 
+    m_iter = solver_obj.iteration
+    nlp_model.disjunction1_selection = {}
+    nlp_model.disjunction2_selection = {}
+    nlp_model.disjunction3_selection = {}
+    nlp_model.disjunction4_selection = {}
     print('       ___________________________________________')
     if nlp_model.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'Solar salt is selected'
         print('        Disjunction 1: Solar salt is selected')
         print('         Delta temperature at inlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.solar_salt_disjunct.hxc.
@@ -3138,6 +3146,7 @@ def print_model(nlp_model, nlp_data):
         print('         Heat exchanger ohtc: {:.4f}'.format(
             value(nlp_model.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient[0])))
     elif nlp_model.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'Hitec salt is selected'
         print('        Disjunction 1: Hitec salt is selected')
         print('         Delta temperature at inlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.
@@ -3150,6 +3159,7 @@ def print_model(nlp_model, nlp_data):
         print('         Heat exchanger ohtc: {:.4f}'.format(
             value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient[0])))
     else:
+        nlp_model.disjunction1_selection[m_iter] = 'Thermal oil is selected'
         print('        Disjunction 1: Thermal oil is selected')
         print('         Delta temperature at inlet (K): {:.4f}'.format(
             value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.
@@ -3163,15 +3173,18 @@ def print_model(nlp_model, nlp_data):
             value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.overall_heat_transfer_coefficient[0])))
 
     if nlp_model.fs.charge.vhp_source_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction2_selection[m_iter] = 'VHP source is selected'
         print('        Disjunction 2: VHP source is selected')
         print('         ESS VHP split fraction to hxc:',
               value(nlp_model.fs.charge.vhp_source_disjunct.ess_vhp_split.split_fraction[0, "to_hxc"]))
     else:
+        nlp_model.disjunction2_selection[m_iter] = 'HP is selected'
         print('        Disjunction 2: HP source is selected')
         print('         ESS HP split fraction to hxc:',
               value(nlp_model.fs.charge.hp_source_disjunct.ess_hp_split.split_fraction[0, "to_hxc"]))
 
     if nlp_model.fs.charge.cooler_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction3_selection[m_iter] = 'Cooler is selected'
         print('        Disjunction 3: Cooler is selected')
         print('         Cooler capital cost ($/yr):',
               value(nlp_model.fs.charge.cooler_capital_cost))
@@ -3182,11 +3195,13 @@ def print_model(nlp_model, nlp_data):
         print('         Cooler Tsat: ',
               value(nlp_model.fs.charge.cooler_disjunct.cooler.control_volume.properties_out[0].temperature_sat))
     if nlp_model.fs.charge.no_cooler_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction3_selection[m_iter] = 'No cooler is selected'
         print('        Disjunction 3: No cooler is selected')
         print('         Cooler heat duty (MW):',
               nlp_model.fs.charge.cooler_heat_duty[0].value * 1e-6)
 
     if nlp_model.fs.charge.recycle_mixer_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer is selected'
         print('        Disjunction 4: Recycle mixer is selected')
         print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
         print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].inlet_2.flow_mol[0]))
@@ -3198,6 +3213,7 @@ def print_model(nlp_model, nlp_data):
         print('         Recycle mixer inlet from hx pump:',
               value(nlp_model.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_hx_pump.flow_mol[0]))
     elif nlp_model.fs.charge.mixer1_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Mixer 1 is selected'
         print('        Disjunction 4: Mixer 1 is selected')
         print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
         print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].inlet_2.flow_mol[0]))
@@ -3209,6 +3225,7 @@ def print_model(nlp_model, nlp_data):
               value(nlp_model.fs.charge.mixer1_sink_disjunct.mixer1.from_hx_pump.flow_mol[0]))
         print('         FWH9 inlet 2 flow:', value(nlp_model.fs.fwh[9].inlet_2.flow_mol[0]))
     elif nlp_model.fs.charge.mixer2_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Mixer 2 is selected'
         print('        Disjunction 4: Mixer 2 is selected')
         print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
         print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].inlet_2.flow_mol[0]))
@@ -3221,6 +3238,7 @@ def print_model(nlp_model, nlp_data):
               value(nlp_model.fs.charge.mixer2_sink_disjunct.mixer2.from_hx_pump.flow_mol[0]))
         print('         Boiler inlet flow:', value(nlp_model.fs.boiler.inlet.flow_mol[0]))
     elif nlp_model.fs.charge.mixer3_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Mixer 3 is selected'
         print('        Disjunction 4: Mixer 3 is selected')
         print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
         print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].inlet_2.flow_mol[0]))
@@ -3236,6 +3254,7 @@ def print_model(nlp_model, nlp_data):
         print('         Boiler inlet flow:', value(nlp_model.fs.boiler.inlet.flow_mol[0]))
         print('         FWH9 inlet 1 flow:', value(nlp_model.fs.fwh[9].inlet_1.flow_mol[0]))
     elif nlp_model.fs.charge.mixer4_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Mixer 4 is selected'
         print('        Disjunction 4: Mixer 4 is selected')
         print('         HX pump outlet flow:',
               value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
@@ -3260,34 +3279,78 @@ def print_model(nlp_model, nlp_data):
               format(k,
                      value(nlp_model.fs.turbine_splitter[k].split_fraction[0, "outlet_2"])))
     print('       ___________________________________________')
-
     print('')
 
-    log_close_to_bounds(nlp_model)
+    # Save results in dictionaries
+    nlp_model.objective_value = {}
+    nlp_model.objective_value[m_iter] = value(nlp_model.obj) / scaling_obj
+
+    nlp_model.cooler_heat_duty = {}
+    nlp_model.cooler_heat_duty[m_iter] = value(nlp_model.fs.charge.cooler_heat_duty[0]) * 1e-6 # MW
+
+    if True:
+        writer = csv.writer(csvfile)
+        writer.writerow(
+            (m_iter,
+             nlp_model.disjunction1_selection[m_iter],
+             nlp_model.disjunction2_selection[m_iter],
+             nlp_model.disjunction3_selection[m_iter],
+             nlp_model.disjunction4_selection[m_iter],
+             nlp_model.cooler_heat_duty[m_iter],
+             nlp_model.objective_value[m_iter])
+        )
+        csvfile.flush()
+
+    # log_close_to_bounds(nlp_model)
     # log_infeasible_constraints(nlp_model)
+
+
+def create_csv_header():
+    csvfile = open('results/subnlp_master_iterations_4-12disj_results.csv',
+                   'w', newline='')
+    writer = csv.writer(csvfile)
+    writer.writerow(
+        ('Iteration', 'Disjunction 1 (Salt selection)', 'Disjunction 2 (Source)',
+         'Disjunction 3 (Cooler selection)', 'Disjunction 4 (Return selection)',
+         'Cooler Heat Duty (MW)', 'Obj (MW)')
+    )
+    return csvfile
 
 
 def run_gdp(m):
     """Declare solver GDPopt and its options
     """
 
+    csvfile = create_csv_header()
+
     opt = SolverFactory('gdpopt')
-    opt.CONFIG.strategy = 'RIC'
-    opt.CONFIG.OA_penalty_factor = 1e4
-    opt.CONFIG.max_slack = 1e4
-    opt.CONFIG.call_after_subproblem_solve = print_model
-    opt.CONFIG.mip_solver = 'gurobi_direct'
-    opt.CONFIG.nlp_solver = 'ipopt'
-    opt.CONFIG.tee = True
-    opt.CONFIG.init_strategy = "no_init"
-    opt.CONFIG.time_limit = "2400"
-    opt.CONFIG.subproblem_presolve = False
+    # opt.CONFIG.strategy = 'RIC'
+    # opt.CONFIG.OA_penalty_factor = 1e4
+    # opt.CONFIG.max_slack = 1e4
+    # opt.CONFIG.call_after_subproblem_solve = print_model
+    # opt.CONFIG.mip_solver = 'gurobi_direct'
+    # opt.CONFIG.nlp_solver = 'ipopt'
+    # opt.CONFIG.tee = True
+    # opt.CONFIG.init_strategy = "no_init"
+    # opt.CONFIG.time_limit = "2400"
+    # opt.CONFIG.subproblem_presolve = False
     _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
 
 
     results = opt.solve(
         m,
         tee=True,
+        algorithm='RIC',
+        # mip_solver='gurobi_direct',
+        mip_solver='cbc',
+        nlp_solver='ipopt',
+        OA_penalty_factor=1e4,
+        max_slack=1e4,
+        init_algorithm="no_init",
+        subproblem_presolve=False,
+        time_limit="2400",
+        iterlim=200,
+        call_after_subproblem_solve=(lambda c, a, b: print_model(c, a, b, csvfile)),
         nlp_solver_args=dict(
             tee=True,
             symbolic_solver_labels=True,
@@ -3299,7 +3362,7 @@ def run_gdp(m):
             }
         )
     )
-
+    csvfile.close()
     return results
 
 
