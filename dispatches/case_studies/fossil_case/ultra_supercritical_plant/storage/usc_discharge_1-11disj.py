@@ -39,8 +39,10 @@ __author__ = "Naresh Susarla and Soraya Rawlings"
 # Import Python libraries
 from math import pi
 import logging
-# Import Pyomo libraries
 import os
+import csv
+
+# Import Pyomo libraries
 from pyomo.environ import (Block, Param, Constraint, Objective,
                            TransformationFactory, SolverFactory,
                            Expression, value, log, exp, Var)
@@ -80,13 +82,13 @@ from idaes.models.costing.SSLW import (SSLWCosting,
 from idaes.core.util.exceptions import ConfigurationError
 
 # Import ultra supercritical power plant model
-from dispatches.models.fossil_case.ultra_supercritical_plant import (
+from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
 # Import properties package for Solar salt
-from dispatches.models.fossil_case.properties import solarsalt_properties
+from dispatches.properties import solarsalt_properties
 
 from pyomo.network.plugins import expand_arcs
 
@@ -2126,30 +2128,45 @@ def run_nlps(m,
     return m, results
 
 
-def print_model(nlp_model, _):
+def print_model(solver_obj, nlp_model, nlp_data, csvfile):
+
+    m_iter = solver_obj.iteration
+    nlp_model.disjunction1_selection = {}
+
     nlp = nlp_model.fs.discharge
     print('       ___________________________________________')
     if nlp.condpump_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'Condpump is selected'
         print('        Disjunction 1: Condensate from Condenser Pump is selected')
     elif nlp.fwh1_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH1 is selected'
         print('        Disjunction 1: Condensate from FWH1 is selected')
     elif nlp.fwh2_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH2 is selected'
         print('        Disjunction 1: Condensate from FWH2 is selected')
     elif nlp.fwh3_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH3 is selected'
         print('        Disjunction 1: Condensate from FWH3 is selected')
     elif nlp.fwh4_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH4 is selected'
         print('        Disjunction 1: Condensate from FWH4 is selected')
     elif nlp.fwh5_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH5 is selected'
         print('        Disjunction 1: Condensate from FWH5 is selected')
     elif nlp.booster_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'Boosterpump is selected'
         print('        Disjunction 1: Condensate from Booster Pump is selected')
     elif nlp.fwh6_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH6 is selected'
         print('        Disjunction 1: Condensate from FWH6 is selected')
     elif nlp.bfp_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'BFP is selected'
         print('        Disjunction 1: Condensate from Boiler Feed Pump is selected')
     elif nlp.fwh8_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH8 is selected'
         print('        Disjunction 1: Condensate from FWH8 is selected')
     elif nlp.fwh9_source_disjunct.binary_indicator_var.value == 1:
+        nlp_model.disjunction1_selection[m_iter] = 'FWH9 is selected'
         print('        Disjunction 1: Condensate from FWH9 is selected')
     else:
         print('        Disjunction 1: Error')
@@ -2157,35 +2174,68 @@ def print_model(nlp_model, _):
     print('       ___________________________________________')
     print('')
 
+    # Save results in dictionaries
+    nlp_model.objective_value = {}
+    nlp_model.objective_value[m_iter] = value(nlp_model.obj) / m.scaling_obj
+
+    if True:
+        writer = csv.writer(csvfile)
+        writer.writerow(
+            (m_iter,
+             nlp_model.disjunction1_selection[m_iter],
+             nlp_model.objective_value[m_iter])
+        )
+        csvfile.flush()
+
+    # log_close_to_bounds(nlp_model)
     # log_infeasible_constraints(nlp_model)
-    log_close_to_bounds(nlp_model)
+
+
+def create_csv_header():
+    csvfile = open('results/subnlp_master_iterations_discharge_1-11disj_results.csv',
+                   'w', newline='')
+    writer = csv.writer(csvfile)
+    writer.writerow(
+        ('Iteration', 'Disjunction 1 (Source selection)', 'Obj (MW)')
+    )
+    return csvfile
 
 
 def run_gdp(m):
     """Declare solver GDPopt and its options
     """
 
+    csvfile = create_csv_header()
+
     opt = SolverFactory('gdpopt')
-    opt.CONFIG.strategy = 'RIC'  # LOA is an option
-    opt.CONFIG.OA_penalty_factor = 1e4
-    opt.CONFIG.max_slack = 1e4
-    opt.CONFIG.call_after_subproblem_solve = print_model
-    # opt.CONFIG.mip_solver = 'glpk'
-    # opt.CONFIG.mip_solver = 'cbc'
-    opt.CONFIG.mip_solver = 'gurobi_direct'
-    opt.CONFIG.nlp_solver = 'ipopt'
-    opt.CONFIG.tee = True
-    opt.CONFIG.init_strategy = "no_init"
-    opt.CONFIG.time_limit = "2400"
-    # opt.CONFIG.subproblem_presolve = False
+    # opt.CONFIG.strategy = 'RIC'  # LOA is an option
+    # opt.CONFIG.OA_penalty_factor = 1e4
+    # opt.CONFIG.max_slack = 1e4
+    # opt.CONFIG.call_after_subproblem_solve = print_model
+    # # opt.CONFIG.mip_solver = 'glpk'
+    # # opt.CONFIG.mip_solver = 'cbc'
+    # opt.CONFIG.mip_solver = 'gurobi_direct'
+    # opt.CONFIG.nlp_solver = 'ipopt'
+    # opt.CONFIG.tee = True
+    # opt.CONFIG.init_strategy = "no_init"
+    # opt.CONFIG.time_limit = "2400"
+    # # opt.CONFIG.subproblem_presolve = False
     _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
 
     results = opt.solve(
         m,
         tee=True,
-        mip_solver_args=dict(
-            tee=True
-        ),
+        algorithm='RIC',
+        # mip_solver='gurobi_direct',
+        mip_solver='cbc',
+        nlp_solver='ipopt',
+        OA_penalty_factor=1e4,
+        max_slack=1e4,
+        init_algorithm="no_init",
+        subproblem_presolve=False,
+        time_limit="2400",
+        iterlim=200,
+        call_after_subproblem_solve=(lambda c, a, b: print_model(c, a, b, csvfile)),
         nlp_solver_args=dict(
             tee=True,
             symbolic_solver_labels=True,
@@ -2196,6 +2246,7 @@ def run_gdp(m):
         )
     )
 
+    csvfile.close()
     return results
 
 
