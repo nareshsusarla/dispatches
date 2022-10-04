@@ -156,23 +156,34 @@ def run_pricetaker_analysis(hours_per_day=None,
         # Declare expression to calculate the total costs in
         # the plant, including operating and capital costs of storage
         # and power plant in $ per hour.
-        blk.total_cost = pyo.Expression(
-            expr=(blk.usc.fs.fuel_cost +
-                  blk.usc.fs.plant_fixed_operating_cost +
-                  blk.usc.fs.plant_variable_operating_cost +
-                  blk.usc.fs.storage_capital_cost)
-        )
+        # blk.total_cost = pyo.Expression(
+        #     expr=(blk.usc.fs.fuel_cost +
+        #           blk.usc.fs.plant_fixed_operating_cost +
+        #           blk.usc.fs.plant_variable_operating_cost +
+        #           blk.usc.fs.storage_capital_cost)
+        # )
 
         # Declare an expression to calculate the total profit. All the
         # costs are in $ per hour.
-        blk.profit = pyo.Expression(
-            expr=(blk.revenue -
-                  blk.total_cost) * scaling_cost
-        )
+        # blk.profit = pyo.Expression(
+        #     expr=(blk.revenue -
+        #           blk.total_cost) * scaling_cost
+        # )
         count += 1
 
+    # m.obj = pyo.Objective(
+    #     expr=sum([blk.profit for blk in blks]) * scaling_obj,
+    #     sense=maximize
+    # )
     m.obj = pyo.Objective(
-        expr=sum([blk.profit for blk in blks]) * scaling_obj,
+        expr=sum(
+            [blk.revenue -
+             (blk.usc.fs.fuel_cost +
+              blk.usc.fs.plant_fixed_operating_cost +
+              blk.usc.fs.plant_variable_operating_cost +
+              blk.usc.fs.storage_capital_cost)
+             for blk in blks]
+        ) * scaling_obj,
         sense=maximize
     )
 
@@ -259,10 +270,10 @@ def print_results(m, blks, results):
             value(blks[c].usc.fs.es_turbine.work_mechanical[0])*(-1e-6)))
         print(' Storage capital cost ($/h): {:.4f}'.format(
             value(blks[c].usc.fs.storage_capital_cost)))
-        print(' Profit ($/h): {:.4f}'.format(value(blks[c].profit)))
+        # print(' Profit ($/h): {:.4f}'.format(value(blks[c].profit)))
         print(' Revenue ($/h): {:.4f}'.format(value(blks[c].revenue)))
-        print(' Total operating cost ($/h): {:.4f}'.format(
-            value(blks[c].total_cost)))
+        # print(' Total operating cost ($/h): {:.4f}'.format(
+        #     value(blks[c].total_cost)))
         print(' Storage cost ($/h): {:.4f}'.format(
             value(blks[c].usc.fs.storage_capital_cost)))
         print(' Plant fuel cost ($/h): {:.4f}'.format(
@@ -404,8 +415,8 @@ def plot_results(m,
     ax3.spines["top"].set_visible(False)
     ax3.spines["right"].set_visible(False)
     ax3.grid(linestyle=':', which='both', color=c[4], alpha=0.30)
-    plt.text(nhours / 2 - 3, pmax - 5.5, 'max plant power')
-    plt.text(nhours / 2 - 2.8, pmax_total + 1, 'max net power')
+    plt.text(nhours / 2 - 3, pmax - 5.5, 'max plant')
+    plt.text(nhours / 2 - 2.8, pmax_total + 1, 'max net')
     plt.axhline(pmax, ls=':', lw=1, color=c[3])
     plt.axhline(pmax_total, ls=':', lw=1, color=c[3])
     ax3.step(hours_list, power_list, marker='o', ms=8, lw=1, color=c[1], alpha=0.85)
@@ -516,8 +527,10 @@ if __name__ == '__main__':
     lx = True
     if lx:
         if new_design:
-            scaling_obj = 1e-2
-            scaling_cost = 1e-3
+            # scaling_obj = 1e-2
+            # scaling_cost = 1e-3
+            scaling_obj = 1e-4
+            scaling_cost = 1
         else:
             # Old design
             scaling_obj = 1e-3 # 24 hrs
