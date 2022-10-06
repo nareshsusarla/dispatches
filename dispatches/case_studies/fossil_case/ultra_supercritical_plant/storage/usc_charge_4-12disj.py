@@ -119,8 +119,7 @@ from dispatches.properties import (solarsalt_properties,
 
 logging.basicConfig(level=logging.INFO)
 
-scaling_factor = 1
-scaling_obj = 1e-3
+scaling_obj = 1e-4
 save_csv = True
 
 def create_charge_model(m, method=None, max_power=None):
@@ -181,7 +180,7 @@ def create_charge_model(m, method=None, max_power=None):
                                        doc="Cooler heat duty in W",
                                        bounds=(-1e10, 0),
                                        initialize=0)
-    m.fs.charge.cooler_capital_cost = Var(bounds=(0, 1e8 * scaling_factor),
+    m.fs.charge.cooler_capital_cost = Var(bounds=(0, 1e8),
                                           doc="Annualized cooler capital cost in $/y",
                                           initialize=0)
 
@@ -409,7 +408,7 @@ def _make_constraints(m, method=None, max_power=None):
     @m.fs.Constraint(m.fs.time,
                      doc="HX pump out pressure equal to BFP out pressure")
     def constraint_hxpump_presout(b, t):
-        return m.fs.charge.hx_pump.outlet.pressure[t] >= \
+        return b.charge.hx_pump.outlet.pressure[t] >= \
             (m.main_steam_pressure * 1.1231)
         # return m.fs.charge.hx_pump.outlet.pressure[t] == \
         #     (m.main_steam_pressure * 1.1231)
@@ -431,19 +430,19 @@ def _make_constraints(m, method=None, max_power=None):
 
     if method == "with_efficiency":
         def coal_heat_duty_rule(b):
-            return m.fs.coal_heat_duty * m.fs.boiler_efficiency == (
-                m.fs.plant_heat_duty[0])
+            return b.coal_heat_duty * b.boiler_efficiency == (
+                b.plant_heat_duty[0])
         m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
 
     else:
         def coal_heat_duty_rule(b):
-            return m.fs.coal_heat_duty == (
-                m.fs.plant_heat_duty[0])
+            return b.coal_heat_duty == (
+                b.plant_heat_duty[0])
         m.fs.coal_heat_duty_eq = Constraint(rule=coal_heat_duty_rule)
 
     m.fs.cycle_efficiency = Expression(
-        expr=m.fs.plant_power_out[0] / m.fs.coal_heat_duty * 100,
-        doc="Cycle efficiency in %"
+        expr=(m.fs.plant_power_out[0] / m.fs.coal_heat_duty),
+        doc="Cycle efficiency"
     )
 
 
@@ -1058,7 +1057,7 @@ def cooler_disjunct_equations(disj):
              - 0.0058 * m.fs.charge.cooler_disjunct.cooler.heat_duty[0]
              + 5e-10 * (m.fs.charge.cooler_disjunct.cooler.heat_duty[0]**2)
             ) / m.fs.charge.num_of_years
-        ) * scaling_factor
+        )
         # expr=m.fs.charge.cooler_capital_cost == 0
     )
 
@@ -1737,9 +1736,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def solar_salt_purchase_cost_rule(b):
         return (
-            m.fs.charge.solar_salt_disjunct.salt_purchase_cost == (
-                m.fs.charge.solar_salt_disjunct.salt_amount *
-                m.fs.charge.solar_salt_price
+            b.salt_purchase_cost == (
+                b.salt_amount * m.fs.charge.solar_salt_price
             ) / m.fs.charge.num_of_years
         )
     m.fs.charge.solar_salt_disjunct.salt_purchase_cost_eq = Constraint(
@@ -1759,9 +1757,9 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def hitec_salt_purchase_cost_rule(b):
         return (
-            m.fs.charge.hitec_salt_disjunct.salt_purchase_cost
-            == (m.fs.charge.hitec_salt_disjunct.salt_amount *
-                m.fs.charge.hitec_salt_price) / m.fs.charge.num_of_years
+            b.salt_purchase_cost == (
+                b.salt_amount * m.fs.charge.hitec_salt_price
+            ) / m.fs.charge.num_of_years
         )
     m.fs.charge.hitec_salt_disjunct.salt_purchase_cost_eq = \
         Constraint(rule=hitec_salt_purchase_cost_rule)
@@ -1780,9 +1778,9 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def thermal_oil_purchase_cost_rule(b):
         return (
-            m.fs.charge.thermal_oil_disjunct.salt_purchase_cost
-            == (m.fs.charge.thermal_oil_disjunct.oil_amount *
-                m.fs.charge.thermal_oil_price) / m.fs.charge.num_of_years
+            b.salt_purchase_cost == (
+                b.oil_amount * m.fs.charge.thermal_oil_price
+            ) / m.fs.charge.num_of_years
         )
     m.fs.charge.thermal_oil_disjunct.salt_purchase_cost_eq = \
         Constraint(rule=thermal_oil_purchase_cost_rule)
@@ -1921,9 +1919,9 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def solar_spump_purchase_cost_rule(b):
         return (
-            m.fs.charge.solar_salt_disjunct.spump_purchase_cost == (
-                (m.fs.charge.solar_salt_disjunct.pump_CP +
-                 m.fs.charge.solar_salt_disjunct.motor_CP) *
+            b.spump_purchase_cost == (
+                (b.pump_CP +
+                 b.motor_CP) *
                 (m.CE_index / 394)
             ) / m.fs.charge.num_of_years
         )
@@ -2017,9 +2015,9 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def hitec_spump_purchase_cost_rule(b):
         return (
-            m.fs.charge.hitec_salt_disjunct.spump_purchase_cost == (
-                (m.fs.charge.hitec_salt_disjunct.pump_CP
-                 + m.fs.charge.hitec_salt_disjunct.motor_CP) *
+            b.spump_purchase_cost == (
+                (b.pump_CP +
+                 b.motor_CP) *
                 (m.CE_index / 394)
             ) / m.fs.charge.num_of_years
         )
@@ -2113,9 +2111,9 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     def oil_spump_purchase_cost_rule(b):
         return (
-            m.fs.charge.thermal_oil_disjunct.spump_purchase_cost == (
-                (m.fs.charge.thermal_oil_disjunct.pump_CP
-                 + m.fs.charge.thermal_oil_disjunct.motor_CP) *
+            b.spump_purchase_cost == (
+                (b.pump_CP +
+                 b.motor_CP) *
                 (m.CE_index / 394)
             ) / m.fs.charge.num_of_years
         )
@@ -2164,34 +2162,30 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Compute Solar salt tank volume with a 10% margin
     def solar_tank_volume_rule(b):
         return (
-            m.fs.charge.solar_salt_disjunct.tank_volume *
-            m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"] ==
-            m.fs.charge.solar_salt_disjunct.salt_amount *
+            b.tank_volume *
+            b.hxc.side_2.properties_in[0].dens_mass["Liq"] ==
+            b.salt_amount *
             1.10
         )
-    m.fs.charge.solar_salt_disjunct.tank_volume_eq = pyo.Constraint(
-        rule=solar_tank_volume_rule)
+    m.fs.charge.solar_salt_disjunct.tank_volume_eq = pyo.Constraint(rule=solar_tank_volume_rule)
 
     # Compute Solar salt tank surface area considering the surface
     # area of sides and top surface area. The base area is accounted
     # in foundation costs
     def solar_tank_surf_area_rule(b):
         return (
-            m.fs.charge.solar_salt_disjunct.tank_surf_area == (
-                pi * m.fs.charge.solar_salt_disjunct.tank_diameter *
-                m.fs.charge.solar_salt_disjunct.tank_height) +
-            (pi * m.fs.charge.solar_salt_disjunct.tank_diameter**2) / 4
+            b.tank_surf_area == (
+                pi * b.tank_diameter * b.tank_height) +
+            (pi * b.tank_diameter**2) / 4
         )
-    m.fs.charge.solar_salt_disjunct.tank_surf_area_eq = pyo.Constraint(
-        rule=solar_tank_surf_area_rule)
+    m.fs.charge.solar_salt_disjunct.tank_surf_area_eq = pyo.Constraint(rule=solar_tank_surf_area_rule)
 
     # Compute Solar salt tank diameter for an assumed lenght and
     # diameter
     def solar_tank_diameter_rule(b):
         return (
-            m.fs.charge.solar_salt_disjunct.tank_diameter == (
-                (4 * (m.fs.charge.solar_salt_disjunct.tank_volume /
-                      m.fs.charge.solar_salt_disjunct.no_of_tanks) /
+            b.tank_diameter == (
+                (4 * (b.tank_volume / b.no_of_tanks) /
                  (m.fs.charge.l_by_d * pi)) ** (1 / 3))
         )
     m.fs.charge.solar_salt_disjunct.tank_diameter_eq = pyo.Constraint(
@@ -2199,11 +2193,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     # Compute height of Solar salt tank
     def solar_tank_height_rule(b):
-        return m.fs.charge.solar_salt_disjunct.tank_height == (
-            m.fs.charge.l_by_d *
-            m.fs.charge.solar_salt_disjunct.tank_diameter)
-    m.fs.charge.solar_salt_disjunct.tank_height_eq = pyo.Constraint(
-        rule=solar_tank_height_rule)
+        return b.tank_height == (m.fs.charge.l_by_d * b.tank_diameter)
+    m.fs.charge.solar_salt_disjunct.tank_height_eq = pyo.Constraint(rule=solar_tank_height_rule)
 
     # Initialize tanks design correlations
     calculate_variable_from_constraint(
@@ -2234,7 +2225,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     )
 
     def rule_tank_material_cost(b):
-        return m.fs.charge.solar_salt_disjunct.costing.tank_material_cost == (
+        return b.tank_material_cost == (
             m.fs.charge.storage_tank_material_cost *
             m.fs.charge.storage_tank_material_dens_mass *
             m.fs.charge.solar_salt_disjunct.tank_surf_area *
@@ -2244,20 +2235,19 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         rule=rule_tank_material_cost)
 
     def rule_tank_insulation_cost(b):
-        return (
-            m.fs.charge.solar_salt_disjunct.costing.tank_insulation_cost == (
-                m.fs.charge.storage_tank_insulation_cost *
-                m.fs.charge.solar_salt_disjunct.tank_surf_area))
+        return b.tank_insulation_cost == (
+            m.fs.charge.storage_tank_insulation_cost *
+            m.fs.charge.solar_salt_disjunct.tank_surf_area
+        )
 
     m.fs.charge.solar_salt_disjunct.costing.eq_tank_insulation_cost = pyo.Constraint(
         rule=rule_tank_insulation_cost)
 
     def rule_tank_foundation_cost(b):
-        return (
-            m.fs.charge.solar_salt_disjunct.costing.tank_foundation_cost == (
-                m.fs.charge.storage_tank_foundation_cost *
-                pi *
-                m.fs.charge.solar_salt_disjunct.tank_diameter**2 / 4))
+        return b.tank_foundation_cost == (
+            m.fs.charge.storage_tank_foundation_cost * pi *
+            m.fs.charge.solar_salt_disjunct.tank_diameter**2 / 4
+        )
     m.fs.charge.solar_salt_disjunct.costing.eq_tank_foundation_cost = pyo.Constraint(
         rule=rule_tank_foundation_cost)
 
@@ -2302,47 +2292,34 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Computing tank volume with a 20% margin
     def hitec_tank_volume_rule(b):
         return (
-            m.fs.charge.hitec_salt_disjunct.tank_volume *
-            m.fs.charge.hitec_salt_disjunct.hxc.side_2.properties_in[0].dens_mass["Liq"] ==
-            m.fs.charge.hitec_salt_disjunct.salt_amount *
-            1.10
+            b.tank_volume * b.hxc.side_2.properties_in[0].dens_mass["Liq"] ==
+            b.salt_amount * 1.10
         )
-    m.fs.charge.hitec_salt_disjunct.tank_volume_eq = Constraint(
-        rule=hitec_tank_volume_rule)
+    m.fs.charge.hitec_salt_disjunct.tank_volume_eq = Constraint(rule=hitec_tank_volume_rule)
 
     # Compute Hitec salt tank surface area considering the surface
     # area of sides and top surface area. The base area is accounted
     # in foundation costs
     def hitec_tank_surf_area_rule(b):
-        return m.fs.charge.hitec_salt_disjunct.tank_surf_area == (
-            (pi *
-             m.fs.charge.hitec_salt_disjunct.tank_diameter *
-             m.fs.charge.hitec_salt_disjunct.tank_height) +
-            (pi*m.fs.charge.hitec_salt_disjunct.tank_diameter**2) / 4
+        return b.tank_surf_area == (
+            (pi * b.tank_diameter * b.tank_height) +
+            (pi * b.tank_diameter**2) / 4
         )
-    m.fs.charge.hitec_salt_disjunct.tank_surf_area_eq = Constraint(
-        rule=hitec_tank_surf_area_rule)
+    m.fs.charge.hitec_salt_disjunct.tank_surf_area_eq = Constraint(rule=hitec_tank_surf_area_rule)
 
     # Compute Hitec salt tank diameter for an assumed lenght and
     # diameter
     def hitec_tank_diameter_rule(b):
-        return (
-            m.fs.charge.hitec_salt_disjunct.tank_diameter ==
-            ((4 * (m.fs.charge.hitec_salt_disjunct.tank_volume /
-                   m.fs.charge.hitec_salt_disjunct.no_of_tanks)
-              / (m.fs.charge.l_by_d * pi)) ** (1 / 3))
+        return b.tank_diameter == (
+            (4 * (b.tank_volume / b.no_of_tanks) /
+             (m.fs.charge.l_by_d * pi)) ** (1 / 3)
         )
-    m.fs.charge.hitec_salt_disjunct.tank_diameter_eq = Constraint(
-        rule=hitec_tank_diameter_rule)
+    m.fs.charge.hitec_salt_disjunct.tank_diameter_eq = Constraint(rule=hitec_tank_diameter_rule)
 
     # Compute Hitec salt tank height
     def hitec_tank_height_rule(b):
-        return m.fs.charge.hitec_salt_disjunct.tank_height == (
-            m.fs.charge.l_by_d *
-            m.fs.charge.hitec_salt_disjunct.tank_diameter
-        )
-    m.fs.charge.hitec_salt_disjunct.tank_height_eq = Constraint(
-        rule=hitec_tank_height_rule)
+        return b.tank_height == (m.fs.charge.l_by_d * b.tank_diameter)
+    m.fs.charge.hitec_salt_disjunct.tank_height_eq = Constraint(rule=hitec_tank_height_rule)
 
     # Initialize tanks design correlations
     calculate_variable_from_constraint(
@@ -2373,7 +2350,7 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     )
 
     def rule_hitec_tank_material_cost(b):
-        return m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost == (
+        return b.tank_material_cost == (
             m.fs.charge.storage_tank_material_cost *
             m.fs.charge.storage_tank_material_dens_mass *
             m.fs.charge.hitec_salt_disjunct.tank_surf_area *
@@ -2383,25 +2360,26 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         rule=rule_hitec_tank_material_cost)
 
     def rule_hitec_tank_insulation_cost(b):
-        return (m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost ==
-                m.fs.charge.storage_tank_insulation_cost *
-                m.fs.charge.hitec_salt_disjunct.tank_surf_area)
+        return b.tank_insulation_cost == (
+            m.fs.charge.storage_tank_insulation_cost *
+            m.fs.charge.hitec_salt_disjunct.tank_surf_area
+        )
     m.fs.charge.hitec_salt_disjunct.costing.eq_tank_insulation_cost = pyo.Constraint(
         rule=rule_hitec_tank_insulation_cost)
 
     def rule_hitec_tank_foundation_cost(b):
-        return (m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost ==
-                m.fs.charge.storage_tank_foundation_cost *
-                pi *
-                m.fs.charge.hitec_salt_disjunct.tank_diameter**2 / 4)
+        return b.tank_foundation_cost == (
+            m.fs.charge.storage_tank_foundation_cost *
+            pi * m.fs.charge.hitec_salt_disjunct.tank_diameter**2 / 4
+        )
     m.fs.charge.hitec_salt_disjunct.costing.eq_tank_foundation_cost = pyo.Constraint(
         rule=rule_hitec_tank_foundation_cost)
 
     # Expression to compute the total cost for the salt tank
     m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost = Expression(
-        expr=m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost
-        + m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost
-        + m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost
+        expr=m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost +
+        m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost +
+        m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost
     )
 
     # ---------- Thermal oil ----------
@@ -2437,11 +2415,8 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Compute thermal oil tank volume with a 10% margin
     def oil_tank_volume_rule(b):
         return (
-            m.fs.charge.thermal_oil_disjunct.tank_volume *
-            m.fs.charge.thermal_oil_disjunct.hxc.
-            side_2.properties_in[0].dens_mass["Liq"] ==
-            m.fs.charge.thermal_oil_disjunct.oil_amount *
-            1.10
+            b.tank_volume * b.hxc.side_2.properties_in[0].dens_mass["Liq"] ==
+            b.oil_amount * 1.10
         )
     m.fs.charge.thermal_oil_disjunct.tank_volume_eq = Constraint(
         rule=oil_tank_volume_rule)
@@ -2450,32 +2425,24 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # area of sides and top surface area. The base area is accounted
     # in foundation costs
     def oil_tank_surf_area_rule(b):
-        return m.fs.charge.thermal_oil_disjunct.tank_surf_area == (
-            (pi *
-             m.fs.charge.thermal_oil_disjunct.tank_diameter *
-             m.fs.charge.thermal_oil_disjunct.tank_height) +
-            (pi*m.fs.charge.thermal_oil_disjunct.tank_diameter**2) / 4
+        return b.tank_surf_area == (
+            (pi * b.tank_diameter * b.tank_height) +
+            (pi * b.tank_diameter**2) / 4
         )
-    m.fs.charge.thermal_oil_disjunct.tank_surf_area_eq = Constraint(
-        rule=oil_tank_surf_area_rule)
+    m.fs.charge.thermal_oil_disjunct.tank_surf_area_eq = Constraint(rule=oil_tank_surf_area_rule)
 
     # Compute thermal oil tank diameter for an assumed lenght and diameter
     def oil_tank_diameter_rule(b):
-        return (
-            m.fs.charge.thermal_oil_disjunct.tank_diameter ==
-            ((4 * (m.fs.charge.thermal_oil_disjunct.tank_volume /
-                   m.fs.charge.thermal_oil_disjunct.no_of_tanks) /
-              (m.fs.charge.l_by_d * pi)) ** (1 / 3))
+        return b.tank_diameter == (
+            (4 * (b.tank_volume / b.no_of_tanks) /
+             (m.fs.charge.l_by_d * pi)) ** (1 / 3)
         )
-    m.fs.charge.thermal_oil_disjunct.tank_diameter_eq = \
-        Constraint(rule=oil_tank_diameter_rule)
+    m.fs.charge.thermal_oil_disjunct.tank_diameter_eq = Constraint(rule=oil_tank_diameter_rule)
 
     # Compute height of thermal oil tank
     def oil_tank_height_rule(b):
-        return m.fs.charge.thermal_oil_disjunct.tank_height == \
-            m.fs.charge.l_by_d * m.fs.charge.thermal_oil_disjunct.tank_diameter
-    m.fs.charge.thermal_oil_disjunct.tank_height_eq = \
-        Constraint(rule=oil_tank_height_rule)
+        return b.tank_height == (m.fs.charge.l_by_d * b.tank_diameter)
+    m.fs.charge.thermal_oil_disjunct.tank_height_eq = Constraint(rule=oil_tank_height_rule)
 
     # Initialize tanks design correlations
     calculate_variable_from_constraint(
@@ -2491,7 +2458,6 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # Declare a dummy pyomo block for thermal oil storage tank for
     # costing
     m.fs.charge.thermal_oil_disjunct.costing = Block()
-
     m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost = Var(
         initialize=5000,
         bounds=(1000, 1e7)
@@ -2506,31 +2472,29 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     )
 
     def rule_oil_tank_material_cost(b):
-        return m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost == (
+        return b.tank_material_cost == (
             m.fs.charge.storage_tank_material_cost *
             m.fs.charge.storage_tank_material_dens_mass *
             m.fs.charge.thermal_oil_disjunct.tank_surf_area *
             m.fs.charge.tank_thickness
         )
-    m.fs.charge.thermal_oil_disjunct.costing.eq_tank_material_cost = \
-        Constraint(rule=rule_oil_tank_material_cost)
+    m.fs.charge.thermal_oil_disjunct.costing.eq_tank_material_cost = Constraint(
+        rule=rule_oil_tank_material_cost)
 
     def rule_oil_tank_insulation_cost(b):
         return (
-            m.fs.charge.thermal_oil_disjunct.costing.tank_insulation_cost ==
+            b.tank_insulation_cost ==
             m.fs.charge.storage_tank_insulation_cost *
             m.fs.charge.thermal_oil_disjunct.tank_surf_area)
-    m.fs.charge.thermal_oil_disjunct.costing.eq_tank_insulation_cost = \
-        Constraint(rule=rule_oil_tank_insulation_cost)
+    m.fs.charge.thermal_oil_disjunct.costing.eq_tank_insulation_cost = Constraint(
+        rule=rule_oil_tank_insulation_cost)
 
     def rule_oil_tank_foundation_cost(b):
-        return (
-            m.fs.charge.thermal_oil_disjunct.costing.tank_foundation_cost ==
+        return b.tank_foundation_cost == (
             m.fs.charge.storage_tank_foundation_cost *
-            pi *
-            m.fs.charge.thermal_oil_disjunct.tank_diameter**2 / 4)
-    m.fs.charge.thermal_oil_disjunct.costing.eq_tank_foundation_cost = \
-        Constraint(rule=rule_oil_tank_foundation_cost)
+            pi * m.fs.charge.thermal_oil_disjunct.tank_diameter**2 / 4)
+    m.fs.charge.thermal_oil_disjunct.costing.eq_tank_foundation_cost = Constraint(
+        rule=rule_oil_tank_foundation_cost)
 
     # Expression to compute the total cost for the salt tank
     m.fs.charge.thermal_oil_disjunct.costing.total_tank_cost = Expression(
@@ -2548,35 +2512,32 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # storage material capital cost depending on the selected storage
     # material
     m.fs.charge.capital_cost = pyo.Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e10 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e10),
         doc="Annualized capital cost")
     m.fs.charge.solar_salt_disjunct.capital_cost = Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e7 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e7),
         doc="Annualized capital cost for solar salt")
 
     # Annualize capital cost for the solar salt
     def solar_cap_cost_rule(b):
-        return m.fs.charge.solar_salt_disjunct.capital_cost == (
-            m.fs.charge.solar_salt_disjunct.salt_purchase_cost +
-            m.fs.charge.solar_salt_disjunct.spump_purchase_cost +
-            (m.fs.charge.solar_salt_disjunct.hxc.costing.capital_cost +
+        return b.capital_cost == (
+            b.salt_purchase_cost +
+            b.spump_purchase_cost +
+            (b.hxc.costing.capital_cost +
              m.fs.charge.hx_pump.costing.capital_cost +
-             m.fs.charge.solar_salt_disjunct.no_of_tanks *
-             m.fs.charge.solar_salt_disjunct.costing.total_tank_cost) /
+             b.no_of_tanks *
+             b.costing.total_tank_cost) /
             m.fs.charge.num_of_years
-        ) * scaling_factor
-    m.fs.charge.solar_salt_disjunct.cap_cost_eq = pyo.Constraint(
-        rule=solar_cap_cost_rule)
+        )
+    m.fs.charge.solar_salt_disjunct.cap_cost_eq = pyo.Constraint(rule=solar_cap_cost_rule)
 
     # Add constraint to link the global capital cost variable to
     # Solar salt capital cost from disjunction 1
     m.fs.charge.solar_salt_disjunct.fs_cap_cost_eq = Constraint(
-        expr=(
-            m.fs.charge.capital_cost ==
-            m.fs.charge.solar_salt_disjunct.capital_cost))
-
+        expr=m.fs.charge.capital_cost == m.fs.charge.solar_salt_disjunct.capital_cost)
+    
     # Initialize capital cost
     calculate_variable_from_constraint(
         m.fs.charge.solar_salt_disjunct.capital_cost,
@@ -2584,30 +2545,27 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     # ---------- Hitec salt ----------
     m.fs.charge.hitec_salt_disjunct.capital_cost = Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e7 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e7),
         doc="Annualized capital cost for solar salt")
 
     # Annualize capital cost for the hitec salt
     def hitec_cap_cost_rule(b):
-        return m.fs.charge.hitec_salt_disjunct.capital_cost == (
-            m.fs.charge.hitec_salt_disjunct.salt_purchase_cost +
-            m.fs.charge.hitec_salt_disjunct.spump_purchase_cost +
-            (m.fs.charge.hitec_salt_disjunct.hxc.costing.capital_cost +
+        return b.capital_cost == (
+            b.salt_purchase_cost +
+            b.spump_purchase_cost +
+            (b.hxc.costing.capital_cost +
              m.fs.charge.hx_pump.costing.capital_cost +
-             m.fs.charge.hitec_salt_disjunct.no_of_tanks *
-             m.fs.charge.hitec_salt_disjunct.costing.total_tank_cost) /
+             b.no_of_tanks *
+             b.costing.total_tank_cost) /
             m.fs.charge.num_of_years
-        ) * scaling_factor
-    m.fs.charge.hitec_salt_disjunct.cap_cost_eq = Constraint(
-        rule=hitec_cap_cost_rule)
+        )
+    m.fs.charge.hitec_salt_disjunct.cap_cost_eq = Constraint(rule=hitec_cap_cost_rule)
 
     # Add constraint to link the global capital cost variable to Hitec
     # salt capital cost from disjunction 1
     m.fs.charge.hitec_salt_disjunct.fs_cap_cost_eq = Constraint(
-        expr=(
-            m.fs.charge.capital_cost ==
-            m.fs.charge.hitec_salt_disjunct.capital_cost))
+        expr=m.fs.charge.capital_cost == m.fs.charge.hitec_salt_disjunct.capital_cost)
 
     # Initialize capital cost
     calculate_variable_from_constraint(
@@ -2616,30 +2574,27 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
 
     # ---------- Thermal oil ----------
     m.fs.charge.thermal_oil_disjunct.capital_cost = Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e10 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e10),
         doc="Annualized capital cost for thermal oil")
 
     # Annualize capital cost for the thermal oil
     def oil_cap_cost_rule(b):
-        return m.fs.charge.thermal_oil_disjunct.capital_cost == (
-            m.fs.charge.thermal_oil_disjunct.salt_purchase_cost +
-            m.fs.charge.thermal_oil_disjunct.spump_purchase_cost +
-            (m.fs.charge.thermal_oil_disjunct.hxc.costing.capital_cost +
+        return b.capital_cost == (
+            b.salt_purchase_cost +
+            b.spump_purchase_cost +
+            (b.hxc.costing.capital_cost +
              m.fs.charge.hx_pump.costing.capital_cost +
-             m.fs.charge.thermal_oil_disjunct.no_of_tanks *
-             m.fs.charge.thermal_oil_disjunct.costing.total_tank_cost) /
+             b.no_of_tanks *
+             b.costing.total_tank_cost) /
             m.fs.charge.num_of_years
-        ) * scaling_factor
-    m.fs.charge.thermal_oil_disjunct.cap_cost_eq = Constraint(
-        rule=oil_cap_cost_rule)
+        )
+    m.fs.charge.thermal_oil_disjunct.cap_cost_eq = Constraint(rule=oil_cap_cost_rule)
 
     # Add constraint to link the global capital cost variable to
     # thermal oil capital cost from disjunction 1
     m.fs.charge.thermal_oil_disjunct.fs_cap_cost_eq = Constraint(
-        expr=(
-            m.fs.charge.capital_cost ==
-            m.fs.charge.thermal_oil_disjunct.capital_cost))
+        expr=m.fs.charge.capital_cost == m.fs.charge.thermal_oil_disjunct.capital_cost)
 
     # Initialize capital cost
     calculate_variable_from_constraint(
@@ -2653,18 +2608,18 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         expr=365 * 3600 * m.fs.charge.hours_per_day,
         doc="Number of operating hours per year")
     m.fs.charge.operating_cost = pyo.Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e12 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e12),
         doc="Operating cost")  # add units
 
     def op_cost_rule(b):
-        return m.fs.charge.operating_cost == (
-            m.fs.charge.operating_hours * m.fs.charge.coal_price *
+        return b.operating_cost == (
+            b.operating_hours * m.fs.charge.coal_price *
             # (m.fs.plant_heat_duty[0] * 1e6)
             (m.fs.coal_heat_duty * 1e6)
-            - (m.fs.charge.cooling_price * m.fs.charge.operating_hours *
-               m.fs.charge.cooler_heat_duty[0])
-        ) * scaling_factor
+            - (b.cooling_price * b.operating_hours *
+               b.cooler_heat_duty[0])
+        )
     m.fs.charge.op_cost_eq = pyo.Constraint(rule=op_cost_rule)
 
     # Initialize operating cost
@@ -2680,25 +2635,25 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
     # and plant variable and fixed operating costs. Equations from
     # "USC Cost function.pptx" sent by Naresh
     m.fs.charge.plant_capital_cost = pyo.Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e12 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e12),
         doc="Annualized capital cost for the plant in $")
     m.fs.charge.plant_fixed_operating_cost = pyo.Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e12 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e12),
         doc="Plant fixed operating cost in $/yr")
     m.fs.charge.plant_variable_operating_cost = pyo.Var(
-        initialize=1000000 * scaling_factor,
-        bounds=(0, 1e12 * scaling_factor),
+        initialize=1000000,
+        bounds=(0, 1e12),
         doc="Plant variable operating cost in $/yr")
 
     def plant_cap_cost_rule(b):
-        return m.fs.charge.plant_capital_cost == (
+        return b.plant_capital_cost == (
             ((2688973 * m.fs.plant_power_out[0]  # in MW
               + 618968072) /
-             m.fs.charge.num_of_years
+             b.num_of_years
             ) * (m.CE_index / 575.4)
-        ) * scaling_factor
+        )
     m.fs.charge.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
 
     # Initialize capital cost of power plant
@@ -2707,20 +2662,20 @@ def build_costing(m, solver=None, optarg={"tol": 1e-8, "max_iter": 300}):
         m.fs.charge.plant_cap_cost_eq)
 
     def op_fixed_plant_cost_rule(b):
-        return m.fs.charge.plant_fixed_operating_cost == (
+        return b.plant_fixed_operating_cost == (
             ((16657.5 * m.fs.plant_power_out[0]  # in MW
               + 6109833.3) /
-             m.fs.charge.num_of_years
+             b.num_of_years
             ) * (m.CE_index / 575.4)  # annualized, in $/y
-        ) * scaling_factor
+        )
     m.fs.charge.op_fixed_plant_cost_eq = pyo.Constraint(
         rule=op_fixed_plant_cost_rule)
 
     def op_variable_plant_cost_rule(b):
-        return m.fs.charge.plant_variable_operating_cost == (
+        return b.plant_variable_operating_cost == (
             (31754.7 * m.fs.plant_power_out[0]  # in MW
             ) * (m.CE_index / 575.4) # in $/yr
-        ) * scaling_factor
+        )
     m.fs.charge.op_variable_plant_cost_eq = pyo.Constraint(
         rule=op_variable_plant_cost_rule)
 
@@ -2798,9 +2753,9 @@ def calculate_bounds(m):
     )
 
     m.fs.charge.salt_enth_mass_max = max(m.fs.charge.solar_salt_enth_mass_max,
-                                             m.fs.charge.hitec_salt_enth_mass_max)
+                                         m.fs.charge.hitec_salt_enth_mass_max)
     m.fs.charge.salt_enth_mass_min = min(m.fs.charge.solar_salt_enth_mass_min,
-                                             m.fs.charge.hitec_salt_enth_mass_min)
+                                         m.fs.charge.hitec_salt_enth_mass_min)
 
     print('                         Solar        Hitec       Thermal oil')
     print('enth_mass max {: >18.4f} {: >13.4f} {: >10.4f}'.format(
@@ -3041,7 +2996,8 @@ def run_nlps(m,
              solver=None,
              fluid=None,
              source=None,
-             sink=None):
+             sink=None,
+             cooler=None):
     """This function fixes the indicator variables of the disjuncts so to
     solve NLP problems
 
@@ -3049,63 +3005,70 @@ def run_nlps(m,
 
     # Disjunction 1 for the storage fluid selection
     if fluid == "solar_salt":
-        m.fs.charge.solar_salt_disjunct.indicator_var.fix(1)
-        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
-        m.fs.charge.thermal_oil_disjunct.indicator_var.fix(0)
+        m.fs.charge.solar_salt_disjunct.indicator_var.fix(True)
+        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(False)
+        m.fs.charge.thermal_oil_disjunct.indicator_var.fix(False)
     elif fluid == "hitec_salt":
-        m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
-        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(1)
-        m.fs.charge.thermal_oil_disjunct.indicator_var.fix(0)
+        m.fs.charge.solar_salt_disjunct.indicator_var.fix(False)
+        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(True)
+        m.fs.charge.thermal_oil_disjunct.indicator_var.fix(False)
     elif fluid == "thermal_oil":
-        m.fs.charge.solar_salt_disjunct.indicator_var.fix(0)
-        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(0)
-        m.fs.charge.thermal_oil_disjunct.indicator_var.fix(1)
+        m.fs.charge.solar_salt_disjunct.indicator_var.fix(False)
+        m.fs.charge.hitec_salt_disjunct.indicator_var.fix(False)
+        m.fs.charge.thermal_oil_disjunct.indicator_var.fix(True)
     else:
         print('Unrecognized storage fluid name!')
 
     # Disjunction 2 for the steam source selection
     if source == "vhp":
-        m.fs.charge.vhp_source_disjunct.indicator_var.fix(1)
-        m.fs.charge.hp_source_disjunct.indicator_var.fix(0)
+        m.fs.charge.vhp_source_disjunct.indicator_var.fix(True)
+        m.fs.charge.hp_source_disjunct.indicator_var.fix(False)
     elif source == "hp":
-        m.fs.charge.vhp_source_disjunct.indicator_var.fix(0)
-        m.fs.charge.hp_source_disjunct.indicator_var.fix(1)
+        m.fs.charge.vhp_source_disjunct.indicator_var.fix(False)
+        m.fs.charge.hp_source_disjunct.indicator_var.fix(True)
     else:
         print('Unrecognized source unit name!')
 
     # Disjunction 3 for the sink selection
     if sink == "recycle_mix":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(1)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(0)
+        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
     elif sink == "mixer1":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(1)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(0)
+        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
     elif sink == "mixer2":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(1)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(0)
+        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
     elif sink == "mixer3":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(1)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(0)
+        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
     elif sink == "mixer4":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(1)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(0)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(0)
+        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
     else:
         print('Unrecognized sink name!')
+
+    if cooler:
+        m.fs.charge.cooler_disjunct.indicator_var.fix(True)
+        m.fs.charge.no_cooler_disjunct.indicator_var.fix(False)
+    else:
+        m.fs.charge.cooler_disjunct.indicator_var.fix(False)
+        m.fs.charge.no_cooler_disjunct.indicator_var.fix(True)
 
     TransformationFactory('gdp.fix_disjuncts').apply_to(m)
     print("The degrees of freedom after gdp transformation ",
@@ -3273,7 +3236,7 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     #     print('        Turbine {} work (MW): {:.4f}'.
     #           format(k, value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
     print('         Boiler efficiency (%): {:.6f}'.format(value(nlp_model.fs.boiler_efficiency) * 100))
-    print('         Cycle efficiency (%): {:.6f}'.format(value(nlp_model.fs.cycle_efficiency)))
+    print('         Cycle efficiency (%): {:.6f}'.format(value(nlp_model.fs.cycle_efficiency) * 100))
     for k in nlp_model.set_turbine_splitter:
         print("         Turbine splitter {} split fraction 2: {:.4f}".
               format(k,
@@ -3306,7 +3269,7 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
 
 
 def create_csv_header():
-    csvfile = open('results/subnlp_master_iterations_4-12disj_results.csv',
+    csvfile = open('results/subnlp_master_iterations_charge_4-12disj_results.csv',
                    'w', newline='')
     writer = csv.writer(csvfile)
     writer.writerow(
@@ -3324,16 +3287,6 @@ def run_gdp(m):
     csvfile = create_csv_header()
 
     opt = SolverFactory('gdpopt')
-    # opt.CONFIG.strategy = 'RIC'
-    # opt.CONFIG.OA_penalty_factor = 1e4
-    # opt.CONFIG.max_slack = 1e4
-    # opt.CONFIG.call_after_subproblem_solve = print_model
-    # opt.CONFIG.mip_solver = 'gurobi_direct'
-    # opt.CONFIG.nlp_solver = 'ipopt'
-    # opt.CONFIG.tee = True
-    # opt.CONFIG.init_strategy = "no_init"
-    # opt.CONFIG.time_limit = "2400"
-    # opt.CONFIG.subproblem_presolve = False
     _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
 
 
@@ -3341,13 +3294,12 @@ def run_gdp(m):
         m,
         tee=True,
         algorithm='RIC',
-        # mip_solver='gurobi_direct',
-        mip_solver='cbc',
+        mip_solver='gurobi_direct',
         nlp_solver='ipopt',
-        OA_penalty_factor=1e4,
-        max_slack=1e4,
+        # OA_penalty_factor=1e4,
+        # max_slack=1e4,
         init_algorithm="no_init",
-        subproblem_presolve=False,
+        # subproblem_presolve=False,
         time_limit="2400",
         iterlim=200,
         call_after_subproblem_solve=(lambda c, a, b: print_model(c, a, b, csvfile)),
@@ -3356,8 +3308,7 @@ def run_gdp(m):
             symbolic_solver_labels=True,
             options={
                 "linear_solver": "ma27",
-                # "tol": 1e-5,
-                "tol": 1e-6,
+                # "tol": 1e-6,
                 "max_iter": 150
             }
         )
@@ -3378,146 +3329,68 @@ def print_results(m, results):
         if abs(d.indicator_var.value - 1) < 1e-6:
             print(d.name, ' should be selected!')
     print('')
-    print('Objective (M$/year): {:.6f}'.format((value(m.obj) / scaling_obj) * 1e-6))
-    print('Plant capital cost (M$/y): {:.6f}'.format(
-        (pyo.value(m.fs.charge.plant_capital_cost) / scaling_factor) * 1e-6))
-    print('Plant fixed operating costs (M$/y): {:.6f}'.format(
-        (pyo.value(m.fs.charge.plant_fixed_operating_cost) / scaling_factor) * 1e-6))
-    print('Plant variable operating costs (M$/y): {:.6f}'.format(
-        (pyo.value(m.fs.charge.plant_variable_operating_cost) / scaling_factor) * 1e-6))
-    print('Charge capital cost (M$/y): {:.6f}'.format(
-        (pyo.value(m.fs.charge.capital_cost) / scaling_factor) * 1e-6))
-    print('Charge operating costs (M$/y): {:.6f}'.format(
-        (pyo.value(m.fs.charge.operating_cost) / scaling_factor) * 1e-6))
-    print('Plant Power (MW): {:.6f}'.format(
-        value(m.fs.plant_power_out[0])))
-    print('Boiler efficiency (%): {:.6f}'.format(value(m.fs.boiler_efficiency) * 100))
-    print('Cycle efficiency (%): {:.6f}'.format(value(m.fs.cycle_efficiency)))
-    print('Boiler feed water flow (mol/s): {:.6f}'.format(
-        value(m.fs.boiler.inlet.flow_mol[0])))
+    print('Objective ($/hr): {:.6f}'.format((value(m.obj) / scaling_obj)))
+    print('Plant capital cost ($/yr): {:.6f}'.format(
+        pyo.value(m.fs.charge.plant_capital_cost)))
+    print('Plant fixed operating costs ($/yr): {:.6f}'.format(
+        pyo.value(m.fs.charge.plant_fixed_operating_cost)))
+    print('Plant variable operating costs ($/yr): {:.6f}'.format(
+        pyo.value(m.fs.charge.plant_variable_operating_cost)))
+    print('Charge capital cost ($/yr): {:.6f}'.format(pyo.value(m.fs.charge.capital_cost)))
+    print('Charge operating costs ($/yr): {:.6f}'.format(pyo.value(m.fs.charge.operating_cost)))
+    print('Plant Power (MW): {:.6f}'.format(value(m.fs.plant_power_out[0])))
+    print('Boiler/cycle efficiency (%): {:.6f}/{:.6f}'.format(
+        pyo.value(m.fs.boiler_efficiency) * 100,
+        pyo.value(m.fs.cycle_efficiency) * 100))
+    print('Boiler feed water flow (mol/s): {:.6f}'.format(value(m.fs.boiler.inlet.flow_mol[0])))
     print('Boiler duty (MW_th): {:.6f}'.format(
-        value((m.fs.boiler.heat_duty[0]
-               + m.fs.reheater[1].heat_duty[0]
-               + m.fs.reheater[2].heat_duty[0])
-              * 1e-6)))
-    print('Cooling duty (MW_th): {:.6f}'.format(
-        pyo.value(m.fs.charge.cooler_disjunct.cooler.heat_duty[0]) * -1e-6))
+        pyo.value((m.fs.boiler.heat_duty[0] +
+                   m.fs.reheater[1].heat_duty[0] +
+                   m.fs.reheater[2].heat_duty[0]) * 1e-6)))
+    print('Cooling duty (MW_th): {:.6f}'.format(pyo.value(m.fs.charge.cooler_heat_duty[0]) * -1e-6))
     print('')
     if m.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
-        print('Salt: Solar salt is selected!')
-        print('HXC heat duty: {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.heat_duty[0]) / 1e6))
-        print('Heat exchanger area (m2): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.area)))
-        print('Heat exchanger cost ($) [($/y)]: {:.6f} [{:.6f}]'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.costing.capital_cost),
-            value(m.fs.charge.solar_salt_disjunct.hxc.costing.capital_cost / m.fs.charge.num_of_years)))
-        print('Salt flow (kg/s): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.flow_mass[0])))
-        print('Salt temperature in (K): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.inlet_2.temperature[0])))
-        print('Salt temperature out (K): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.
-                  outlet_2.temperature[0])))
-        print('Steam flow to storage (mol/s): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.inlet_1.flow_mol[0])))
-        print('Water temperature in (K): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.
-                  hxc.side_1.properties_in[0].temperature)))
-        print('Steam temperature out (K): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.
-                  hxc.side_1.properties_out[0].temperature)))
-        print('Delta temperature at inlet (K): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.
-                  delta_temperature_in[0])))
-        print('Delta temperature at outlet (K): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.
-                  delta_temperature_out[0])))
-        print('Salt cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.salt_purchase_cost)))
-        print('Tank cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.
-                  costing.total_tank_cost / m.fs.charge.num_of_years)))
-        print('Salt pump cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.spump_purchase_cost)))
-        print('Salt storage tank volume in m3: {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.tank_volume)))
-        print('Salt dens_mass: {:.6f}'.format(
-            value(m.fs.charge.solar_salt_disjunct.hxc.side_2.properties_in[0].dens_mass['Liq'])))
+        print('Solar heat exchanger is selected!')
+        material_disj = m.fs.charge.solar_salt_disjunct
+        hx = m.fs.charge.solar_salt_disjunct.hxc
     elif m.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
-        print('Salt: Hitec salt is selected')
-        print('HXC heat duty: {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6))
-        print('Heat exchanger area (m2): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.area)))
-        print('Heat exchanger cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.costing.capital_cost / m.fs.charge.num_of_years)))
-        print('Salt flow (kg/s): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.flow_mass[0])))
-        print('Salt temperature in (K): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_2.temperature[0])))
-        print('Salt temperature out (K): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.
-                  outlet_2.temperature[0])))
-        print('Steam flow to storage (mol/s): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.inlet_1.flow_mol[0])))
-        print('Water temperature in (K): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.
-                  hxc.side_1.properties_in[0].temperature)))
-        print('Steam temperature out (K): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.
-                  hxc.side_1.properties_out[0].temperature)))
-        print('Delta temperature at inlet (K): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.
-                  delta_temperature_in[0])))
-        print('Delta temperature at outlet (K): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.
-                  delta_temperature_out[0])))
-        print('Salt cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.salt_purchase_cost)))
-        print('Tank cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.
-                  costing.total_tank_cost / m.fs.charge.num_of_years)))
-        print('Salt pump cost ($/y): {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.spump_purchase_cost)))
-        print('')
-        print('Salt storage tank volume in m3: {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.tank_volume)))
-        print('Salt dens_mass: {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.
-                  side_2.properties_in[0].dens_mass['Liq'])))
-        print('HXC heat duty: {:.6f}'.format(
-            value(m.fs.charge.hitec_salt_disjunct.hxc.heat_duty[0]) / 1e6))
+        print('Hitec heat exchanger is selected')
+        material_disj = m.fs.charge.hitec_salt_disjunct
+        hx = m.fs.charge.hitec_salt_disjunct.hxc
     else:
-        print('Salt: Thermal oil is selected!')
-        print('HXC heat duty: {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.heat_duty[0]) * 1e-6))
-        print('Heat exchanger area (m2): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.area)))
-        print('Oil flow (kg/s): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_2.flow_mass[0])))
-        print('Oil temperature in (K): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.
-                  inlet_2.temperature[0])))
-        print('Oil temperature out (K): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.
-                  outlet_2.temperature[0])))
-        print('Steam flow to storage (mol/s): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.inlet_1.flow_mol[0])))
-        print('Water temperature in (K): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.
-                  hxc.side_1.properties_in[0].temperature)))
-        print('Steam temperature out (K): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.
-                  hxc.side_1.properties_out[0].temperature)))
-        print('Delta temperature at inlet (K): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.
-                  delta_temperature_in[0])))
-        print('Delta temperature at outlet (K): {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.
-                  delta_temperature_out[0])))
-        print('Oil dens_mass: {:.6f}'.format(
-            value(m.fs.charge.thermal_oil_disjunct.hxc.tube.properties_in[0].dens_mass["Liq"])))
+        print('Thermal oil heat exchanger is selected')
+        material_disj = m.fs.charge.thermal_oil_disjunct
+        hx = m.fs.charge.thermal_oil_disjunct.hxc
+
+    print('Charge heat exhanger:')
+    print(' Area (m2): {:.6f}'.format(
+        pyo.value(hx.area)))
+    print(' Heat duty (MW): {:.6f}'.format(pyo.value(hx.heat_duty[0]) * 1e-6))
+    print(' Cost ($/y): {:.6f}'.format(
+        pyo.value(hx.costing.capital_cost / m.fs.charge.num_of_years)))
+    print(' Steam flow to storage (mol/s): {:.6f}'.format(
+        pyo.value(hx.inlet_1.flow_mol[0])))
+    print(' Salt flow (kg/s): {:.6f}'.format(pyo.value(hx.inlet_2.flow_mass[0])))
+    print(' Water temperature in/out (K): {:.6f}/{:.6f}'.format(
+        pyo.value(hx.side_1.properties_in[0].temperature),
+        pyo.value(hx.side_1.properties_out[0].temperature)))
+    print(' Salt temperature in/out (K): {:.6f}/{:.6f}'.format(
+        pyo.value(hx.inlet_2.temperature[0]),
+        pyo.value(hx.outlet_2.temperature[0])))
+    print(' Delta temperature in/out (K): {:.6f}/{:.6f}'.format(
+        pyo.value(hx.delta_temperature_in[0]),
+        pyo.value(hx.delta_temperature_out[0])))
+    print(' Salt cost ($/y): {:.6f}'.format(
+        pyo.value(material_disj.salt_purchase_cost)))
+    print(' Tank cost ($/y): {:.6f}'.format(
+        pyo.value(material_disj.costing.total_tank_cost / m.fs.charge.num_of_years)))
+    print(' Salt pump cost ($/y): {:.6f}'.format(
+        pyo.value(material_disj.spump_purchase_cost)))
+    print(' Salt storage tank volume in m3: {:.6f}'.format(
+        pyo.value(material_disj.tank_volume)))
+    print(' Salt dens_mass: {:.6f}'.format(
+        pyo.value(hx.side_2.properties_in[0].dens_mass['Liq'])))
+
     print('')
     print('Solver details')
     print(results)
@@ -3601,16 +3474,13 @@ def model_analysis(m, solver, heat_duty=None, lmp_signal=None):
     m.fs.charge.cooler_disjunct.cooler.outlet.enth_mol[0].unfix()  # 1 DOF
 
     m.fs.production_cons.deactivate()
-
     # Add constraint to calculate net plant power output
     @m.fs.charge.Constraint(m.fs.time)
     def production_cons_with_storage(b, t):
         return m.fs.plant_power_out[t] == (
-            (-1 * sum(m.fs.turbine[p].work_mechanical[t]
-                      for p in m.set_turbine)
-             - m.fs.charge.hx_pump.control_volume.work[0]
-            ) * 1e-6
-        )
+            (-1) * sum(m.fs.turbine[p].work_mechanical[t] for p in m.set_turbine) -
+            b.hx_pump.control_volume.work[0]
+        ) * (pyunits.MW / 1e6 * pyunits.W)
 
     # Disconnect arc included in the sink disjuncts
     for arc_s in [m.fs.fwh9_to_boiler]:
@@ -3619,29 +3489,25 @@ def model_analysis(m, solver, heat_duty=None, lmp_signal=None):
         arc_s.expanded_block.pressure_equality.deactivate()
 
     # Add scaling when scaling_factor is not used
-    if scaling_factor == 1:
-        set_var_scaling(m)
-        print('>> Set scaling factor through iscale')
-    else:
-        print('>> Scaling factor: {}'.format(scaling_factor))
+    set_var_scaling(m)
+    print('>> Set scaling factor through iscale')
 
     # Calculate revenue
     m.fs.revenue = Expression(
-        expr=(lmp_signal *
-              m.fs.plant_power_out[0]),
+        expr=(lmp_signal * m.fs.plant_power_out[0]),
         doc="Revenue function in $/h assuming 1 hr operation"
     )
 
     # Objective function: total costs
     m.obj = Objective(
         expr=(
-            m.fs.revenue
-            - (m.fs.charge.operating_cost
-               + m.fs.charge.plant_fixed_operating_cost
-               + m.fs.charge.plant_variable_operating_cost) / (365 * 24)
-            - (m.fs.charge.capital_cost
-               + m.fs.charge.plant_capital_cost
-               + m.fs.charge.cooler_capital_cost) / (365 * 24)
+            m.fs.revenue -
+            (m.fs.charge.operating_cost +
+             m.fs.charge.plant_fixed_operating_cost +
+             m.fs.charge.plant_variable_operating_cost) / (365 * 24) -
+            (m.fs.charge.capital_cost +
+             m.fs.charge.plant_capital_cost +
+             m.fs.charge.cooler_capital_cost) / (365 * 24)
         ) * scaling_obj,
         sense=maximize
     )
@@ -3653,7 +3519,8 @@ def model_analysis(m, solver, heat_duty=None, lmp_signal=None):
     #                    solver=solver,
     #                    fluid="thermal_oil",
     #                    source="vhp",
-    #                    sink="recycle_mixer")
+    #                    sink="recycle_mix",
+    #                    cooler=False)
 
     results = run_gdp(m)
 
