@@ -419,7 +419,7 @@ def _make_constraints(m):
     # TODO: fix the amount of salt instead of bounding flow
     @m.fs.Constraint(m.fs.time)
     def hxd_salt_flow(b, t):
-        return m.fs.discharge.hxd.inlet_1.flow_mass[t] <= 500
+        return b.discharge.hxd.inlet_1.flow_mass[t] <= 500
 
 
 def _create_arcs(m):
@@ -1370,7 +1370,7 @@ def set_model_input(m):
     # during initialization, but is unfixed and determined during
     # optimization
     m.fs.discharge.hxd.inlet_1.flow_mass.fix(200)   # kg/s
-    m.fs.discharge.hxd.inlet_1.temperature.fix(831.15)  # K
+    m.fs.discharge.hxd.inlet_1.temperature.fix(828.59)  # K
     m.fs.discharge.hxd.inlet_1.pressure.fix(101325)  # Pa
 
     # m.fs.discharge.hxd.inlet_2.flow_mol.fix(3854)   # kg/s
@@ -1602,9 +1602,9 @@ def build_costing(m,
 
     def solar_spump_purchase_cost_rule(b):
         return (
-            m.fs.discharge.spump_purchase_cost == (
-                m.fs.discharge.pump_CP +
-                m.fs.discharge.motor_CP) *
+            b.spump_purchase_cost == (
+                b.pump_CP +
+                b.motor_CP) *
             (m.CE_index / 394)
         )
     m.fs.discharge.spump_purchase_cost_eq = pyo.Constraint(
@@ -1624,9 +1624,9 @@ def build_costing(m,
     # Calculate and initialize annualized capital cost for the Solar
     # salt discharge storage system
     def solar_cap_cost_rule(b):
-        return (m.fs.discharge.capital_cost * m.fs.discharge.num_of_years ==
-                m.fs.discharge.spump_purchase_cost +
-                m.fs.discharge.hxd.costing.capital_cost)
+        return b.capital_cost * b.num_of_years == (
+            b.spump_purchase_cost +
+            b.hxd.costing.capital_cost) 
     m.fs.discharge.cap_cost_eq = pyo.Constraint(
         rule=solar_cap_cost_rule)
 
@@ -1642,9 +1642,9 @@ def build_costing(m,
         doc="Operating cost in $/year")
 
     def op_cost_rule(b):
-        return m.fs.discharge.operating_cost == (
-            m.fs.discharge.operating_hours *
-            m.fs.discharge.coal_price *
+        return b.operating_cost == (
+            b.operating_hours *
+            b.coal_price *
             m.fs.plant_heat_duty[0] * 1e6
         )
     m.fs.discharge.op_cost_eq = pyo.Constraint(rule=op_cost_rule)
@@ -1701,13 +1701,13 @@ def add_bounds(m):
 
     # Charge heat exchanger section
     for hxd in [m.fs.discharge.hxd]:
-        hxd.inlet_2.flow_mol.setlb(0)
+        hxd.inlet_2.flow_mol.setlb(1e-3)
         hxd.inlet_2.flow_mol.setub(m.storage_flow_max)
-        hxd.inlet_1.flow_mass.setlb(0)
+        hxd.inlet_1.flow_mass.setlb(1e-3)
         hxd.inlet_1.flow_mass.setub(m.salt_flow_max)
-        hxd.outlet_2.flow_mol.setlb(0)
+        hxd.outlet_2.flow_mol.setlb(1e-3)
         hxd.outlet_2.flow_mol.setub(m.storage_flow_max)
-        hxd.outlet_1.flow_mass.setlb(0)
+        hxd.outlet_1.flow_mass.setlb(1e-3)
         hxd.outlet_1.flow_mass.setub(m.salt_flow_max)
         hxd.inlet_1.pressure.setlb(101320)
         hxd.inlet_1.pressure.setub(101330)
@@ -1726,7 +1726,7 @@ def add_bounds(m):
         hxd.overall_heat_transfer_coefficient.setlb(0)
         hxd.overall_heat_transfer_coefficient.setub(10000)
         hxd.area.setlb(0)
-        hxd.area.setub(5000)  # TODO: Check this value
+        hxd.area.setub(5000)
         hxd.costing.pressure_factor.setlb(0)
         hxd.costing.pressure_factor.setub(1e5)
         hxd.costing.capital_cost.setlb(0)
@@ -1752,9 +1752,9 @@ def add_bounds(m):
 
     # Add bounds needed in VHP and HP source disjuncts
     for split in [m.fs.discharge.es_split]:
-        split.to_hxd.flow_mol[:].setlb(0)
+        split.to_hxd.flow_mol[:].setlb(1e-3)
         split.to_hxd.flow_mol[:].setub(m.storage_flow_max)
-        split.to_fwh.flow_mol[:].setlb(0)
+        split.to_fwh.flow_mol[:].setlb(1e-3)
         split.to_fwh.flow_mol[:].setub(0.5 * m.flow_max)
         split.split_fraction[0.0, "to_hxd"].setlb(0)
         split.split_fraction[0.0, "to_hxd"].setub(1)
@@ -1763,8 +1763,8 @@ def add_bounds(m):
         split.inlet.flow_mol[:].setlb(0)
         split.inlet.flow_mol[:].setub(m.flow_max)
 
-    m.fs.plant_power_out[0].setlb(300)
-    m.fs.plant_power_out[0].setub(700)
+    # m.fs.plant_power_out[0].setlb(300)
+    # m.fs.plant_power_out[0].setub(700)
 
     for unit_k in [m.fs.booster]:
         unit_k.inlet.flow_mol[:].setlb(0)
@@ -1862,24 +1862,24 @@ def add_bounds(m):
         # fwh.shell.deltaP[:].setlb(-1e9)
         # fwh.shell.deltaP[:].setub(0)
 
-    set_fwh_mixer = [1, 2, 3, 4, 6, 7, 8]
-    for p in set_fwh_mixer:
-        fwhmix = m.fs.fwh_mixer[p]
-        fwhmix.steam.flow_mol[:].setlb(0)
-        fwhmix.steam.flow_mol[:].setub(m.flow_max)
-        fwhmix.drain.flow_mol[:].setlb(0)
-        fwhmix.drain.flow_mol[:].setub(m.flow_max)
-        fwhmix.outlet.flow_mol[:].setlb(0)
-        fwhmix.outlet.flow_mol[:].setub(m.flow_max)
+    # set_fwh_mixer = [1, 2, 3, 4, 6, 7, 8]
+    # for p in set_fwh_mixer:
+    #     fwhmix = m.fs.fwh_mixer[p]
+    #     fwhmix.steam.flow_mol[:].setlb(0)
+    #     fwhmix.steam.flow_mol[:].setub(m.flow_max)
+    #     fwhmix.drain.flow_mol[:].setlb(0)
+    #     fwhmix.drain.flow_mol[:].setub(m.flow_max)
+    #     fwhmix.outlet.flow_mol[:].setlb(0)
+    #     fwhmix.outlet.flow_mol[:].setub(m.flow_max)
 
-    m.fs.deaerator.steam.flow_mol[:].setlb(0)
-    m.fs.deaerator.steam.flow_mol[:].setub(m.flow_max)
-    m.fs.deaerator.drain.flow_mol[:].setlb(0)
-    m.fs.deaerator.drain.flow_mol[:].setub(m.flow_max)
+    # m.fs.deaerator.steam.flow_mol[:].setlb(0)
+    # m.fs.deaerator.steam.flow_mol[:].setub(m.flow_max)
+    # m.fs.deaerator.drain.flow_mol[:].setlb(0)
+    # m.fs.deaerator.drain.flow_mol[:].setub(m.flow_max)
     m.fs.deaerator.feedwater.flow_mol[:].setlb(0)
     m.fs.deaerator.feedwater.flow_mol[:].setub(m.flow_max)
-    m.fs.deaerator.mixed_state[:].flow_mol.setlb(0)
-    m.fs.deaerator.mixed_state[:].flow_mol.setub(m.flow_max)
+    # m.fs.deaerator.mixed_state[:].flow_mol.setlb(0)
+    # m.fs.deaerator.mixed_state[:].flow_mol.setub(m.flow_max)
 
     # m.fs.condenser_mix.main.flow_mol[:].setlb(0)
     # m.fs.condenser_mix.main.flow_mol[:].setub(m.flow_max)
@@ -2187,8 +2187,8 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
         )
         csvfile.flush()
 
-    # log_close_to_bounds(nlp_model)
-    # log_infeasible_constraints(nlp_model)
+    log_close_to_bounds(nlp_model)
+    log_infeasible_constraints(nlp_model)
 
 
 def create_csv_header():
@@ -2208,26 +2208,13 @@ def run_gdp(m):
     csvfile = create_csv_header()
 
     opt = SolverFactory('gdpopt')
-    # opt.CONFIG.strategy = 'RIC'  # LOA is an option
-    # opt.CONFIG.OA_penalty_factor = 1e4
-    # opt.CONFIG.max_slack = 1e4
-    # opt.CONFIG.call_after_subproblem_solve = print_model
-    # # opt.CONFIG.mip_solver = 'glpk'
-    # # opt.CONFIG.mip_solver = 'cbc'
-    # opt.CONFIG.mip_solver = 'gurobi_direct'
-    # opt.CONFIG.nlp_solver = 'ipopt'
-    # opt.CONFIG.tee = True
-    # opt.CONFIG.init_strategy = "no_init"
-    # opt.CONFIG.time_limit = "2400"
-    # # opt.CONFIG.subproblem_presolve = False
     _prop_bnds_root_to_leaf_map[ExternalFunctionExpression] = lambda x, y, z: None
 
     results = opt.solve(
         m,
         tee=True,
         algorithm='RIC',
-        # mip_solver='gurobi_direct',
-        mip_solver='cbc',
+        mip_solver='gurobi_direct',
         nlp_solver='ipopt',
         OA_penalty_factor=1e4,
         max_slack=1e4,
@@ -2241,7 +2228,8 @@ def run_gdp(m):
             symbolic_solver_labels=True,
             options={
                 "linear_solver": "ma27",
-                "max_iter": 150
+                "max_iter": 120,
+                # "tol": 1e-6
             }
         )
     )
@@ -2264,70 +2252,60 @@ def print_results(m, results):
     print('')
     est = m.fs.discharge.es_turbine
     hxd = m.fs.discharge.hxd
-    print('Obj (M$/year): {:.6f}'.format((value(m.obj) / m.scaling_obj) * 1e-6))
-    print('Discharge capital cost ($/y): {:.6f}'.format(
-        pyo.value(m.fs.discharge.capital_cost) * 1e-6))
-    print('Charge Operating costs ($/y): {:.6f}'.format(
+    print('Obj ($/hr): {:.6f}'.format(value(m.obj) / m.scaling_obj))
+    print('Discharge capital cost ($/yr): {:.6f}'.format(pyo.value(m.fs.discharge.capital_cost)))
+    print('Discharge operating costs ($/yr): {:.6f}'.format(
         pyo.value(m.fs.discharge.operating_cost) * 1e-6))
     print('Storage Turbine Power (MW): {:.6f}'.format(
-        value(est.control_volume.work[0]) * -1e-6))
-    print('Plant Power (MW): {:.6f}'.format(
-        value(m.fs.plant_power_out[0])))
-    print('Boiler feed water flow (mol/s): {:.6f}'.format(
-        value(m.fs.boiler.inlet.flow_mol[0])))
+        pyo.value(est.control_volume.work[0]) * -1e-6))
+    print('Plant Power (MW): {:.6f}'.format(value(m.fs.plant_power_out[0])))
+    print('Boiler feed water flow (mol/s): {:.6f}'.format(value(m.fs.boiler.inlet.flow_mol[0])))
     print('Boiler duty (MW_th): {:.6f}'.format(
-        value((m.fs.boiler.heat_duty[0]
-               + m.fs.reheater[1].heat_duty[0]
-               + m.fs.reheater[2].heat_duty[0])
-              * 1e-6)))
+        pyo.value((m.fs.boiler.heat_duty[0]
+                   + m.fs.reheater[1].heat_duty[0]
+                   + m.fs.reheater[2].heat_duty[0])
+                  * 1e-6)))
     print('')
     print('Source: Cond pump is selected!')
-    print('Heat exchanger area (m2): {:.6f}'.format(
-        value(hxd.area)))
-    print('Heat exchanger cost ($/y): {:.6f}'.format(
-        value(hxd.costing.capital_cost / 15)))
-    print('Salt flow (kg/s): {:.6f}'.format(
-        value(hxd.inlet_1.flow_mass[0])))
-    print('Salt temperature in (K): {:.6f}'.format(
-        value(hxd.inlet_1.temperature[0])))
-    print('Salt temperature out (K): {:.6f}'.format(
-        value(hxd.outlet_1.temperature[0])))
-    print('Steam flow to storage (mol/s): {:.6f}'.format(
-        value(hxd.inlet_2.flow_mol[0])))
-    print('Water temperature in (K): {:.6f}'.format(
-        value(hxd.side_2.properties_in[0].temperature)))
-    print('Steam temperature out (K): {:.6f}'.format(
-        value(hxd.side_2.properties_out[0].temperature)))
-    print('HXD overall heat transfer coefficient: {:.6f}'.format(
-        value(hxd.overall_heat_transfer_coefficient[0])))
-    print('Delta temperature at inlet (K): {:.6f}'.format(
-        value(hxd.delta_temperature_in[0])))
-    print('Delta temperature at outlet (K): {:.6f}'.format(
-        value(hxd.delta_temperature_out[0])))
-    print('Salt pump cost ($/y): {:.6f}'.format(
-        value(m.fs.discharge.spump_purchase_cost)))
+    print('Discharge heat exchanger:')
+    print(' Area (m2): {:.6f}'.format(pyo.value(hxd.area)))
+    print(' Heat duty: {:.6f}'.format(pyo.value(hxd.heat_duty[0]) * 1e-6))
+    print(' Cost ($/yr): {:.6f}'.format(pyo.value(hxd.costing.capital_cost /
+                                                  m.fs.discharge.num_of_years)))
+    print(' Steam flow to storage (mol/s): {:.6f}'.format(pyo.value(hxd.inlet_2.flow_mol[0])))
+    print(' Salt flow (kg/s): {:.6f}'.format(pyo.value(hxd.inlet_1.flow_mass[0])))
+    print(' Water temperature in/out (K): {:.6f}/{:.6f}'.format(
+        pyo.value(hxd.side_2.properties_in[0].temperature),
+        pyo.value(hxd.side_2.properties_out[0].temperature)))
+    print(' Salt temperature in/out (K): {:.6f}/{:.6f}'.format(
+        pyo.value(hxd.inlet_1.temperature[0]),
+        pyo.value(hxd.outlet_1.temperature[0])))
+    print(' Overall heat transfer coefficient: {:.6f}'.format(
+        pyo.value(hxd.overall_heat_transfer_coefficient[0])))
+    print(' Delta temperature in/out (K): {:.6f}/{:.6f}'.format(
+        pyo.value(hxd.delta_temperature_in[0]),
+        pyo.value(hxd.delta_temperature_out[0])))
+    print(' Salt pump cost ($/y): {:.6f}'.format(
+        pyo.value(m.fs.discharge.spump_purchase_cost)))
+    print(' Salt dens_mass: {:.6f}'.format(
+        pyo.value(hxd.side_1.properties_in[0].dens_mass['Liq'])))
     print('')
+    print('Storage Split Fraction to discharge heat exchanger: {:.6f}'.format(
+        pyo.value(m.fs.discharge.es_split.split_fraction[0, "to_hxd"])))
     print('Condenser Pressure in (MPa): {:.6f}'.format(
-        value(m.fs.condenser.inlet.pressure[0]) * 1e-6))
+        pyo.value(m.fs.condenser.inlet.pressure[0]) * 1e-6))
     print('Storage Turbine Pressure in (MPa): {:.6f}'.format(
-        value(est.inlet.pressure[0]) * 1e-6))
+        pyo.value(est.inlet.pressure[0]) * 1e-6))
     print('Storage Turbine Pressure out (MPa): {:.6f}'.format(
-        value(est.outlet.pressure[0]) * 1e-6))
+        pyo.value(est.outlet.pressure[0]) * 1e-6))
     print('Storage Turbine Vapor Frac in (K): {:.6f}'.format(
-        value(est.control_volume.properties_in[0].vapor_frac)))
-    print('Storage Turbine Temperature in (K): {:.6f}'.format(
-        value(est.control_volume.properties_in[0].temperature)))
-    print('Storage Turbine Temperature out (K): {:.6f}'.format(
-        value(est.control_volume.properties_out[0].temperature)))
+        pyo.value(est.control_volume.properties_in[0].vapor_frac)))
+    print('Storage Turbine Temperature in/out (K): {:.6f}/{:.6f}'.format(
+        pyo.value(est.control_volume.properties_in[0].temperature),
+        pyo.value(est.control_volume.properties_out[0].temperature)))
     print('Storage Turbine Saturation Temperature (K): {:.6f}'.format(
-        value(est.control_volume.properties_out[0].temperature_sat)))
-    print('Storage Split Fraction to HXD: {:.6f}'.format(
-        value(m.fs.discharge.es_split.split_fraction[0, "to_hxd"])))
+        pyo.value(est.control_volume.properties_out[0].temperature_sat)))
     print('')
-    print('Salt dens_mass: {:.6f}'.format(
-        value(hxd.side_1.properties_in[0].dens_mass['Liq'])))
-    print('HXC heat duty: {:.6f}'.format(
-        value(hxd.heat_duty[0]) * 1e-6))
     print('')
     print('Solver details')
     print(results)
@@ -2386,6 +2364,8 @@ def model_analysis(m, solver, heat_duty=None, source=None):
     m.fs.discharge.hxd.inlet_1.flow_mass.unfix()
     m.fs.discharge.hxd.area.unfix()
 
+    # m.fs.discharge.hxd.outlet_1.temperature[0].fix(513.15)
+
     # Objective function: total costs
     m.scaling_obj = 1e-5
     m.obj = Objective(
@@ -2419,7 +2399,6 @@ if __name__ == "__main__":
 
     m_usc = usc.build_plant_model()
     usc.initialize(m_usc)
-
     m, solver = main(m_usc)
 
     # source = ["condpump", "booster",
@@ -2428,7 +2407,6 @@ if __name__ == "__main__":
     #           "fwh5", "fwh4",
     #           "fwh3", "fwh2",
     #           "fwh1"]
-
     m = model_analysis(m,
                        solver,
                        heat_duty=148.5,
