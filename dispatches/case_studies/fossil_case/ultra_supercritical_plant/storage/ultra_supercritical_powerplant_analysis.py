@@ -36,45 +36,45 @@ __author__ = "Naresh Susarla & E S Rawlings"
 
 import os
 import logging
-
+import pandas as pd
 import numpy as np
 
 # Import Pyomo libraries
-from pyomo.environ import (ConcreteModel, RangeSet, TransformationFactory,
-                           Constraint, Expression, Param, Var, Reals, value)
-from pyomo.environ import units as pyunits
-from pyomo.network import Arc
-from pyomo.common.fileutils import this_file_dir
+from pyomo.environ import (Constraint, Expression, Param, Var, value)
+# from pyomo.environ import units as pyunits
+# from pyomo.network import Arc
+# from pyomo.common.fileutils import this_file_dir
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
 
 # Import IDAES libraries
-from idaes.core import FlowsheetBlock, MaterialBalanceType
-from idaes.core.util import get_solver
-from idaes.core.util.initialization import propagate_state
-from idaes.core.util.model_statistics import degrees_of_freedom
-from idaes.generic_models.unit_models import (
-    HeatExchanger,
-    MomentumMixingType,
-    Heater,
-)
-from idaes.power_generation.unit_models.helm import (
-    HelmMixer,
-    HelmIsentropicCompressor,
-    HelmTurbineStage,
-    HelmSplitter
-)
-from idaes.generic_models.unit_models.heat_exchanger import (
-    delta_temperature_underwood_callback)
-import idaes.core.util.scaling as iscale
-import idaes.logger as idaeslog
-from idaes.core.util.misc import svg_tag
+# from idaes.core import FlowsheetBlock, MaterialBalanceType
+from idaes.core.solvers.get_solver import get_solver
+# from idaes.core.util import get_solver
+# from idaes.core.util.initialization import propagate_state
+# from idaes.core.util.model_statistics import degrees_of_freedom
+# from idaes.generic_models.unit_models import (
+#     HeatExchanger,
+#     MomentumMixingType,
+#     Heater,
+# )
+# from idaes.power_generation.unit_models.helm import (
+#     HelmMixer,
+#     HelmIsentropicCompressor,
+#     HelmTurbineStage,
+#     HelmSplitter
+# )
+# from idaes.generic_models.unit_models.heat_exchanger import (
+#     delta_temperature_underwood_callback)
+# import idaes.core.util.scaling as iscale
+# import idaes.logger as idaeslog
+# from idaes.core.util.misc import svg_tag
 
 # Import Property Packages (IAPWS95 for Water/Steam)
-from dispatches.models.fossil_case.ultra_supercritical_plant import (
+from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
-from idaes.generic_models.properties import iapws95
-from pyomo.util.infeasible import (log_infeasible_constraints,
-                                    log_close_to_bounds)
+# from idaes.generic_models.properties import iapws95
+# from pyomo.util.infeasible import (log_infeasible_constraints,
+#                                     log_close_to_bounds)
 logging.basicConfig(level=logging.INFO)
 # For plots
 from matplotlib import pyplot as plt
@@ -314,20 +314,28 @@ def model_analysis(m):
     cf_list = []
     opex_list = []
     cycle_eff = []
+    power_list = []
 
     m.capacity_factor = Param(initialize=1, mutable=True)
-    capacity_factor_list = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]
+    # capacity_factor_list = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]
+    power_enum = [284, 290, 300, 320, 340, 350, 360, 380, 400, 420, 430, 436]
 
-    for cf in capacity_factor_list:
-        m.fs.plant_power_out[0].fix(cf*436)
+    # for cf in capacity_factor_list:
+    for p in power_enum:
+        # m.fs.plant_power_out[0].fix(cf*436)
+        m.fs.plant_power_out[0].fix(p)
         solver.solve(m, tee=True, symbolic_solver_labels=True)
-        cf_list.append(cf*100)
+        cf_list.append((p/436)*100)
+        power_list.append(value(m.fs.plant_power_out[0]))
         opex_list.append(value(m.fs.operating_cost))
         cycle_eff.append(value(m.fs.cycle_efficiency))
         print('Plant Power (MW) =', value(m.fs.plant_power_out[0]))
         print('Plant Heat Duty (MW) =', value(m.fs.plant_heat_duty[0]))
         print('Plant Operating cost ($/MWh) =', value(m.fs.operating_cost))
 
+    df_data = pd.DataFrame(list(zip(cf_list, power_list, opex_list, cycle_eff)),
+               columns =['Capacity Factor', 'Plant_power [MW]', 'Operating_cost [$/MWh]', 'Cycle_efficiency'])
+    df_data.to_csv('cost_data.csv')
     cf_array = np.asarray(cf_list)
     opex_array = np.asarray(opex_list)
     cycle_array = np.asarray(cycle_eff)
@@ -360,7 +368,8 @@ if __name__ == "__main__":
     solver = get_solver("ipopt", optarg)
 
     # Build ultra supercriticla power plant model for analysis
-    method = "without_efficiency"
+    method = "with_efficiency"
+    # method = "no_efficiency"
     m = build_plant_model(method=method)
 
     model_analysis(m)
