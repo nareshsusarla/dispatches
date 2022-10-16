@@ -294,13 +294,13 @@ def print_results(m, blks, results):
         print(' Hot salt inventory (mton): {:.4f}'.format(
             (value(blks[c].usc.salt_inventory_hot))))
         print(' Hot salt from HXC (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxc.outlet_2.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxc.tube_outlet.flow_mass[0]) * 3600))
         print(' Hot salt into HXD (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxd.inlet_1.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxd.shell_inlet.flow_mass[0]) * 3600))
         print(' Cold salt into HXC (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxc.inlet_2.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxc.tube_inlet.flow_mass[0]) * 3600))
         print(' Cold salt from HXD (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxd.outlet_1.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxd.shell_outlet.flow_mass[0]) * 3600))
         print(' HXC area (m2): {:.4f}'.format(
             value(blks[c].usc.fs.hxc.area)))
         print(' HXD area (m2): {:.4f}'.format(
@@ -314,26 +314,24 @@ def print_results(m, blks, results):
         print(' Split fraction to HXD: {:.4f}'.format(
             value(blks[c].usc.fs.ess_bfp_split.split_fraction[0, "to_hxd"])))
         print(' Salt flow HXC (kg/s): {:.4f}'.format(
-            value(blks[c].usc.fs.hxc.outlet_2.flow_mass[0])))
+            value(blks[c].usc.fs.hxc.tube_outlet.flow_mass[0])))
         print(' Salt flow HXD (kg/s): {:.4f}'.format(
-            value(blks[c].usc.fs.hxd.outlet_1.flow_mass[0])))
+            value(blks[c].usc.fs.hxd.shell_outlet.flow_mass[0])))
         print(' Steam flow HXC (mol/s): {:.4f}'.format(
-            value(blks[c].usc.fs.hxc.outlet_1.flow_mol[0])))
+            value(blks[c].usc.fs.hxc.shell_outlet.flow_mol[0])))
         print(' Steam flow HXD (mol/s): {:.4f}'.format(
-            value(blks[c].usc.fs.hxd.outlet_2.flow_mol[0])))
+            value(blks[c].usc.fs.hxd.tube_outlet.flow_mol[0])))
         print(' HXC salt inlet/outlet temperature (K): {:.4f}/{:.4f}'.format(
-            value(blks[c].usc.fs.hxc.inlet_2.temperature[0]),
-            value(blks[c].usc.fs.hxc.outlet_2.temperature[0])))
+            value(blks[c].usc.fs.hxc.tube_inlet.temperature[0]),
+            value(blks[c].usc.fs.hxc.tube_outlet.temperature[0])))
         print(' HXD salt inlet/outlet temperature (K): {:.4f}/{:.4f}'.format(
-            value(blks[c].usc.fs.hxd.inlet_1.temperature[0]),
-            value(blks[c].usc.fs.hxd.outlet_1.temperature[0])))
-        print(' Delta T in HXC (kg): {:.4f}'.format(
-            value(blks[c].usc.fs.hxc.delta_temperature_in[0])))
-        print(' Delta T out HXC (kg): {:.4f}'.format(
+            value(blks[c].usc.fs.hxd.shell_inlet.temperature[0]),
+            value(blks[c].usc.fs.hxd.shell_outlet.temperature[0])))
+        print(' HXC delta temperature in/out (K): {:.4f}/{:.4f}'.format(
+            value(blks[c].usc.fs.hxc.delta_temperature_in[0]),
             value(blks[c].usc.fs.hxc.delta_temperature_out[0])))
-        print(' Delta T in HXD (kg): {:.4f}'.format(
-            value(blks[c].usc.fs.hxd.delta_temperature_in[0])))
-        print(' Delta T out HXD (kg): {:.4f}'.format(
+        print(' HXD delta temperature in/out (K): {:.4f}/{:.4f}'.format(
+            value(blks[c].usc.fs.hxd.delta_temperature_in[0]),
             value(blks[c].usc.fs.hxd.delta_temperature_out[0])))
         c += 1
 

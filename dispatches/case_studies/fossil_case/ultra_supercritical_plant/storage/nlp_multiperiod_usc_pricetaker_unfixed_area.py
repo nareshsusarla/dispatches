@@ -119,16 +119,16 @@ def create_ss_model():
     m.usc.fs.ess_hp_split.split_fraction[0, "to_hxc"].unfix()
     m.usc.fs.ess_bfp_split.split_fraction[0, "to_hxd"].unfix()
     for charge_hxc in [m.usc.fs.hxc]:
-        charge_hxc.inlet_1.unfix()
-        charge_hxc.inlet_2.flow_mass.unfix()
+        charge_hxc.shell_inlet.unfix()
+        charge_hxc.tube_inlet.flow_mass.unfix()
         charge_hxc.area.unfix()
-        charge_hxc.outlet_2.temperature[0].unfix()
+        charge_hxc.tube_outlet.temperature[0].unfix()
 
     for discharge_hxd in [m.usc.fs.hxd]:
-        discharge_hxd.inlet_2.unfix()
-        discharge_hxd.inlet_1.flow_mass.unfix()
+        discharge_hxd.tube_inlet.unfix()
+        discharge_hxd.shell_inlet.flow_mass.unfix()
         discharge_hxd.area.unfix()
-        discharge_hxd.inlet_1.temperature[0].unfix()
+        discharge_hxd.shell_inlet.temperature[0].unfix()
 
     if not new_design:
         for unit in [m.usc.fs.cooler]:
@@ -137,7 +137,7 @@ def create_ss_model():
 
     # Fix storage heat exchangers area and salt temperatures
     cold_salt_temperature = design_data_dict["cold_salt_temperature"]
-    m.usc.fs.hxd.outlet_1.temperature[0].fix(cold_salt_temperature)
+    m.usc.fs.hxd.shell_outlet.temperature[0].fix(cold_salt_temperature)
 
     return m
 
@@ -213,8 +213,8 @@ def create_mp_block():
         return (
             1e-3 * b1.salt_inventory_hot == (
                 b1.previous_salt_inventory_hot
-                + (3600 * b.hxc.inlet_2.flow_mass[0]
-                   - 3600 * b.hxd.inlet_1.flow_mass[0]) * factor_mton # in mton
+                + (3600 * b.hxc.tube_inlet.flow_mass[0]
+                   - 3600 * b.hxd.shell_inlet.flow_mass[0]) * factor_mton # in mton
             ) * 1e-3
         )
 
@@ -259,11 +259,11 @@ def create_mp_block():
 
     @b1.fs.Constraint(doc="Salt temperature in charge heat exchanger")
     def constraint_charge_temperature(b):
-        return b1.previous_charge_temperature == b.hxc.outlet_2.temperature[0]
+        return b1.previous_charge_temperature == b.hxc.tube_outlet.temperature[0]
 
     @b1.fs.Constraint(doc="Salt temperature in discharge heat exchanger")
     def constraint_discharge_temperature(b):
-        return b.hxd.inlet_1.temperature[0] == b1.previous_charge_temperature
+        return b.hxd.shell_inlet.temperature[0] == b1.previous_charge_temperature
 
 
     return m
@@ -281,7 +281,7 @@ def get_link_variable_pairs(b1, b2):
         (b1.usc.fs.plant_power_out[0], b2.usc.previous_power),
         (b1.usc.fs.hxc.area, b2.usc.previous_charge_area),
         (b1.usc.fs.hxd.area, b2.usc.previous_discharge_area),
-        (b1.usc.fs.hxc.outlet_2.temperature[0], b2.usc.previous_charge_temperature)
+        (b1.usc.fs.hxc.tube_outlet.temperature[0], b2.usc.previous_charge_temperature)
     ]
 
 # The tank level at the end of the last period must be the same as the

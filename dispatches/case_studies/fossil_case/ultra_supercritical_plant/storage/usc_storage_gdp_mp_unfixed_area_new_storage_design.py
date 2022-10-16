@@ -57,6 +57,8 @@ from pyomo.contrib.fbbt.fbbt import _prop_bnds_root_to_leaf_map
 from pyomo.core.expr.numeric_expr import ExternalFunctionExpression
 
 # Import IDAES libraries
+import idaes.logger as idaeslog
+import idaes.core.util.scaling as iscale
 from idaes.core import MaterialBalanceType
 from idaes.core.util.initialization import propagate_state
 from idaes.core.solvers.get_solver import get_solver
@@ -66,28 +68,22 @@ from idaes.models.unit_models import (HeatExchanger,
                                       MomentumMixingType,
                                       Heater)
 from idaes.models.unit_models import PressureChanger
-from idaes.models.unit_models.heat_exchanger import (
-    delta_temperature_underwood_callback)
-from idaes.models.unit_models.pressure_changer import (
-    ThermodynamicAssumption)
+from idaes.models.unit_models.heat_exchanger import delta_temperature_underwood_callback
+from idaes.models.unit_models.pressure_changer import ThermodynamicAssumption
 from idaes.models_extra.power_generation.unit_models.helm import (HelmMixer,
                                                                   HelmTurbineStage,
                                                                   HelmSplitter)
 from idaes.core import UnitModelCostingBlock
 from idaes.models.costing.SSLW import SSLWCosting, SSLWCostingData
-import idaes.core.util.scaling as iscale
-import idaes.logger as idaeslog
 from idaes.core.util.exceptions import ConfigurationError
 
 # Import ultra supercritical power plant model
 # from dispatches.models.fossil_case.ultra_supercritical_plant import (
 #     ultra_supercritical_powerplant_mixcon as usc)
-# from dispatches.models.fossil_case.ultra_supercritical_plant import (
-#     ultra_supercritical_powerplant as usc)
 from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
-# from dispatches.models.fossil_case.properties import solarsalt_properties
+# Import Solar salt property package
 from dispatches.properties import solarsalt_properties
 
 from IPython import embed
@@ -386,13 +382,13 @@ def no_storage_mode_disjunct_equations(disj):
         doc="Connection from reheater 1 to turbine 3"
     )
     m.fs.no_storage_mode_disjunct.fwh9_to_boiler = Arc(
-        source=m.fs.fwh[9].outlet_2,
+        source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet,
         doc="Connection from FWH9 to boiler"
     )
     m.fs.no_storage_mode_disjunct.condpump_to_fwh1 = Arc(
         source=m.fs.cond_pump.outlet,
-        destination=m.fs.fwh[1].inlet_2,
+        destination=m.fs.fwh[1].tube_inlet,
         doc="Connection from condenser pump to FWH1"
     )
 
@@ -423,38 +419,28 @@ def charge_mode_disjunct_equations(disj):
     # the pressure of the water to allow mixing it at a desired
     # location within the plant.
     m.fs.charge_mode_disjunct.ess_charge_split = HelmSplitter(
-        default={
-            "property_package": m.fs.prop_water,
-            "outlet_list": ["to_hxc", "to_turbine"],
-        }
+        property_package=m.fs.prop_water,
+        outlet_list=["to_hxc", "to_turbine"]
     )
 
     m.fs.charge_mode_disjunct.hxc = HeatExchanger(
-        default={
-            "delta_temperature_callback": delta_temperature_underwood_callback,
-            "shell": {
-                "property_package": m.fs.prop_water
-            },
-            "tube": {
-                "property_package": m.fs.solar_salt_properties
-            }
-        }
+        delta_temperature_callback=delta_temperature_underwood_callback,
+        hot_side_name="shell",
+        cold_side_name="tube",
+        shell={"property_package": m.fs.prop_water},
+        tube={"property_package": m.fs.solar_salt_properties}
     )
 
     m.fs.charge_mode_disjunct.hx_pump = PressureChanger(
-        default={
-            "property_package": m.fs.prop_water,
-            "material_balance_type": MaterialBalanceType.componentTotal,
-            "thermodynamic_assumption": ThermodynamicAssumption.pump,
-        }
+        property_package=m.fs.prop_water,
+        material_balance_type=MaterialBalanceType.componentTotal,
+        thermodynamic_assumption=ThermodynamicAssumption.pump,
     )
 
     m.fs.charge_mode_disjunct.mixer2 = HelmMixer(
-        default={
-            "momentum_mixing_type": MomentumMixingType.none,
-            "inlet_list": ["from_fwh9", "from_hx_pump"],
-            "property_package": m.fs.prop_water,
-        }
+        momentum_mixing_type=MomentumMixingType.none,
+        inlet_list=["from_fwh9", "from_hx_pump"],
+        property_package=m.fs.prop_water,
     )
 
     # Calculate the overall heat transfer coefficient for the Solar
@@ -463,24 +449,24 @@ def charge_mode_disjunct_equations(disj):
     solar_hxc = m.fs.charge_mode_disjunct.hxc
     solar_hxc.salt_reynolds_number = pyo.Expression(
         expr=(
-            (solar_hxc.inlet_2.flow_mass[0] *
+            (solar_hxc.tube_inlet.flow_mass[0] *
              m.fs.tube_outer_dia) /
             (m.fs.shell_eff_area *
-             solar_hxc.side_2.properties_in[0].visc_d_phase["Liq"])
+             solar_hxc.cold_side.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number")
     solar_hxc.salt_prandtl_number = pyo.Expression(
         expr=(
-            solar_hxc.side_2.properties_in[0].cp_mass["Liq"] *
-            solar_hxc.side_2.properties_in[0].visc_d_phase["Liq"] /
-            solar_hxc.side_2.properties_in[0].therm_cond_phase["Liq"]
+            solar_hxc.cold_side.properties_in[0].cp_mass["Liq"] *
+            solar_hxc.cold_side.properties_in[0].visc_d_phase["Liq"] /
+            solar_hxc.cold_side.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number")
     solar_hxc.salt_prandtl_wall = pyo.Expression(
         expr=(
-            solar_hxc.side_2.properties_out[0].cp_mass["Liq"] *
-            solar_hxc.side_2.properties_out[0].visc_d_phase["Liq"] /
-            solar_hxc.side_2.properties_out[0].therm_cond_phase["Liq"]
+            solar_hxc.cold_side.properties_out[0].cp_mass["Liq"] *
+            solar_hxc.cold_side.properties_out[0].visc_d_phase["Liq"] /
+            solar_hxc.cold_side.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number at wall")
     solar_hxc.salt_nusselt_number = pyo.Expression(
@@ -495,20 +481,20 @@ def charge_mode_disjunct_equations(disj):
         doc="Salt Nusslet Number from 2019, App Ener (233-234), 126")
     solar_hxc.steam_reynolds_number = pyo.Expression(
         expr=(
-            solar_hxc.inlet_1.flow_mol[0] *
-            solar_hxc.side_1.properties_in[0].mw *
+            solar_hxc.shell_inlet.flow_mol[0] *
+            solar_hxc.hot_side.properties_in[0].mw *
             m.fs.tube_inner_dia /
             (m.fs.tube_cs_area *
              m.fs.n_tubes *
-             solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"])
+             solar_hxc.hot_side.properties_in[0].visc_d_phase["Vap"])
         ),
         doc="Steam Reynolds Number")
     solar_hxc.steam_prandtl_number = pyo.Expression(
         expr=(
-            (solar_hxc.side_1.properties_in[0].cp_mol /
-             solar_hxc.side_1.properties_in[0].mw) *
-            solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
-            solar_hxc.side_1.properties_in[0].therm_cond_phase["Vap"]
+            (solar_hxc.hot_side.properties_in[0].cp_mol /
+             solar_hxc.hot_side.properties_in[0].mw) *
+            solar_hxc.hot_side.properties_in[0].visc_d_phase["Vap"] /
+            solar_hxc.hot_side.properties_in[0].therm_cond_phase["Vap"]
         ),
         doc="Steam Prandtl Number")
     solar_hxc.steam_nusselt_number = pyo.Expression(
@@ -516,8 +502,8 @@ def charge_mode_disjunct_equations(disj):
             0.023 *
             (solar_hxc.steam_reynolds_number**0.8) *
             (solar_hxc.steam_prandtl_number**(0.33)) *
-            ((solar_hxc.side_1.properties_in[0].visc_d_phase["Vap"] /
-              solar_hxc.side_1.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
+            ((solar_hxc.hot_side.properties_in[0].visc_d_phase["Vap"] /
+              solar_hxc.hot_side.properties_out[0].visc_d_phase["Liq"]) ** 0.14)
         ),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia")
 
@@ -525,14 +511,14 @@ def charge_mode_disjunct_equations(disj):
     # sides of charge heat exchanger
     solar_hxc.h_salt = pyo.Expression(
         expr=(
-            solar_hxc.side_2.properties_in[0].therm_cond_phase["Liq"] *
+            solar_hxc.cold_side.properties_in[0].therm_cond_phase["Liq"] *
             solar_hxc.salt_nusselt_number /
             m.fs.tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]")
     solar_hxc.h_steam = pyo.Expression(
         expr=(
-            solar_hxc.side_1.properties_in[0].therm_cond_phase["Vap"] *
+            solar_hxc.hot_side.properties_in[0].therm_cond_phase["Vap"] *
             solar_hxc.steam_nusselt_number /
             m.fs.tube_inner_dia
         ),
@@ -575,7 +561,7 @@ def charge_mode_disjunct_equations(disj):
     # Reconnect condenser pump to FWH1
     m.fs.charge_mode_disjunct.condpump_to_fwh1 = Arc(
         source=m.fs.cond_pump.outlet,
-        destination=m.fs.fwh[1].inlet_2,
+        destination=m.fs.fwh[1].tube_inlet,
         doc="Connection from condenser pump to FWH1"
     )
 
@@ -592,18 +578,18 @@ def charge_mode_disjunct_equations(disj):
     )
     m.fs.charge_mode_disjunct.esscharg_to_hxc = Arc(
         source=m.fs.charge_mode_disjunct.ess_charge_split.to_hxc,
-        destination=m.fs.charge_mode_disjunct.hxc.inlet_1,
+        destination=m.fs.charge_mode_disjunct.hxc.shell_inlet,
         doc="Connection from HP splitter to HXC inlet 1"
     )
     m.fs.charge_mode_disjunct.hxc_to_hxpump = Arc(
-        source=m.fs.charge_mode_disjunct.hxc.outlet_1,
+        source=m.fs.charge_mode_disjunct.hxc.shell_outlet,
         destination=m.fs.charge_mode_disjunct.hx_pump.inlet,
         doc="Connection from HXC to HX pump"
     )
 
     # Declare arcs to connect the mixer 2 to the plant
     m.fs.charge_mode_disjunct.fwh9_to_mix2 = Arc(
-        source=m.fs.fwh[9].outlet_2,
+        source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.charge_mode_disjunct.mixer2.from_fwh9,
         doc="Connection from FWH9 outlet to mixer2"
     )
@@ -620,7 +606,7 @@ def charge_mode_disjunct_equations(disj):
 
     # Declare constraints to save global variables
     m.fs.charge_mode_disjunct.eq_salt_amount_in_charge_storage = pyo.Constraint(
-        expr=m.fs.salt_storage == m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0]
+        expr=m.fs.salt_storage == m.fs.charge_mode_disjunct.hxc.tube_inlet.flow_mass[0]
     )
     m.fs.charge_mode_disjunct.eq_hx_pump_work = pyo.Constraint(
         expr=m.fs.hx_pump_work == (
@@ -644,7 +630,7 @@ def charge_mode_disjunct_equations(disj):
         expr=m.fs.charge_area == m.fs.charge_mode_disjunct.hxc.area
     )
     m.fs.charge_mode_disjunct.eq_hot_salt_temperature = pyo.Constraint(
-        expr=m.fs.hot_salt_temp == m.fs.charge_mode_disjunct.hxc.outlet_2.temperature[0]
+        expr=m.fs.hot_salt_temp == m.fs.charge_mode_disjunct.hxc.tube_outlet.temperature[0]
     )
 
 
@@ -656,29 +642,27 @@ def discharge_mode_disjunct_equations(disj):
     # heated up in the discharge heat exchanger, a discharge heat
     # exchanger, and a turbine to produce extra energy.
     m.fs.discharge_mode_disjunct.ess_discharge_split = HelmSplitter(
-        default={
-            "property_package": m.fs.prop_water,
-            "outlet_list": ["to_hxd", "to_fwh1"],
-        }
+        property_package=m.fs.prop_water,
+        outlet_list=["to_hxd", "to_fwh1"]
     )
 
     m.fs.discharge_mode_disjunct.hxd = HeatExchanger(
-        default={
-            "delta_temperature_callback": delta_temperature_underwood_callback,
-            "shell": {
-                "property_package": m.fs.solar_salt_properties
-            },
-            "tube": {
-                "property_package": m.fs.prop_water
-            }
-        }
+        delta_temperature_callback=delta_temperature_underwood_callback,
+        hot_side_name="shell",
+        cold_side_name="tube",
+        shell={"property_package": m.fs.solar_salt_properties},
+        tube={"property_package": m.fs.prop_water}
     )
 
     m.fs.discharge_mode_disjunct.es_turbine = HelmTurbineStage(
-        default={
-            "property_package": m.fs.prop_water,
-        }
+        property_package=m.fs.prop_water
     )
+    # m.fs.discharge_mode_disjunct.eq_turbine_temperature_out = pyo.Constraint(
+    #     expr=(
+    #         m.fs.discharge_mode_disjunct.es_turbine.control_volume.properties_out[0].temperature >=
+    #         m.fs.discharge_mode_disjunct.es_turbine.control_volume.properties_out[0].temperature_sat
+    #     )
+    # )
 
     # Calculate the overall heat transfer coefficient for the Solar
     # salt charge heat exchanger. For that, first calculate Reynolds
@@ -686,27 +670,27 @@ def discharge_mode_disjunct_equations(disj):
     solar_hxd = m.fs.discharge_mode_disjunct.hxd
     solar_hxd.salt_reynolds_number = pyo.Expression(
         expr=(
-            solar_hxd.inlet_1.flow_mass[0]
+            solar_hxd.shell_inlet.flow_mass[0]
             * m.fs.tube_outer_dia
             / (m.fs.shell_eff_area
-               * solar_hxd.side_1.properties_in[0].visc_d_phase["Liq"])
+               * solar_hxd.hot_side.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Salt Reynolds Number"
     )
     solar_hxd.salt_prandtl_number = pyo.Expression(
         expr=(
-            solar_hxd.side_1.properties_in[0].cp_mass["Liq"]
-            * solar_hxd.side_1.properties_in[0].visc_d_phase["Liq"]
-            / solar_hxd.side_1.properties_in[0].therm_cond_phase["Liq"]
+            solar_hxd.hot_side.properties_in[0].cp_mass["Liq"]
+            * solar_hxd.hot_side.properties_in[0].visc_d_phase["Liq"]
+            / solar_hxd.hot_side.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Salt Prandtl Number"
     )
     # Assuming that the wall conditions are same as those at the outlet
     solar_hxd.salt_prandtl_wall = pyo.Expression(
         expr=(
-            solar_hxd.side_1.properties_out[0].cp_mass["Liq"]
-            * solar_hxd.side_1.properties_out[0].visc_d_phase["Liq"]
-            / solar_hxd.side_1.properties_out[0].therm_cond_phase["Liq"]
+            solar_hxd.hot_side.properties_out[0].cp_mass["Liq"]
+            * solar_hxd.hot_side.properties_out[0].visc_d_phase["Liq"]
+            / solar_hxd.hot_side.properties_out[0].therm_cond_phase["Liq"]
         ),
         doc="Wall Salt Prandtl Number"
     )
@@ -722,21 +706,21 @@ def discharge_mode_disjunct_equations(disj):
     )
     solar_hxd.steam_reynolds_number = pyo.Expression(
         expr=(
-            solar_hxd.inlet_2.flow_mol[0]
-            * solar_hxd.side_2.properties_in[0].mw
+            solar_hxd.tube_inlet.flow_mol[0]
+            * solar_hxd.cold_side.properties_in[0].mw
             * m.fs.tube_inner_dia
             / (m.fs.tube_cs_area
                * m.fs.n_tubes
-               * solar_hxd.side_2.properties_in[0].visc_d_phase["Liq"])
+               * solar_hxd.cold_side.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Steam Reynolds Number"
     )
     solar_hxd.steam_prandtl_number = pyo.Expression(
         expr=(
-            (solar_hxd.side_2.properties_in[0].cp_mol
-             / solar_hxd.side_2.properties_in[0].mw)
-            * solar_hxd.side_2.properties_in[0].visc_d_phase["Liq"]
-            / solar_hxd.side_2.properties_in[0].therm_cond_phase["Liq"]
+            (solar_hxd.cold_side.properties_in[0].cp_mol
+             / solar_hxd.cold_side.properties_in[0].mw)
+            * solar_hxd.cold_side.properties_in[0].visc_d_phase["Liq"]
+            / solar_hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Steam Prandtl Number"
     )
@@ -744,8 +728,8 @@ def discharge_mode_disjunct_equations(disj):
         expr=(
             0.023 * (solar_hxd.steam_reynolds_number ** 0.8)
             * (solar_hxd.steam_prandtl_number ** (0.33))
-            * ((solar_hxd.side_2.properties_in[0].visc_d_phase["Liq"]
-                / solar_hxd.side_2.properties_out[0].visc_d_phase["Vap"]
+            * ((solar_hxd.cold_side.properties_in[0].visc_d_phase["Liq"]
+                / solar_hxd.cold_side.properties_out[0].visc_d_phase["Vap"]
                 ) ** 0.14)
         ),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
@@ -755,14 +739,14 @@ def discharge_mode_disjunct_equations(disj):
     # transfer coefficients
     solar_hxd.h_salt = pyo.Expression(
         expr=(
-            solar_hxd.side_1.properties_in[0].therm_cond_phase["Liq"]
+            solar_hxd.hot_side.properties_in[0].therm_cond_phase["Liq"]
             * solar_hxd.salt_nusselt_number / m.fs.tube_outer_dia
         ),
         doc="Salt side convective heat transfer coefficient [W/mK]"
     )
     solar_hxd.h_steam = pyo.Expression(
         expr=(
-            solar_hxd.side_2.properties_in[0].therm_cond_phase["Liq"]
+            solar_hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]
             * solar_hxd.steam_nusselt_number / m.fs.tube_inner_dia
         ),
         doc="Steam side convective heat transfer coefficient [W/mK]"
@@ -792,7 +776,7 @@ def discharge_mode_disjunct_equations(disj):
         destination=m.fs.turbine[3].inlet
     )
     m.fs.discharge_mode_disjunct.fwh9_to_boiler = Arc(
-        source=m.fs.fwh[9].outlet_2,
+        source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet
     )
 
@@ -804,16 +788,16 @@ def discharge_mode_disjunct_equations(disj):
     )
     m.fs.discharge_mode_disjunct.essdisch_to_fwh1 = Arc(
         source=m.fs.discharge_mode_disjunct.ess_discharge_split.to_fwh1,
-        destination=m.fs.fwh[1].inlet_2,
+        destination=m.fs.fwh[1].tube_inlet,
         doc="Connection from condenser pump splitter to FWH1"
     )
     m.fs.discharge_mode_disjunct.essdisch_to_hxd = Arc(
         source=m.fs.discharge_mode_disjunct.ess_discharge_split.to_hxd,
-        destination=m.fs.discharge_mode_disjunct.hxd.inlet_2,
+        destination=m.fs.discharge_mode_disjunct.hxd.tube_inlet,
         doc="Connection from condenser pump splitter to discharge heat exchanger"
     )
     m.fs.discharge_mode_disjunct.hxd_to_esturbine = Arc(
-        source=m.fs.discharge_mode_disjunct.hxd.outlet_2,
+        source=m.fs.discharge_mode_disjunct.hxd.tube_outlet,
         destination=m.fs.discharge_mode_disjunct.es_turbine.inlet,
         doc="Connection from discharge heat exchanger to ES turbine"
     )
@@ -821,7 +805,7 @@ def discharge_mode_disjunct_equations(disj):
 
     # Save the amount of salt used in the discharge heat exchanger
     m.fs.discharge_mode_disjunct.eq_salt_amount_in_discharge_storage = pyo.Constraint(
-        expr=m.fs.salt_storage == -m.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass[0]
+        expr=m.fs.salt_storage == -m.fs.discharge_mode_disjunct.hxd.shell_inlet.flow_mass[0]
     )
 
     # Fix HX pump work to zero since it does not exist during
@@ -848,7 +832,6 @@ def discharge_mode_disjunct_equations(disj):
     m.fs.discharge_mode_disjunct.eq_charge_area = pyo.Constraint(
         expr=m.fs.discharge_area == m.fs.discharge_mode_disjunct.hxd.area
     )
-
 
 
 def _deactivate_arcs(m):
@@ -888,13 +871,13 @@ def set_model_input(m):
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass.fix(140)
-    m.fs.charge_mode_disjunct.hxc.inlet_2.temperature.fix(513.15)
-    m.fs.charge_mode_disjunct.hxc.inlet_2.pressure.fix(101325)
+    m.fs.charge_mode_disjunct.hxc.tube_inlet.flow_mass.fix(140)
+    m.fs.charge_mode_disjunct.hxc.tube_inlet.temperature.fix(513.15)
+    m.fs.charge_mode_disjunct.hxc.tube_inlet.pressure.fix(101325)
 
-    m.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass.fix(250)
-    m.fs.discharge_mode_disjunct.hxd.inlet_1.temperature.fix(853.15)
-    m.fs.discharge_mode_disjunct.hxd.inlet_1.pressure.fix(101325)
+    m.fs.discharge_mode_disjunct.hxd.shell_inlet.flow_mass.fix(250)
+    m.fs.discharge_mode_disjunct.hxd.shell_inlet.temperature.fix(853.15)
+    m.fs.discharge_mode_disjunct.hxd.shell_inlet.pressure.fix(101325)
 
     # HX pump efficiecncy assumption
     m.fs.charge_mode_disjunct.hx_pump.efficiency_pump.fix(0.80)
@@ -1027,9 +1010,9 @@ def initialize(m,
     if not deact_arcs_after_init:
         # Reinitialize FWH8 using bfp outlet
         m.fs.fwh[8].fwh_vfrac_constraint.deactivate()
-        m.fs.fwh[8].inlet_2.flow_mol.fix(m.fs.bfp.outlet.flow_mol[0])
-        m.fs.fwh[8].inlet_2.enth_mol.fix(m.fs.bfp.outlet.enth_mol[0])
-        m.fs.fwh[8].inlet_2.pressure.fix(m.fs.bfp.outlet.pressure[0])
+        m.fs.fwh[8].tube_inlet.flow_mol.fix(m.fs.bfp.outlet.flow_mol[0])
+        m.fs.fwh[8].tube_inlet.enth_mol.fix(m.fs.bfp.outlet.enth_mol[0])
+        m.fs.fwh[8].tube_inlet.pressure.fix(m.fs.bfp.outlet.pressure[0])
         m.fs.fwh[8].initialize(outlvl=outlvl,
                                optarg=solver.options)
         m.fs.fwh[8].fwh_vfrac_constraint.activate()
@@ -1088,8 +1071,8 @@ def build_costing(m):
     for storage_hx in [m.fs.charge_mode_disjunct.hxc,
                        m.fs.discharge_mode_disjunct.hxd]:
         storage_hx.costing = UnitModelCostingBlock(
-            default={"flowsheet_costing_block": m.fs.costing,
-                     "costing_method": SSLWCostingData.cost_heat_exchanger}
+            flowsheet_costing_block=m.fs.costing,
+            costing_method=SSLWCostingData.cost_heat_exchanger
         )
 
     ###### 2. Calculate total capital cost for charge and discharge
@@ -1332,18 +1315,18 @@ def add_bounds(m):
     # Add bounds to all units in charge mode
     for unit_in_charge in [m.fs.charge_mode_disjunct]:
         # Charge heat exchanger (HXC)
-        unit_in_charge.hxc.inlet_1.flow_mol.setlb(m.flow_min_storage)
-        unit_in_charge.hxc.inlet_1.flow_mol.setub(m.flow_max_storage)
-        unit_in_charge.hxc.inlet_2.flow_mass.setlb(m.flow_min_storage)
-        unit_in_charge.hxc.inlet_2.flow_mass.setub(m.max_salt_flow)
-        unit_in_charge.hxc.outlet_1.flow_mol.setlb(m.flow_min_storage)
-        unit_in_charge.hxc.outlet_1.flow_mol.setub(m.flow_max_storage)
-        unit_in_charge.hxc.outlet_2.flow_mass.setlb(m.flow_min_storage)
-        unit_in_charge.hxc.outlet_2.flow_mass.setub(m.max_salt_flow)
-        unit_in_charge.hxc.inlet_2.pressure.setlb(101320)
-        unit_in_charge.hxc.inlet_2.pressure.setub(101330)
-        unit_in_charge.hxc.outlet_2.pressure.setlb(101320)
-        unit_in_charge.hxc.outlet_2.pressure.setub(101330)
+        unit_in_charge.hxc.shell_inlet.flow_mol.setlb(m.flow_min_storage)
+        unit_in_charge.hxc.shell_inlet.flow_mol.setub(m.flow_max_storage)
+        unit_in_charge.hxc.tube_inlet.flow_mass.setlb(m.flow_min_storage)
+        unit_in_charge.hxc.tube_inlet.flow_mass.setub(m.max_salt_flow)
+        unit_in_charge.hxc.shell_outlet.flow_mol.setlb(m.flow_min_storage)
+        unit_in_charge.hxc.shell_outlet.flow_mol.setub(m.flow_max_storage)
+        unit_in_charge.hxc.tube_outlet.flow_mass.setlb(m.flow_min_storage)
+        unit_in_charge.hxc.tube_outlet.flow_mass.setub(m.max_salt_flow)
+        unit_in_charge.hxc.tube_inlet.pressure.setlb(101320)
+        unit_in_charge.hxc.tube_inlet.pressure.setub(101330)
+        unit_in_charge.hxc.tube_outlet.pressure.setlb(101320)
+        unit_in_charge.hxc.tube_outlet.pressure.setub(101330)
         unit_in_charge.hxc.heat_duty.setlb(0)
         unit_in_charge.hxc.heat_duty.setub(m.heat_duty_max)
         unit_in_charge.hxc.shell.heat.setlb(-m.heat_duty_max)
@@ -1416,18 +1399,18 @@ def add_bounds(m):
     # Add bounds to all units in discharge mode
     for unit_in_discharge in [m.fs.discharge_mode_disjunct]:
         # Discharge heat exchanger (HXD)
-        unit_in_discharge.hxd.inlet_1.flow_mass.setlb(m.flow_min_storage)
-        unit_in_discharge.hxd.inlet_1.flow_mass.setub(m.max_salt_flow)
-        unit_in_discharge.hxd.inlet_2.flow_mol.setlb(m.flow_min_storage)
-        unit_in_discharge.hxd.inlet_2.flow_mol.setub(m.flow_max_storage)
-        unit_in_discharge.hxd.outlet_1.flow_mass.setlb(m.flow_min_storage)
-        unit_in_discharge.hxd.outlet_1.flow_mass.setub(m.max_salt_flow)
-        unit_in_discharge.hxd.outlet_2.flow_mol.setlb(m.flow_min_storage)
-        unit_in_discharge.hxd.outlet_2.flow_mol.setub(m.flow_max_storage)
-        unit_in_discharge.hxd.inlet_1.pressure.setlb(101320)
-        unit_in_discharge.hxd.inlet_1.pressure.setub(101330)
-        unit_in_discharge.hxd.outlet_1.pressure.setlb(101320)
-        unit_in_discharge.hxd.outlet_1.pressure.setub(101330)
+        unit_in_discharge.hxd.shell_inlet.flow_mass.setlb(m.flow_min_storage)
+        unit_in_discharge.hxd.shell_inlet.flow_mass.setub(m.max_salt_flow)
+        unit_in_discharge.hxd.shell_outlet.flow_mass.setlb(m.flow_min_storage)
+        unit_in_discharge.hxd.shell_outlet.flow_mass.setub(m.max_salt_flow)
+        unit_in_discharge.hxd.tube_inlet.flow_mol.setlb(m.flow_min_storage)
+        unit_in_discharge.hxd.tube_inlet.flow_mol.setub(m.flow_max_storage)
+        unit_in_discharge.hxd.tube_outlet.flow_mol.setlb(m.flow_min_storage)
+        unit_in_discharge.hxd.tube_outlet.flow_mol.setub(m.flow_max_storage)
+        unit_in_discharge.hxd.shell_inlet.pressure.setlb(101320)
+        unit_in_discharge.hxd.shell_inlet.pressure.setub(101330)
+        unit_in_discharge.hxd.shell_outlet.pressure.setlb(101320)
+        unit_in_discharge.hxd.shell_outlet.pressure.setub(101330)
         unit_in_discharge.hxd.heat_duty.setlb(0)
         unit_in_discharge.hxd.heat_duty.setub(m.heat_duty_max)
         unit_in_discharge.hxd.tube.heat.setlb(0)
@@ -1646,15 +1629,15 @@ def print_results(m, results):
         print('HXC heat duty (MW): {:.4f}'.format(
             value(m.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6))
         print('HXC salt flow (kg/s): {:.4f}'.format(
-            value(m.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0])))
+            value(m.fs.charge_mode_disjunct.hxc.tube_inlet.flow_mass[0])))
         print('HXC steam flow to storage (mol/s): {:.4f}'.format(
-            value(m.fs.charge_mode_disjunct.hxc.inlet_1.flow_mol[0])))
+            value(m.fs.charge_mode_disjunct.hxc.shell_inlet.flow_mol[0])))
         print('HXC salt temperature (K): in: {:.4f}, out: {:.4f}'.format(
-            value(m.fs.charge_mode_disjunct.hxc.inlet_2.temperature[0]),
-            value(m.fs.charge_mode_disjunct.hxc.outlet_2.temperature[0])))
+            value(m.fs.charge_mode_disjunct.hxc.tube_inlet.temperature[0]),
+            value(m.fs.charge_mode_disjunct.hxc.tube_outlet.temperature[0])))
         print('HXC water temperature (K): in: {:.4f}, out: {:.4f}'.format(
-            value(m.fs.charge_mode_disjunct.hxc.side_1.properties_in[0].temperature),
-            value(m.fs.charge_mode_disjunct.hxc.side_1.properties_out[0].temperature)))
+            value(m.fs.charge_mode_disjunct.hxc.hot_side.properties_in[0].temperature),
+            value(m.fs.charge_mode_disjunct.hxc.hot_side.properties_out[0].temperature)))
         print('HXC delta temperature (K): in: {:.4f}, out: {:.4f}'.format(
             value(m.fs.charge_mode_disjunct.hxc.delta_temperature_in[0]),
             value(m.fs.charge_mode_disjunct.hxc.delta_temperature_out[0])))
@@ -1667,15 +1650,15 @@ def print_results(m, results):
         print('HXD heat duty (MW): {:.4f}'.format(
             value(m.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6))
         print('HXD salt flow (kg/s): {:.4f}'.format(
-            value(m.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass[0])))
+            value(m.fs.discharge_mode_disjunct.hxd.shell_inlet.flow_mass[0])))
         print('HXD Steam flow to storage (mol/s): {:.4f}'.format(
-            value(m.fs.discharge_mode_disjunct.hxd.inlet_2.flow_mol[0])))
+            value(m.fs.discharge_mode_disjunct.hxd.tube_inlet.flow_mol[0])))
         print('HXD salt temperature (K): in: {:.4f}, out: {:.4f}'.format(
-            value(m.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0]),
-            value(m.fs.discharge_mode_disjunct.hxd.outlet_1.temperature[0])))
+            value(m.fs.discharge_mode_disjunct.hxd.shell_inlet.temperature[0]),
+            value(m.fs.discharge_mode_disjunct.hxd.shell_outlet.temperature[0])))
         print('HXD water temperature (K): in: {:.4f}, out: {:.4f}'.format(
-            value(m.fs.discharge_mode_disjunct.hxd.side_2.properties_in[0].temperature),
-            value(m.fs.discharge_mode_disjunct.hxd.side_2.properties_out[0].temperature)))
+            value(m.fs.discharge_mode_disjunct.hxd.cold_side.properties_in[0].temperature),
+            value(m.fs.discharge_mode_disjunct.hxd.cold_side.properties_out[0].temperature)))
         print('HXD delta temperature (K): in: {:.4f}, out: {:.4f}'.format(
             value(m.fs.discharge_mode_disjunct.hxd.delta_temperature_in[0]),
             value(m.fs.discharge_mode_disjunct.hxd.delta_temperature_out[0])))
@@ -1720,16 +1703,14 @@ def print_model(_, nlp_model, nlp_data):
         print('         HXC heat duty (MW): {:.4f}'.format(
             value(nlp_model.fs.charge_mode_disjunct.hxc.heat_duty[0]) * 1e-6))
         print('         HXC salt flow (kg/s): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.inlet_2.flow_mass[0])))
+            value(nlp_model.fs.charge_mode_disjunct.hxc.tube_inlet.flow_mass[0])))
         print('         HXC steam flow (mol/s): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.inlet_1.flow_mol[0])))
-        print('         HXC Salt temperature in (K): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.inlet_2.temperature[0])))
-        print('         HXC Salt temperature out (K): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.outlet_2.temperature[0])))
-        print('         HXC Delta temperature at inlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge_mode_disjunct.hxc.delta_temperature_in[0])))
-        print('         HXC Delta temperature at outlet (K): {:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.shell_inlet.flow_mol[0])))
+        print('         HXC Salt temperature in/out (K): {:.4f}/{:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.tube_inlet.temperature[0]),
+            value(nlp_model.fs.charge_mode_disjunct.hxc.tube_outlet.temperature[0])))
+        print('         HXC Delta temperature in/out (K): {:.4f}/{:.4f}'.format(
+            value(nlp_model.fs.charge_mode_disjunct.hxc.delta_temperature_in[0]),
             value(nlp_model.fs.charge_mode_disjunct.hxc.delta_temperature_out[0])))
     elif nlp_model.fs.discharge_mode_disjunct.indicator_var.value == 1:
         print('        Disjunction 1: Discharge mode is selected')
@@ -1738,16 +1719,14 @@ def print_model(_, nlp_model, nlp_data):
         print('         HXD heat duty (MW): {:.4f}'.format(
             value(nlp_model.fs.discharge_mode_disjunct.hxd.heat_duty[0]) * 1e-6))
         print('         HXD salt flow (kg/s): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.inlet_1.flow_mass[0])))
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.shell_inlet.flow_mass[0])))
         print('         HXD steam flow (mol/s): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.inlet_2.flow_mol[0])))
-        print('         HXD Salt temperature in (K): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0])))
-        print('         HXD Salt temperature out (K): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.outlet_1.temperature[0])))
-        print('         HXD Delta temperature at inlet (K): {:.4f}'.format(
-            value(nlp_model.fs.discharge_mode_disjunct.hxd.delta_temperature_in[0])))
-        print('         HXD Delta temperature at outlet (K): {:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.tube_inlet.flow_mol[0])))
+        print('         HXD Salt temperature in/out (K): {:.4f}/{:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.shell_inlet.temperature[0]),
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.shell_outlet.temperature[0])))
+        print('         HXD Delta temperature in/out (K): {:.4f}/{:.4f}'.format(
+            value(nlp_model.fs.discharge_mode_disjunct.hxd.delta_temperature_in[0]),
             value(nlp_model.fs.discharge_mode_disjunct.hxd.delta_temperature_out[0])))
         print('         ES turbine work (MW): {:.4f}'.format(
             value(nlp_model.fs.discharge_mode_disjunct.es_turbine.work_mechanical[0]) * (-1e-6)))
@@ -1937,16 +1916,16 @@ def model_analysis(m,
 
     if not deact_arcs_after_init:
         m.fs.turbine[3].inlet.unfix()
-        m.fs.fwh[8].inlet_2.unfix()
+        m.fs.fwh[8].tube_inlet.unfix()
 
     for salt_hxc in [m.fs.charge_mode_disjunct.hxc]:
-        salt_hxc.inlet_1.unfix()
-        salt_hxc.inlet_2.flow_mass.unfix()
+        salt_hxc.shell_inlet.unfix()
+        salt_hxc.tube_inlet.flow_mass.unfix()
         salt_hxc.area.unfix()
 
     for salt_hxd in [m.fs.discharge_mode_disjunct.hxd]:
-        salt_hxd.inlet_2.unfix()
-        salt_hxd.inlet_1.flow_mass.unfix()
+        salt_hxd.tube_inlet.unfix()
+        salt_hxd.shell_inlet.flow_mass.unfix()
         salt_hxd.area.unfix()
 
     # Unfix global variables
@@ -1954,9 +1933,9 @@ def model_analysis(m,
     m.fs.discharge_turbine_work.unfix()
 
     # Fix storage heat exchangers design
-    m.fs.charge_mode_disjunct.hxc.outlet_2.temperature[0].fix(m.hot_salt_temp)
-    m.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0].fix(m.hot_salt_temp)
-    m.fs.discharge_mode_disjunct.hxd.outlet_1.temperature[0].fix(m.cold_salt_temp)
+    m.fs.charge_mode_disjunct.hxc.tube_outlet.temperature[0].fix(m.hot_salt_temp)
+    m.fs.discharge_mode_disjunct.hxd.shell_inlet.temperature[0].fix(m.hot_salt_temp)
+    m.fs.discharge_mode_disjunct.hxd.shell_outlet.temperature[0].fix(m.cold_salt_temp)
 
     # Add salt inventory variables
     min_tank = 1 * m.factor_mton # in mton
@@ -2050,7 +2029,7 @@ def model_analysis(m,
 
     # Add a total cost function as the objective function. Also,
     # include a scaling factor to the objective.
-    m.scaling_obj = 1e-1
+    m.scaling_obj = 1e-2
     m.obj = Objective(
         expr=(
             m.fs.revenue -
