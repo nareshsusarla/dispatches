@@ -499,6 +499,14 @@ def _make_constraints(m, method=None, pmax=None):
     """Declare the constraints for the charge model
     """
 
+    # ES turbine temperature constraint
+    m.fs.eq_turbine_temperature_out = pyo.Constraint(
+        expr=(
+            m.fs.es_turbine.control_volume.properties_out[0].temperature ==
+            m.fs.es_turbine.control_volume.properties_out[0].temperature_sat + 1
+        )
+    )
+
     # HX pump
     @m.fs.Constraint(m.fs.time,
                      doc="HX pump out pressure equal to BFP out pressure")
@@ -641,7 +649,7 @@ def set_model_input(m):
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
     m.fs.hxc.area.fix(2500)  # m2
-    m.fs.hxd.area.fix(2000)  # m2
+    m.fs.hxd.area.fix(2500)  # m2
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
@@ -650,7 +658,7 @@ def set_model_input(m):
     m.fs.hxc.tube_inlet.temperature.fix(513.15)  # K
     m.fs.hxc.tube_inlet.pressure.fix(101325)  # Pa
 
-    m.fs.hxd.shell_inlet.flow_mass.fix(250)  # 250
+    m.fs.hxd.shell_inlet.flow_mass.fix(150)  # 250
     m.fs.hxd.shell_inlet.temperature.fix(853.15)
     m.fs.hxd.shell_inlet.pressure.fix(101325)
 
@@ -659,8 +667,8 @@ def set_model_input(m):
     # m.fs.charge.hx_pump.outlet.pressure[0].fix(
     # m.main_steam_pressure * 1.1231)
 
-    m.fs.es_turbine.ratioP.fix(0.0286)
-    m.fs.es_turbine.efficiency_isentropic.fix(0.5)
+    # m.fs.es_turbine.ratioP.fix(0.0286)
+    m.fs.es_turbine.efficiency_isentropic.fix(0.8)
     ###########################################################################
     #  ESS VHP and HP splitters                                               #
     ###########################################################################
@@ -741,11 +749,9 @@ def initialize(m,
     m.fs.recycle_mixer.initialize(outlvl=outlvl)
 
     propagate_state(m.fs.essbfp_to_hxd)
-    # m.fs.hxd.report()
     m.fs.hxd.initialize(outlvl=outlvl,
                         optarg=solver.options)
-    # m.fs.hxd.report()
-    # raise Exception()
+
     propagate_state(m.fs.hxd_to_esturbine)
     m.fs.es_turbine.initialize(outlvl=outlvl,
                                optarg=solver.options)
@@ -809,13 +815,17 @@ def build_costing(m,
 
     ###### 2. Calculate total capital cost for charge and discharge
     ###### heat exchangers
+    m.fs.storage_capital_cost = pyo.Var(bounds=(0, 1e6),
+                                        initialize=1e4)
     def solar_cap_cost_rule(b):
-        return (
+        # return (
+        return m.fs.storage_capital_cost == (
             (b.hxc.costing.capital_cost
              + b.hxd.costing.capital_cost)
             / (b.num_of_years * 365 * 24)
         )
-    m.fs.storage_capital_cost = pyo.Expression(rule=solar_cap_cost_rule)
+    # m.fs.storage_capital_cost = pyo.Expression(rule=solar_cap_cost_rule)
+    m.fs.storage_capital_cost_eq = pyo.Constraint(rule=solar_cap_cost_rule)
 
     ###########################################################################
     #  Annual operating cost
@@ -927,10 +937,9 @@ def add_bounds(m):
     # with min power = 283 (0.65*p_max)
     # m.flow_min = 11804  # in mol/s
     m.flow_min = 1e-3  # in mol/s
-    m.flow_max = m.main_flow * 1.5  # in mol/s
+    m.flow_max = m.main_flow * 3  # in mol/s
     m.flow_max_storage = 0.2 * m.flow_max
     m.heat_duty_max = (m.max_storage_heat_duty * 1e6) * 1.01 # in MW
-    m.factor = 3
 
     # Charge heat exchanger
     m.fs.hxc.shell_inlet.flow_mol.setlb(m.flow_min)
@@ -955,7 +964,7 @@ def add_bounds(m):
     m.fs.hxc.tube.properties_in[0].enth_mass.setub(1.5e6)
     m.fs.hxc.tube.properties_out[0].enth_mass.setlb(0)
     m.fs.hxc.tube.properties_out[0].enth_mass.setub(1.5e6)
-    m.fs.hxc.overall_heat_transfer_coefficient.setlb(1)
+    m.fs.hxc.overall_heat_transfer_coefficient.setlb(0)
     m.fs.hxc.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxc.area.setlb(m.min_area)
     m.fs.hxc.area.setub(m.max_area)
@@ -987,7 +996,7 @@ def add_bounds(m):
     m.fs.hxd.shell.properties_in[0].enth_mass.setub(1.5e6)
     m.fs.hxd.shell.properties_out[0].enth_mass.setlb(0)
     m.fs.hxd.shell.properties_out[0].enth_mass.setub(1.5e6)
-    m.fs.hxd.overall_heat_transfer_coefficient.setlb(1)
+    m.fs.hxd.overall_heat_transfer_coefficient.setlb(0)
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxd.area.setlb(m.min_area)
     m.fs.hxd.area.setub(m.max_area)
@@ -1082,6 +1091,13 @@ def main(method=None,
 
         # Initialize with bounds
         ms.from_json(m, fname=load_from_file)
+
+        # Add bounds
+        add_bounds(m)
+
+        print()
+        print('>>>>> Initializing using .json file')
+
     else:
 
         m = usc.build_plant_model()
@@ -1112,12 +1128,14 @@ def main(method=None,
         # Initialize with bounds
         initialize_with_costing(m, solver=solver)
 
-    # Add bounds
-    add_bounds(m)
-    # print('DOF after bounds: ', degrees_of_freedom(m))
+        # Add bounds
+        add_bounds(m)
 
-    # # storing the initialization file
-    # ms.to_json(m, fname='initialized_usc_storage_nlp_mp.json')
+        # Store initialization file
+        ms.to_json(m, fname='initialized_usc_storage_nlp_mp_unfixed_area.json')
+        print()
+        print('>>>>> Saving initialization .json file')
+
     return m
 
 
@@ -1425,7 +1443,12 @@ if __name__ == "__main__":
     method = "with_efficiency"
     tank_status = "hot_empty"
     fix_power = False
-    load_from_file = None
+
+    load_init_file = False
+    if load_init_file:
+        load_from_file = 'initialized_usc_storage_nlp_mp_unfixed_area.json'
+    else:
+        load_from_file = None
 
     m_nlp = main(method=method,
                  pmax=pmax,

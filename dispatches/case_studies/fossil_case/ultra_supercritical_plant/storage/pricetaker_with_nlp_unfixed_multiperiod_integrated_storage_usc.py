@@ -64,10 +64,10 @@ def _get_lmp(hours_per_day=None, nhours=None):
         print('>>>>>> Using given LMP data')
         price = [
             22.9684, 21.1168, 20.4, 20.419,
-            20.419, 21.2877, 23.07, 25,
-            18.4634, 0, 0, 0,
+            # 20.419, 21.2877, 23.07, 25,
+            # 18.4634, 0, 0, 0,
             0, 0, 0, 0,
-            19.0342, 23.07, 200, 200,
+            # 19.0342, 23.07, 200, 200,
             200, 200, 200, 200, #1
             # 0, 0, 0, 0,
             # 20.419, 21.2877, 23.07, 25,
@@ -153,9 +153,9 @@ def run_pricetaker_analysis(hours_per_day=None,
             expr=lmp[count] * blk.usc.fs.net_power
         )
 
-        # Declare expression to calculate the total costs in
-        # the plant, including operating and capital costs of storage
-        # and power plant in $ per hour.
+        # # Declare expression to calculate the total costs in
+        # # the plant, including operating and capital costs of storage
+        # # and power plant in $ per hour.
         # blk.total_cost = pyo.Expression(
         #     expr=(blk.usc.fs.fuel_cost +
         #           blk.usc.fs.plant_fixed_operating_cost +
@@ -163,8 +163,8 @@ def run_pricetaker_analysis(hours_per_day=None,
         #           blk.usc.fs.storage_capital_cost)
         # )
 
-        # Declare an expression to calculate the total profit. All the
-        # costs are in $ per hour.
+        # # Declare an expression to calculate the total profit. All the
+        # # costs are in $ per hour.
         # blk.profit = pyo.Expression(
         #     expr=(blk.revenue -
         #           blk.total_cost) * scaling_cost
@@ -248,7 +248,7 @@ def run_pricetaker_analysis(hours_per_day=None,
                          for i in range(n_time_points)])
 
         log_close_to_bounds(m)
-        # log_infeasible_constraints(m)
+        log_infeasible_constraints(m)
 
     return (m, blks, lmp, net_power, results, tank_max, tank_max_list, hot_tank_level,
             cold_tank_level, hxc_duty, hxd_duty, boiler_heat_duty, discharge_work)
@@ -527,7 +527,7 @@ if __name__ == '__main__':
         if new_design:
             # scaling_obj = 1e-2
             # scaling_cost = 1e-3
-            scaling_obj = 1e-4
+            scaling_obj = 1e-3
             scaling_cost = 1
         else:
             # Old design
@@ -564,7 +564,7 @@ if __name__ == '__main__':
     pmax_total = pmax + pmax_storage
     pmin_total = pmin + pmin_storage
 
-    hours_per_day = 24
+    hours_per_day = 12
     ndays = 1
     nhours = hours_per_day * ndays
     nweeks = 1

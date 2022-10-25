@@ -77,8 +77,12 @@ def create_ss_model():
 
     # Add options needed in the integrated model
     method = "with_efficiency" # adds boiler and cycle efficiencies
-    # load_from_file = 'initialized_usc_storage_nlp_mp.json'
-    load_from_file = None
+
+    load_init_from_file = False
+    if load_init_from_file:
+        load_from_file = 'initialized_usc_storage_nlp_mp_unfixed_area.json'
+    else:
+        load_from_file = None
 
     m = pyo.ConcreteModel()
     m.usc = usc.main(method=method,
@@ -91,8 +95,7 @@ def create_ss_model():
         expr=m.usc.fs.plant_power_out[0] >= pmin
     )
     m.usc.fs.plant_max_power_eq = pyo.Constraint(
-        # expr=m.usc.fs.plant_power_out[0] <= pmax
-        expr=m.usc.fs.plant_power_out[0] <= 700
+        expr=m.usc.fs.plant_power_out[0] <= pmax
     )
 
     # Set lower and upper bounds to charge and discharge heat
