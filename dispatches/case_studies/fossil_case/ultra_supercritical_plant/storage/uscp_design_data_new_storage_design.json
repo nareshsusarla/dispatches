@@ -1,5 +1,5 @@
 {
-    "init_file_path": "initialized_usc_storage_gdp_mp.json",
+    "gdp_init_file_path": "initialized_usc_storage_gdp_mp_unfixed_area.json",
     "plant_max_power": 436,
     "plant_min_power": 283,
     "ramp_rate": 60,

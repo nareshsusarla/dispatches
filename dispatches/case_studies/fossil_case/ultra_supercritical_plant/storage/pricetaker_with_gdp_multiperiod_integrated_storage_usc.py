@@ -35,7 +35,7 @@ import pyomo.environ as pyo
 from pyomo.environ import (Constraint, Expression,
                            Var, Objective,
                            SolverFactory,
-                           value, RangeSet)
+                           value, RangeSet, maximize)
 from pyomo.contrib.fbbt.fbbt import _prop_bnds_root_to_leaf_map
 from pyomo.core.expr.numeric_expr import ExternalFunctionExpression
 from pyomo.util.infeasible import (log_infeasible_constraints,
@@ -73,10 +73,10 @@ def _get_lmp(hours_per_day=None, nhours=None):
         # price = [22.9684, 21.1168, 20.4, 20.419, 0, 0, 200, 200]
         price = [
             22.9684, 21.1168, 20.4, 20.419,
-            20.419, 21.2877, 23.07, 25,
-            18.4634, 0, 0, 0,
+            # 20.419, 21.2877, 23.07, 25,
+            # 18.4634, 0, 0, 0,
             0, 0, 0, 0,
-            19.0342, 23.07, 200, 200,
+            # 19.0342, 23.07, 200, 200,
             200, 200, 200, 200,
         ]
         max_lmp = max(price)
@@ -86,8 +86,10 @@ def _get_lmp(hours_per_day=None, nhours=None):
                 nhigh_lmp += 1
             elif  i <= (min_lmp + 5):
                 nlow_lmp += 1
-        print('** {} lmp prices ($/MWh) between [max_lmp, max_lmp - 5]: [{}, {}]'.format(nhigh_lmp, max_lmp, max_lmp - 5))
-        print('   {} lmp prices ($/MWh) between [min_lmp, min_lmp + 5]: [{}, {}]'.format(nlow_lmp, min_lmp, min_lmp + 5))
+        print('** {} lmp prices ($/MWh) between [max_lmp, max_lmp - 5]: [{}, {}]'.format(
+            nhigh_lmp, max_lmp, max_lmp - 5))
+        print('   {} lmp prices ($/MWh) between [min_lmp, min_lmp + 5]: [{}, {}]'.format(
+            nlow_lmp, min_lmp, min_lmp + 5))
         print()
 
         if len(price) < hours_per_day:
@@ -172,16 +174,16 @@ def print_model(solver_obj,
                 value(blk_process_charge.hxc.delta_temperature_in[0]),
                 value(blk_process_charge.hxc.delta_temperature_out[0])))
             print('         HXC salt temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(blk_process_charge.hxc.inlet_2.temperature[0]),
-                value(blk_process_charge.hxc.outlet_2.temperature[0])))
+                value(blk_process_charge.hxc.tube_inlet.temperature[0]),
+                value(blk_process_charge.hxc.tube_outlet.temperature[0])))
             print('         Salt flow HXC (kg/s): {:.4f}'.format(
-                value(blk_process_charge.hxc.outlet_2.flow_mass[0])))
+                value(blk_process_charge.hxc.tube_outlet.flow_mass[0])))
             print('         HXC steam temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(blk_process_charge.hxc.side_1.properties_in[0].temperature),
-                value(blk_process_charge.hxc.side_1.properties_out[0].temperature)
+                value(blk_process_charge.hxc.hot_side.properties_in[0].temperature),
+                value(blk_process_charge.hxc.hot_side.properties_out[0].temperature)
             ))
             print('         Steam flow HXC (mol/s): {:.4f}'.format(
-                value(blk_process_charge.hxc.outlet_1.flow_mol[0])))
+                value(blk_process_charge.hxc.shell_outlet.flow_mol[0])))
             if not new_design:
                 print('         Cooling heat duty (MW): {:.4f}'.format(
                     value(blk_process_charge.cooler.heat_duty[0]) * 1e-6))
@@ -195,16 +197,16 @@ def print_model(solver_obj,
                 value(blk_process_discharge.hxd.delta_temperature_in[0]),
                 value(blk_process_discharge.hxd.delta_temperature_out[0])))
             print('         HXD salt temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(blk_process_discharge.hxd.inlet_1.temperature[0]),
-                value(blk_process_discharge.hxd.outlet_1.temperature[0])))
+                value(blk_process_discharge.hxd.shell_inlet.temperature[0]),
+                value(blk_process_discharge.hxd.shell_outlet.temperature[0])))
             print('         Salt flow HXD (kg/s): {:.4f}'.format(
-                value(blk_process_discharge.hxd.outlet_1.flow_mass[0])))
+                value(blk_process_discharge.hxd.shell_outlet.flow_mass[0])))
             print('         HXD steam temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(blk_process_discharge.hxd.side_2.properties_in[0].temperature),
-                value(blk_process_discharge.hxd.side_2.properties_out[0].temperature)
+                value(blk_process_discharge.hxd.cold_side.properties_in[0].temperature),
+                value(blk_process_discharge.hxd.cold_side.properties_out[0].temperature)
             ))
             print('         Steam flow HXD (mol/s): {:.4f}'.format(
-                value(blk_process_discharge.hxd.outlet_2.flow_mol[0])))
+                value(blk_process_discharge.hxd.tube_outlet.flow_mol[0])))
             print('         ES turbine work (MW): {:.4f}'.format(
                 value(blk_process_discharge.es_turbine.work_mechanical[0]) * -1e-6))
         elif blk_process_no_storage.binary_indicator_var.value == 1:
@@ -235,10 +237,10 @@ def print_model(solver_obj,
             value(blk_process.previous_salt_inventory_hot)))
         print('        Makeup water flow (mol/s): {:.4f}'.format(
             value(blk_process.fs.condenser_mix.makeup.flow_mol[0])))
-        print('        Revenue (M$/year): {:.4f}'.format(
-            value(mdl.blocks[blk].process.revenue)))
-        print('        Total op cost ($/h): {:.4f}'.format(
-            value(mdl.blocks[blk].process.total_operating_cost)))
+        # print('        Revenue (M$/year): {:.4f}'.format(
+        #     value(mdl.blocks[blk].process.revenue)))
+        # print('        Total op cost ($/h): {:.4f}'.format(
+        #     value(mdl.blocks[blk].process.total_cost)))
         print('        Storage cost ($/h): {:.4f}'.format(
             value(blk_process.fs.storage_capital_cost)))
         print('        Fuel cost ($/h): {:.4f}'.format(
@@ -262,7 +264,7 @@ def print_model(solver_obj,
         mdl.discharge_turbine_work_val[m_iter] = value(blk_process.fs.discharge_turbine_work)
         mdl.hxc_area_val[m_iter] = value(blk_process_charge.hxc.area)
         mdl.hxd_area_val[m_iter] = value(blk_process_discharge.hxd.area)
-        mdl.hot_salt_temp_val[m_iter] = value(blk_process_charge.hxc.outlet_2.temperature[0])
+        mdl.hot_salt_temp_val[m_iter] = value(blk_process_charge.hxc.tube_outlet.temperature[0])
 
         if save_results:
             writer = csv.writer(csvfile)
@@ -431,13 +433,24 @@ def run_pricetaker_analysis(hours_per_day=None,
             b.blocks[h].process.usc.fs.discharge_area
         )
 
+    # @m.Constraint(m.hours_set)
+    # def constraint_charge_area_lb(b, h):
+    #     return (
+    #         b.blocks[h].process.usc.fs.charge_area >= 1000
+    #     )
+    # @m.Constraint(m.hours_set)
+    # def constraint_discharge_area_lb(b, h):
+    #     return (
+    #         b.blocks[h].process.usc.fs.discharge_area >= 1000
+    #     )
+
     # Declare constraint to ensure that the discharge heat exchanger
     # has the same temperature for the hot salt than the one obtained
     # during charge cycle.
     @m.Constraint(m.hours_set)
     def constraint_discharge_hot_salt_temperature(b, h):
         return (
-            b.blocks[h].process.usc.fs.discharge_mode_disjunct.hxd.inlet_1.temperature[0] ==
+            b.blocks[h].process.usc.fs.discharge_mode_disjunct.hxd.shell_inlet.temperature[0] ==
             b.blocks[h].process.usc.fs.hot_salt_temp
         )
 
@@ -481,13 +494,13 @@ def run_pricetaker_analysis(hours_per_day=None,
     #     # Add logical constraint to help reduce the alternatives to explore
     #     # when periodic behavior is expected
     #     @m.Constraint()
-    #     def _logic_constraint_no_discharge_time0(m):
-    #         return m.blocks[0].process.usc.fs.discharge_mode_disjunct.binary_indicator_var == 0
+    #     def _logic_constraint_no_discharge_time0(b):
+    #         return b.blocks[0].process.usc.fs.discharge_mode_disjunct.binary_indicator_var == 0
     #     @m.Constraint()
-    #     def _logic_constraint_no_charge_at_timen(m):
+    #     def _logic_constraint_no_charge_at_timen(b):
     #         return (
-    #             (m.blocks[0].process.usc.fs.charge_mode_disjunct.binary_indicator_var
-    #              + m.blocks[nhours - 1].process.usc.fs.charge_mode_disjunct.binary_indicator_var) <= 1
+    #             (b.blocks[0].process.usc.fs.charge_mode_disjunct.binary_indicator_var
+    #              + b.blocks[nhours - 1].process.usc.fs.charge_mode_disjunct.binary_indicator_var) <= 1
     #         )
     #     # @m.Constraint()
     #     # def _logic_constraint_no_storage_time0_no_charge_at_timen(m):
@@ -510,28 +523,49 @@ def run_pricetaker_analysis(hours_per_day=None,
             expr=(lmp[count] * blk.usc.fs.net_power)
         )
 
-        # Add expression to calculate total operating costs. Note that
-        # these costs are scaled using a scaling cost factor
-        blk.total_operating_cost = pyo.Expression(
-            expr=(
-                blk.usc.fs.fuel_cost +
-                blk.usc.fs.plant_fixed_operating_cost +
-                blk.usc.fs.plant_variable_operating_cost
-            )
-        )
+        # # Add expression to calculate total operating costs. Note that
+        # # these costs are scaled using a scaling cost factor
+        # blk.total_cost = pyo.Expression(
+        #     expr=(
+        #         blk.usc.fs.fuel_cost +
+        #         blk.usc.fs.plant_fixed_operating_cost +
+        #         blk.usc.fs.plant_variable_operating_cost +
+        #         blk.usc.fs.storage_capital_cost
+        #     )
+        # )
 
-        # Declare expression to calculate the total profit. All the
-        # costs are in $ per hour
-        blk.cost = pyo.Expression(
-            expr=-(
-                blk.revenue -
-                blk.total_operating_cost -
-                blk.usc.fs.storage_capital_cost
-            ) * scaling_cost
-        )
+        # # Declare expression to calculate the total profit. All the
+        # # costs are in $ per hour
+        # blk.profit = pyo.Expression(
+        #     expr=(
+        #         blk.revenue -
+        #         blk.total_cost
+        #         # (lmp[count] * blk.usc.fs.net_power) -
+        #         # (
+        #         #     blk.usc.fs.fuel_cost +
+        #         #     blk.usc.fs.plant_fixed_operating_cost +
+        #         #     blk.usc.fs.plant_variable_operating_cost +
+        #         #     blk.usc.fs.storage_capital_cost
+        #         # )
+        #     ) * scaling_cost
+        # )
         count += 1
 
-    m.obj = pyo.Objective(expr=sum([blk.cost for blk in blks]) * scaling_obj)
+    # m.obj = pyo.Objective(
+    #     expr=sum([blk.profit for blk in blks]) * scaling_obj,
+    #     sense=maximize
+    # )
+    m.obj = pyo.Objective(
+        expr=sum(
+            [blk.revenue -
+             (blk.usc.fs.fuel_cost +
+              blk.usc.fs.plant_fixed_operating_cost +
+              blk.usc.fs.plant_variable_operating_cost) -
+             blk.usc.fs.storage_capital_cost
+             for blk in blks]
+        ) * scaling_obj,
+        sense=maximize
+    )
 
     # Initial state for linking variables: power and salt
     # tank. Different tank scenarios are included for the Solar salt
@@ -557,10 +591,22 @@ def run_pricetaker_analysis(hours_per_day=None,
     print('>>Initializing disjuncts')
     if tank_status == "hot_empty":
         for k in range(nhours):
-            if k >= (nhours / 2) - 1:
+            # if k <= (nhours / 3) - 1:
+            #     blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
+            #     blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+            #     blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+            # elif k <= 2 * (nhours / 3) - 1:
+            #     blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
+            #     blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+            #     blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
+            if k <= (nhours / 2) - 1:
                 blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
                 blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
                 blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
+            # if k >= (nhours / 2) - 1:
+            #     blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
+            #     blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+            #     blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
             else:
                 blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
                 blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(1)
@@ -604,14 +650,17 @@ def run_pricetaker_analysis(hours_per_day=None,
         results = opt.solve(
             m,
             tee=True,
-            algorithm='LOA',
+            algorithm='RIC',
             mip_solver='gurobi_direct',
             nlp_solver='ipopt',
-            OA_penalty_factor=1e4,
-            max_slack=1e4,
+            # # OA_penalty_factor=1e4,
+            # # max_slack=1e4,
+            # zero_tolerance=1e-10,
+            # integer_tolerance=1e-4,
+            # variable_tolerance=1e-6,
             init_algorithm="no_init",
             subproblem_presolve=False,
-            time_limit="32000",
+            time_limit="28000",
             iterlim=200,
             call_after_subproblem_solve=(
                 lambda c, a, b: print_model(c, a, b,
@@ -623,8 +672,9 @@ def run_pricetaker_analysis(hours_per_day=None,
                 tee=True,
                 symbolic_solver_labels=True,
                 options={"linear_solver": "ma27",
-                         "max_iter": 150,
-                         "halt_on_ampl_error": "yes"}
+                         "max_iter": 180,
+                         "halt_on_ampl_error": "yes"
+                }
             )
         )
 
@@ -682,16 +732,16 @@ def print_results(m, blks, results):
             print('  HXC Duty (MW): {:.4f}'.format(
                 value(charge_mode.hxc.heat_duty[0]) * 1e-6))
             print('  HXC salt temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(charge_mode.hxc.inlet_2.temperature[0]),
-                value(charge_mode.hxc.outlet_2.temperature[0])))
+                value(charge_mode.hxc.tube_inlet.temperature[0]),
+                value(charge_mode.hxc.tube_outlet.temperature[0])))
             print('  HXC steam temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(charge_mode.hxc.side_1.properties_in[0].temperature),
-                value(charge_mode.hxc.side_1.properties_out[0].temperature)))
+                value(charge_mode.hxc.hot_side.properties_in[0].temperature),
+                value(charge_mode.hxc.hot_side.properties_out[0].temperature)))
             print('  HXC salt flow (kg/s) [mton/h]: {:.4f} [{:.4f}]'.format(
-                value(charge_mode.hxc.outlet_2.flow_mass[0]),
-                value(charge_mode.hxc.outlet_2.flow_mass[0]) * 3600 * factor_mton))
+                value(charge_mode.hxc.tube_outlet.flow_mass[0]),
+                value(charge_mode.hxc.tube_outlet.flow_mass[0]) * 3600 * factor_mton))
             print('  HXC steam flow (mol/s): {:.4f}'.format(
-                value(charge_mode.hxc.outlet_1.flow_mol[0])))
+                value(charge_mode.hxc.shell_outlet.flow_mol[0])))
             print('  HXC Delta T (K): in: {:.4f}, out: {:.4f}'.format(
                 value(charge_mode.hxc.delta_temperature_in[0]),
                 value(charge_mode.hxc.delta_temperature_out[0])))
@@ -701,16 +751,16 @@ def print_results(m, blks, results):
             print('  HXD Duty (MW): {:.4f}'.format(
                 value(discharge_mode.hxd.heat_duty[0]) * 1e-6))
             print('  HXD salt temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(discharge_mode.hxd.inlet_1.temperature[0]),
-                value(discharge_mode.hxd.outlet_1.temperature[0])))
+                value(discharge_mode.hxd.shell_inlet.temperature[0]),
+                value(discharge_mode.hxd.shell_outlet.temperature[0])))
             print('  HXD steam temperature (K) in/out: {:.4f}/{:.4f}'.format(
-                value(discharge_mode.hxd.side_2.properties_in[0].temperature),
-                value(discharge_mode.hxd.side_2.properties_out[0].temperature)))
+                value(discharge_mode.hxd.cold_side.properties_in[0].temperature),
+                value(discharge_mode.hxd.cold_side.properties_out[0].temperature)))
             print('  HXD salt flow (kg/s) [mton/h]: {:.4f} [{:.4f}]'.format(
-                value(discharge_mode.hxd.outlet_1.flow_mass[0]),
-                value(discharge_mode.hxd.outlet_1.flow_mass[0]) * 3600 * factor_mton))
+                value(discharge_mode.hxd.shell_outlet.flow_mass[0]),
+                value(discharge_mode.hxd.shell_outlet.flow_mass[0]) * 3600 * factor_mton))
             print('  HXD steam flow (mol/s): {:.4f}'.format(
-                value(discharge_mode.hxd.outlet_2.flow_mol[0])))
+                value(discharge_mode.hxd.tube_outlet.flow_mol[0])))
             print('  HXD Delta T (K): in: {:.4f}, out: {:.4f}'.format(
                 value(discharge_mode.hxd.delta_temperature_in[0]),
                 value(discharge_mode.hxd.delta_temperature_out[0])))
@@ -723,13 +773,13 @@ def print_results(m, blks, results):
             print('  HXC Duty (MW): {:.4f}'.format(
                 value(charge_mode.hxc.heat_duty[0]) * 1e-6))
             print('  HXC salt flow (kg/s): {:.4f} '.format(
-                value(charge_mode.hxc.outlet_2.flow_mass[0])))
+                value(charge_mode.hxc.tube_outlet.flow_mass[0])))
             print('  HXD area (m2): {:.4f}'.format(
                 value(discharge_mode.hxd.area)))
             print('  HXD Duty (MW): {:.4f}'.format(
                 value(discharge_mode.hxd.heat_duty[0]) * 1e-6))
             print('  HXD salt flow (kg/s): {:.4f}'.format(
-                value(discharge_mode.hxd.outlet_1.flow_mass[0])))
+                value(discharge_mode.hxd.shell_outlet.flow_mass[0])))
         else:
             print('  No other operation modes!')
 
@@ -739,12 +789,12 @@ def print_results(m, blks, results):
             value(blks[c].usc.fs.plant_power_out[0])))
         print(' Discharge turbine work (MW): {:.4f}'.format(
             value(storage_work) * factor))
-        print(' Cost ($): {:.4f}'.format(
-            value(blks[c].cost) / scaling_cost))
-        print(' Revenue ($): {:.4f}'.format(
-            value(blks[c].revenue)))
-        print(' Operating cost ($): {:.4f}'.format(
-            value(blks[c].total_operating_cost)))
+        # print(' Profit ($): {:.4f}'.format(
+        #     value(blks[c].profit) / scaling_cost))
+        # print(' Revenue ($): {:.4f}'.format(
+        #     value(blks[c].revenue)))
+        # print(' Operating cost ($): {:.4f}'.format(
+        #     value(blks[c].total_cost)))
         print(' Efficiencies (%): boiler: {:.4f}, cycle: {:.4f}'.format(
             value(blks[c].usc.fs.boiler_efficiency) * 100,
             value(blks[c].usc.fs.cycle_efficiency) * perc))
@@ -948,8 +998,12 @@ if __name__ == '__main__':
     lx = True
     if lx:
         if new_design:
-            scaling_obj = 1e-2
-            scaling_cost = 1e-3
+            # scaling_obj = 1e-2
+            # # scaling_cost = 1e-3 # before changing the obj function
+            # scaling_cost = 1e-3
+            scaling_obj = 1e-5
+            # scaling_cost = 1e-3 # before changing the obj function
+            scaling_cost = 1
         else:
             # scaling_obj = 1e-2 # 6h, 12h
             scaling_obj = 1e-4 # 12h
@@ -977,7 +1031,7 @@ if __name__ == '__main__':
     max_power = design_data_dict["plant_max_power"] # in MW
     pmin = design_data_dict["plant_min_power"] # in MW
 
-    hours_per_day = 24
+    hours_per_day = 12
     ndays = 1
     nhours = hours_per_day * ndays
     nweeks = 1

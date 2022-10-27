@@ -73,12 +73,12 @@ def create_ss_model():
     deact_arcs_after_init = True # needed for GDP model
     method = "with_efficiency" # adds boiler and cycle efficiencies
     load_init_file = False
-    # load_from_file = path_init_file
 
     # Add data from .json data file
     cold_salt_temp = design_data_dict["cold_salt_temperature"] # in K
     min_storage_heat_duty = design_data_dict["min_storage_heat_duty"] # in MW
-    path_init_file = design_data_dict["init_file_path"]
+    max_storage_heat_duty = design_data_dict["max_storage_heat_duty"] # in MW
+    path_init_file = design_data_dict["gdp_init_file_path"]
 
     m = pyo.ConcreteModel()
     m.usc = usc_gdp.main(method=method,
@@ -97,20 +97,22 @@ def create_ss_model():
         expr=m.usc.fs.plant_power_out[0] <= max_power
     )
 
-    # Set lower bound in charge heat exchanger
+    # Set bounds in charge and discharge heat exchangers
     charge_mode = m.usc.fs.charge_mode_disjunct
     discharge_mode = m.usc.fs.discharge_mode_disjunct
-    m.usc.fs.discharge_mode_disjunct.storage_lower_bound_eq = pyo.Constraint(
-        expr=(
-            (1e-6) * (pyunits.MW / pyunits.W) *
-            discharge_mode.hxd.heat_duty[0]
-        ) >= min_storage_heat_duty
+    hxc_heat_duty = (1e-6) * (pyunits.MW / pyunits.W) * charge_mode.hxc.heat_duty[0]
+    hxd_heat_duty = (1e-6) * (pyunits.MW / pyunits.W) * discharge_mode.hxd.heat_duty[0]
+    m.usc.fs.charge_mode_disjunct.storage_heat_duty_lb = pyo.Constraint(
+        expr=hxc_heat_duty >= min_storage_heat_duty + 40
     )
-    m.usc.fs.charge_mode_disjunct.storage_lower_bound_eq = pyo.Constraint(
-        expr=(
-            (1e-6) * (pyunits.MW / pyunits.W) *
-            charge_mode.hxc.heat_duty[0]
-        ) >= min_storage_heat_duty
+    m.usc.fs.discharge_mode_disjunct.storage_heat_duty_lb = pyo.Constraint(
+        expr=hxd_heat_duty >= min_storage_heat_duty + 40
+    )
+    m.usc.fs.charge_mode_disjunct.storage_heat_duty_ub = pyo.Constraint(
+        expr=hxc_heat_duty <= max_storage_heat_duty
+    )
+    m.usc.fs.discharge_mode_disjunct.storage_heat_duty_ub = pyo.Constraint(
+        expr=hxd_heat_duty <= max_storage_heat_duty * (1 - 0.01)
     )
 
     # Unfix boiler data fixed during initialization
@@ -118,7 +120,7 @@ def create_ss_model():
 
     if not deact_arcs_after_init:
         m.usc.fs.turbine[3].inlet.unfix()
-        m.usc.fs.fwh[8].inlet_2.unfix()
+        m.usc.fs.fwh[8].tube_inlet.unfix()
 
     # Unfix global variables fixed during initialization
     m.usc.fs.hx_pump_work.unfix()
@@ -131,13 +133,13 @@ def create_ss_model():
     m.usc.fs.charge_mode_disjunct.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
     m.usc.fs.discharge_mode_disjunct.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
     for salt_hxc in [charge_mode.hxc]:
-        salt_hxc.inlet_1.unfix()
-        salt_hxc.inlet_2.flow_mass.unfix()
+        salt_hxc.shell_inlet.unfix()
+        salt_hxc.tube_inlet.flow_mass.unfix()
         salt_hxc.area.unfix()
 
     for salt_hxd in [discharge_mode.hxd]:
-        salt_hxd.inlet_2.unfix()
-        salt_hxd.inlet_1.flow_mass.unfix()
+        salt_hxd.tube_inlet.unfix()
+        salt_hxd.shell_inlet.flow_mass.unfix()
         salt_hxd.area.unfix()
 
     if not new_design:
@@ -149,8 +151,8 @@ def create_ss_model():
     # charge_mode.hxc.area.fix(hxc_area)
     # charge_mode.hxc.outlet_2.temperature[0].fix(hot_salt_temp)
     # discharge_mode.hxd.area.fix(hxd_area)
-    # discharge_mode.hxd.inlet_1.temperature[0].fix(hot_salt_temp)
-    discharge_mode.hxd.outlet_1.temperature[0].fix(cold_salt_temp)
+    # discharge_mode.hxd.shell_inlet.temperature[0].fix(hot_salt_temp)
+    discharge_mode.hxd.shell_outlet.temperature[0].fix(cold_salt_temp)
 
     return m
 
@@ -211,27 +213,27 @@ def create_mp_block():
     def constraint_ramp_down(b):
         return (
             b1.previous_power - ramp_rate <=
-            b1.fs.plant_power_out[0])
+            b.plant_power_out[0])
 
     @b1.fs.Constraint(doc="Plant ramping up constraint")
     def constraint_ramp_up(b):
         return (
             b1.previous_power + ramp_rate >=
-            b1.fs.plant_power_out[0])
+            b.plant_power_out[0])
 
     @b1.fs.Constraint(doc="Inventory balance at the end of the time period")
     def constraint_salt_inventory_hot(b):
         return (
             1e-3 * b1.salt_inventory_hot == (
                 b1.previous_salt_inventory_hot
-                + (3600 * b1.fs.salt_storage) * factor_mton # in mton
+                + (3600 * b.salt_storage) * factor_mton # in mton
             ) * 1e-3
         )
 
     @b1.fs.Constraint(doc="Maximum salt inventory at any time")
     def constraint_salt_inventory(b):
         return (
-            1e-3 * b1.fs.salt_amount == (
+            1e-3 * b.salt_amount == (
                 b1.salt_inventory_hot
                 + b1.salt_inventory_cold
             ) * 1e-3
