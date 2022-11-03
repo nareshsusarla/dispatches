@@ -174,27 +174,32 @@ def create_mp_block():
         )
 
     inventory_max = 1e7 * factor_mton # in mton
+    min_inventory = 75000 * factor_mton # in mton
+    max_salt_amount = design_data_dict["max_salt_amount"] * factor_mton # in mton
+    tank_max = max_salt_amount
+    # tank_min = 1103053.48 * factor_mton
+    tank_min = 1e-3
     b1.previous_salt_inventory_hot = pyo.Var(
         domain=NonNegativeReals,
-        initialize=1,
-        bounds=(0, inventory_max),
+        initialize=min_inventory,
+        bounds=(tank_min, inventory_max),
         doc="Hot salt at the beginning of the time period in mton"
         )
     b1.salt_inventory_hot = pyo.Var(
         domain=NonNegativeReals,
-        initialize=80,
+        initialize=min_inventory,
         bounds=(0, inventory_max),
         doc="Hot salt inventory at the end of the time period in mton"
         )
     b1.previous_salt_inventory_cold = pyo.Var(
         domain=NonNegativeReals,
-        initialize=1,
-        bounds=(0, inventory_max),
+        initialize=tank_max - min_inventory,
+        bounds=(tank_min, inventory_max),
         doc="Cold salt at the beginning of the time period in mton"
         )
     b1.salt_inventory_cold = pyo.Var(
         domain=NonNegativeReals,
-        initialize=80,
+        initialize=tank_max - min_inventory,
         bounds=(0, inventory_max),
         doc="Cold salt inventory at the end of the time period in mton"
         )
@@ -228,6 +233,20 @@ def create_mp_block():
                 b1.salt_inventory_hot
                 + b1.salt_inventory_cold
             ) * 1e-3
+        )
+
+    @b1.fs.Constraint(doc="Max salt flow to hxd based on available hot salt")
+    def constraint_salt_maxflow_hot(b):
+        return (
+            3600 * b.hxd.shell_inlet.flow_mass[0] * factor_mton <=
+            b1.previous_salt_inventory_hot
+        )
+
+    @b1.fs.Constraint(doc="Max salt flow to hxc based on available cold salt")
+    def constraint_salt_maxflow_cold(b):
+        return (
+            3600 * b.hxc.tube_inlet.flow_mass[0] * factor_mton <=
+            b1.previous_salt_inventory_cold
         )
 
     # Add area coupling variables
@@ -281,6 +300,7 @@ def get_link_variable_pairs(b1, b2):
     """
     return [
         (b1.usc.salt_inventory_hot, b2.usc.previous_salt_inventory_hot),
+        (b1.usc.salt_inventory_cold, b2.usc.previous_salt_inventory_cold),
         (b1.usc.fs.plant_power_out[0], b2.usc.previous_power),
         (b1.usc.fs.hxc.area, b2.usc.previous_charge_area),
         (b1.usc.fs.hxd.area, b2.usc.previous_discharge_area),
@@ -298,6 +318,7 @@ def get_periodic_variable_pairs(b1, b2):
     # return
     return [
         (b1.usc.salt_inventory_hot, b2.usc.previous_salt_inventory_hot),
+        # (b1.usc.salt_inventory_cold, b2.usc.previous_salt_inventory_cold)
     ]
 
 

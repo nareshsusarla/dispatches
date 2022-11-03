@@ -184,27 +184,31 @@ def create_mp_block():
         )
 
     max_inventory = 1e7 * factor_mton # in mton
+    min_inventory = 75000 * factor_mton # in mton
+    max_salt_amount = design_data_dict["max_salt_amount"] * factor_mton # in mton
+    tank_max = max_salt_amount
+
     b1.previous_salt_inventory_hot = pyo.Var(
         domain=NonNegativeReals,
-        initialize=1,
+        initialize=min_inventory,
         bounds=(0, max_inventory),
         doc="Hot salt at the beginning of the period in mton"
         )
     b1.salt_inventory_hot = pyo.Var(
         domain=NonNegativeReals,
-        initialize=80,
+        initialize=min_inventory,
         bounds=(0, max_inventory),
         doc="Hot salt inventory at the end of the period in mton"
         )
     b1.previous_salt_inventory_cold = pyo.Var(
         domain=NonNegativeReals,
-        initialize=1,
+        initialize=tank_max - min_inventory,
         bounds=(0, max_inventory),
         doc="Cold salt at the beginning of the period in mton"
         )
     b1.salt_inventory_cold = pyo.Var(
         domain=NonNegativeReals,
-        initialize=80,
+        initialize=tank_max - min_inventory,
         bounds=(0, max_inventory),
         doc="Cold salt inventory at the end of the in mton"
         )

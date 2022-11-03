@@ -74,7 +74,8 @@ def _get_lmp(hours_per_day=None, nhours=None):
     elif use_mod_rts_data:
         # price = [22.9684, 21.1168, 20.4, 20.419, 0, 0, 200, 200]
         price = [
-            22.9684, 21.1168, 20.4, 20.419,
+            # 22.9684, 21.1168, 20.4, 20.419,
+            52.9684, 21.1168, 10.4, 5.419,
             # 20.419, 21.2877, 23.07, 25,
             # 18.4634, 0, 0, 0,
             0, 0, 0, 0,
@@ -498,7 +499,7 @@ def run_pricetaker_analysis(hours_per_day=None,
     @m.Constraint()
     def _constraint_min_charge(b):
         return sum(b.blocks[h].process.usc.fs.charge_mode_disjunct.binary_indicator_var
-                   for h in b.hours_set) >= nlow_lmp - 1
+                   for h in b.hours_set) >= nlow_lmp
     @m.Constraint()
     def _constraint_min_discharge(b):
         return sum(b.blocks[h].process.usc.fs.discharge_mode_disjunct.binary_indicator_var
@@ -602,7 +603,7 @@ def run_pricetaker_analysis(hours_per_day=None,
     else:
         print("Unrecognized scenario! Try hot_empty, hot_full, or hot_half_full")
 
-    blks[0].usc.previous_power.fix(400)
+    blks[0].usc.previous_power.fix(447.66)
 
     # Initialize disjunctions
     print()
@@ -611,13 +612,13 @@ def run_pricetaker_analysis(hours_per_day=None,
     if tank_status == "hot_empty":
         for k in range(nhours):
             # if k <= (nhours / 3) - 1:
-            #     blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
-            #     blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
-            #     blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
-            # elif k <= 2 * (nhours / 3) - 1:
             #     blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(0)
             #     blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
             #     blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(1)
+            # elif k <= 2 * (nhours / 3) - 1:
+            #     blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
+            #     blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
+            #     blks[k].usc.fs.no_storage_mode_disjunct.binary_indicator_var.set_value(0)
             if k <= (nhours / 2) - 1:
                 blks[k].usc.fs.charge_mode_disjunct.binary_indicator_var.set_value(1)
                 blks[k].usc.fs.discharge_mode_disjunct.binary_indicator_var.set_value(0)
@@ -679,8 +680,8 @@ def run_pricetaker_analysis(hours_per_day=None,
             # variable_tolerance=1e-6,
             init_algorithm="no_init",
             subproblem_presolve=False,
-            time_limit="28000",
-            iterlim=200,
+            time_limit="56000",
+            iterlim=500,
             call_after_subproblem_solve=(
                 lambda c, a, b: print_model(c, a, b,
                                             csvfile, nweeks=nweeks,
@@ -691,7 +692,7 @@ def run_pricetaker_analysis(hours_per_day=None,
                 tee=True,
                 symbolic_solver_labels=True,
                 options={"linear_solver": "ma27",
-                         "max_iter": 180,
+                         "max_iter": 150,
                          "halt_on_ampl_error": "yes"
                 }
             )
@@ -731,7 +732,7 @@ def run_pricetaker_analysis(hours_per_day=None,
 def print_results(m, blks, results):
     # Print and plot results
     c = 0
-    print('Objective: {:.4f}'.format((value(m.obj) / scaling_cost) / scaling_obj))
+    print('Objective: {:.4f}'.format(value(m.obj) / scaling_obj))
     for blk in blks:
         print()
         print('Period {}'.format(c+1))
@@ -921,7 +922,7 @@ def plot_results(m,
     ax3.step(hours_list, hxd_duty_list, marker='o', ms=8, color=c[1], alpha=0.75,
              label='Discharge')
     ax3.fill_between(hours_list, hxd_duty_list, step="pre", color=c[1], alpha=0.25)
-    ax3.legend(loc="upper center", frameon=False)
+    ax3.legend(loc="center left", frameon=False)
     ax3.tick_params(axis='y')
     ax3.set_xticks(np.arange(0, n_time_points*nweeks + 1, step=1))
     ax4 = ax3.twinx()

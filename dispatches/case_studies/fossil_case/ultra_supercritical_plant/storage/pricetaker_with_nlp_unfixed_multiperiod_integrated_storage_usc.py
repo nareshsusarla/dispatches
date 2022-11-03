@@ -65,7 +65,8 @@ def _get_lmp(hours_per_day=None, nhours=None):
     elif use_mod_rts_data:
         print('>>>>>> Using given LMP data')
         price = [
-            22.9684, 21.1168, 20.4, 20.419,
+            # 22.9684, 21.1168, 20.4, 20.419,
+            52.9684, 21.1168, 10.4, 5.419,
             # 20.419, 21.2877, 23.07, 25,
             # 18.4634, 0, 0, 0,
             0, 0, 0, 0,
@@ -215,7 +216,7 @@ def run_pricetaker_analysis(hours_per_day=None,
 
     # Declare the solver and a set of lists to save the results
     opt = pyo.SolverFactory('ipopt',
-                            options={"max_iter": 300})
+                            options={"max_iter": 150})
 
     hot_tank_level = []
     cold_tank_level = []
@@ -234,14 +235,14 @@ def run_pricetaker_analysis(hours_per_day=None,
 
         # Save results in lists
         tank_max_list.append(value(tank_max))
-        boiler_heat_duty.append([pyo.value(blks[i].usc.fs.boiler.heat_duty[0]) * 1e-6
-                                 for i in range(n_time_points)]) # in MW
-        discharge_work.append([pyo.value(blks[i].usc.fs.es_turbine.work[0]) * (-1e-6)
-                               for i in range(n_time_points)]) # in MW
         hot_tank_level.append([(pyo.value(blks[i].usc.salt_inventory_hot)) # in mton
                                for i in range(n_time_points)])
         cold_tank_level.append([(pyo.value(blks[i].usc.salt_inventory_cold))# in mton
                                 for i in range(n_time_points)])
+        boiler_heat_duty.append([pyo.value(blks[i].usc.fs.boiler.heat_duty[0]) * 1e-6
+                                 for i in range(n_time_points)]) # in MW
+        discharge_work.append([pyo.value(blks[i].usc.fs.es_turbine.work[0]) * (-1e-6)
+                               for i in range(n_time_points)]) # in MW
         net_power.append([pyo.value(blks[i].usc.fs.net_power)
                           for i in range(n_time_points)])
         hxc_duty.append([pyo.value(blks[i].usc.fs.hxc.heat_duty[0]) * 1e-6 # in MW
@@ -293,16 +294,20 @@ def print_results(m, blks, results):
             value(blks[c].usc.fs.boiler.outlet.flow_mol[0])))
         print(' Previous hot salt inventory (mton): {:.4f}'.format(
             (value(blks[c].usc.previous_salt_inventory_hot))))
+        print(' Previous cold salt inventory (mton): {:.4f}'.format(
+            (value(blks[c].usc.previous_salt_inventory_cold))))
         print(' Hot salt inventory (mton): {:.4f}'.format(
             (value(blks[c].usc.salt_inventory_hot))))
+        print(' Cold salt inventory (mton): {:.4f}'.format(
+            (value(blks[c].usc.salt_inventory_cold))))
         print(' Hot salt from HXC (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxc.tube_outlet.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxc.tube_outlet.flow_mass[0]) * 3600 * factor_mton))
         print(' Hot salt into HXD (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxd.shell_inlet.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxd.shell_inlet.flow_mass[0]) * 3600 * factor_mton))
         print(' Cold salt into HXC (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxc.tube_inlet.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxc.tube_inlet.flow_mass[0]) * 3600 * factor_mton))
         print(' Cold salt from HXD (mton): {:.4f}'.format(
-            value(blks[c].usc.fs.hxd.shell_outlet.flow_mass[0]) * 3600))
+            value(blks[c].usc.fs.hxd.shell_outlet.flow_mass[0]) * 3600 * factor_mton))
         print(' HXC area (m2): {:.4f}'.format(
             value(blks[c].usc.fs.hxc.area)))
         print(' HXD area (m2): {:.4f}'.format(
@@ -402,7 +407,7 @@ def plot_results(m,
     # ax1.fill_between(hours_list, hot_tank_list, tank_max, step="pre", color=c[1], alpha=0.25,
     #                  label='Cold Tank')
     ax1.fill_between(hours_list, cold_tank_list, step="pre", color=c[1], alpha=0.1)
-    ax1.legend(loc="center left", frameon=False)
+    ax1.legend(loc="upper left", frameon=False)
     ax1.tick_params(axis='y')
     ax1.set_xticks(np.arange(0, n_time_points * nweeks + 1, step=1))
     ax2 = ax1.twinx()
@@ -471,6 +476,7 @@ def plot_results(m,
 
     plt.show()
 
+
 def _mkdir(dir):
     """Create directory to save results
 
@@ -503,7 +509,7 @@ if __name__ == '__main__':
         if new_design:
             # scaling_obj = 1e-2
             # scaling_cost = 1e-3
-            scaling_obj = 1e-3
+            scaling_obj = 1e-1
             scaling_cost = 1
         else:
             # Old design
