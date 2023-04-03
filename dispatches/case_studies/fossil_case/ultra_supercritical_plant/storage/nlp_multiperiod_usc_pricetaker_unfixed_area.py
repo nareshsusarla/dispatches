@@ -54,7 +54,7 @@ import idaes.logger as idaeslog
 from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
-use_surrogate = True
+use_surrogate = False
 constant_salt = False
 
 # Import integrated ultrasupercritical power plant model. Also,

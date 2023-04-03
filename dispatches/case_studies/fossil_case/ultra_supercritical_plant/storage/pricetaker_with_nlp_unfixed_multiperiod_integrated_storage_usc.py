@@ -24,6 +24,7 @@ obtained from a synthetic database or from NREL data.
 
 __author__ = "Soraya Rawlings and Naresh Susarla"
 
+import logging
 
 # Import Python libraries
 import numpy as np
@@ -49,6 +50,7 @@ from dispatches.properties import solarsalt_properties
 from idaes.core import UnitModelCostingBlock
 from idaes.models.costing.SSLW import (SSLWCosting, SSLWCostingData,
                                        PumpType, PumpMaterial, PumpMotorType)
+logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
 
 # Import objects for plots
 from matplotlib import pyplot as plt
@@ -60,7 +62,7 @@ plt.rc('font', **font)
 
 # _activate_nl_writer_version(2)
 
-use_surrogate = True
+use_surrogate = False
 
 def _get_lmp(n_time_points=None):
 
