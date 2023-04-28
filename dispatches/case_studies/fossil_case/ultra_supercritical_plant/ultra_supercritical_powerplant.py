@@ -66,7 +66,8 @@ from idaes.core.util.tags import svg_tag, ModelTagGroup
 
 # Import Property Packages (IAPWS95 for Water/Steam)
 from idaes.models.properties import iapws95
-
+logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
+logging.getLogger('idaes.models.properties.general_helmholtz.helmholtz_state').setLevel(logging.ERROR)
 
 def declare_unit_model(m=None):
     """Create flowsheet and add unit models.
