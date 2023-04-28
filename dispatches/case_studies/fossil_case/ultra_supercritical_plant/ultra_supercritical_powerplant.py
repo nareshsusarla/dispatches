@@ -66,6 +66,8 @@ from idaes.core.util.tags import svg_tag, ModelTagGroup
 
 # Import Property Packages (IAPWS95 for Water/Steam)
 from idaes.models.properties import iapws95
+logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
+logging.getLogger('idaes.models.properties.general_helmholtz.helmholtz_state').setLevel(logging.ERROR)
 
 
 def declare_unit_model(m=None):
@@ -829,7 +831,7 @@ def set_scaling_factors(m):
     iscale.set_scaling_factor(m.fs.bfpt.control_volume.work, 1e-6)
 
 
-def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
+def initialize(m, fileinput=None, outlvl=idaeslog.INFO,
                solver=None, optarg={}):
 
     optarg = {
