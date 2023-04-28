@@ -707,7 +707,7 @@ if __name__ == '__main__':
         if use_surrogate:
             scaling_obj = 1e-1
         else:
-            scaling_obj = 1
+            scaling_obj = 1e-3
     else:
         scaling_obj = 1e-1
     print()
@@ -728,7 +728,7 @@ if __name__ == '__main__':
         pmax = design_data_dict["plant_max_power"]*pyunits.MW + pmax_storage
 
     hours_per_day = 24
-    ndays = 1
+    ndays = 7
     nhours = hours_per_day*ndays
     nweeks = 1
 
