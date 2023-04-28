@@ -218,10 +218,11 @@ def create_integrated_model(m, method=None):
         doc="Steam side convective heat transfer coefficient [W/mK]")
 
     # Calculate overall heat transfer coefficient
+    htc_sa_sf = 1
     @m.fs.hxc.Constraint(m.fs.time)
     def constraint_hxc_ohtc(b, t):
         return (
-            b.overall_heat_transfer_coefficient[t]*
+            b.overall_heat_transfer_coefficient[t] * htc_sa_sf *
             (2*m.fs.k_steel*b.h_steam +
              m.fs.tube_outer_dia*m.fs.log_tube_dia_ratio*b.h_salt*b.h_steam +
              m.fs.tube_dia_ratio*b.h_salt*2*m.fs.k_steel)

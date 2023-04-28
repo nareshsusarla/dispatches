@@ -29,6 +29,7 @@ import logging
 # Import Python libraries
 import numpy as np
 import json
+import os
 
 # Import Pyomo objects
 import pyomo.environ as pyo
@@ -67,8 +68,8 @@ use_surrogate = False
 def _get_lmp(n_time_points=None):
 
     # Select lmp source data and scaling factor according to that
-    use_rts_data = False
-    use_mod_rts_data = True
+    use_rts_data = True
+    use_mod_rts_data = False
     if use_rts_data:
         print('>>>>>> Using RTS LMP data')
         with open('rts_results_all_prices_base_case.npy', 'rb') as f:
@@ -612,7 +613,7 @@ def plot_results(m,
     if use_surrogate:
         plt.savefig('results/nlp_mp_unfixed_area/surrogate_salt_tank_level_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp_unfixed_area/salt_tank_level_{}hrs.png'.format(n_time_points))
+        plt.savefig('nlp_mp_unfixed_area_salt_tank_level_24hrs.png')
 
     # Plot boiler and charge and discharge heat exchangers heat duty
     fig2, ax3 = plt.subplots(figsize=(12, 8))
@@ -648,7 +649,7 @@ def plot_results(m,
     if use_surrogate:
         plt.savefig('results/nlp_mp_unfixed_area/surrogate_heat_duty_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp_unfixed_area/heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('nlp_mp_unfixed_area_heat_duty_24hrs.png')
 
     # Plot net power and discharge power profiles
     fig3, ax5 = plt.subplots(figsize=(12, 8))
@@ -676,7 +677,7 @@ def plot_results(m,
     if use_surrogate:
         plt.savefig('results/nlp_mp_unfixed_area/surrogate_power_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp_unfixed_area/power_{}hrs.png'.format(n_time_points))
+        plt.savefig('nlp_mp_unfixed_area_power_24hrs.png')
 
     plt.show()
 
@@ -701,14 +702,14 @@ if __name__ == '__main__':
     }
     solver = get_solver('ipopt', optarg)
 
-    lx = True
+    lx = False
     if lx:
         if use_surrogate:
             scaling_obj = 1e-1
         else:
             scaling_obj = 1
     else:
-        scaling_obj = 1
+        scaling_obj = 1e-1
     print()
     print('scaling_obj:', scaling_obj)
 

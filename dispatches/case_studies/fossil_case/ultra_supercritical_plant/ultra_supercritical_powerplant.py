@@ -1,7 +1,7 @@
 #################################################################################
-# DISPATCHES was produced under the DOE Design Integration and Synthesis
-# Platform to Advance Tightly Coupled Hybrid Energy Systems program (DISPATCHES),
-# and is copyright (c) 2022 by the software owners: The Regents of the University
+# DISPATCHES was produced under the DOE Design Integration and Synthesis Platform
+# to Advance Tightly Coupled Hybrid Energy Systems program (DISPATCHES), and is
+# copyright (c) 2020-2023 by the software owners: The Regents of the University
 # of California, through Lawrence Berkeley National Laboratory, National
 # Technology & Engineering Solutions of Sandia, LLC, Alliance for Sustainable
 # Energy, LLC, Battelle Energy Alliance, LLC, University of Notre Dame du Lac, et
@@ -10,7 +10,6 @@
 # Please see the files COPYRIGHT.md and LICENSE.md for full copyright and license
 # information, respectively. Both files are also available online at the URL:
 # "https://github.com/gmlc-dispatches/dispatches".
-#
 #################################################################################
 
 """
@@ -67,18 +66,18 @@ from idaes.core.util.tags import svg_tag, ModelTagGroup
 
 # Import Property Packages (IAPWS95 for Water/Steam)
 from idaes.models.properties import iapws95
-
 logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
 logging.getLogger('idaes.models.properties.general_helmholtz.helmholtz_state').setLevel(logging.ERROR)
 
-
-def declare_unit_model():
+def declare_unit_model(m=None):
     """Create flowsheet and add unit models.
     """
     ###########################################################################
     #  Flowsheet and Property Package                                         #
     ###########################################################################
-    m = ConcreteModel(name="Ultra Supercritical Power Plant Model")
+    if m is None:
+        m = ConcreteModel(name="Ultra Supercritical Power Plant Model")
+
     m.fs = FlowsheetBlock(dynamic=False)
     m.fs.prop_water = iapws95.Iapws95ParameterBlock()
 
@@ -1114,12 +1113,17 @@ def initialize(m, fileinput=None, outlvl=idaeslog.NOTSET,
 
 def add_bounds(m):
 
-    m.flow_max = m.main_flow * 1.2  # number from Naresh
-    m.salt_flow_max = 1000  # in kg/s
+    m.flow_max = m.main_flow * 3  # number from Naresh
+    # m.salt_flow_max = 1000  # in kg/s
 
-    for unit_k in [m.fs.boiler, m.fs.reheater[1],
-                   m.fs.reheater[2], m.fs.cond_pump,
-                   m.fs.bfp, m.fs.bfpt]:
+    for unit_k in [
+            m.fs.boiler,
+            m.fs.reheater[1],
+            m.fs.reheater[2],
+            m.fs.cond_pump,
+            m.fs.bfp,
+            m.fs.bfpt
+            ]:
         unit_k.inlet.flow_mol[:].setlb(0)  # mol/s
         unit_k.inlet.flow_mol[:].setub(m.flow_max)  # mol/s
         unit_k.outlet.flow_mol[:].setlb(0)  # mol/s
@@ -1288,10 +1292,10 @@ def view_result(outfile, m):
         svg_tag(svg=f, tag_group=tag_group, outfile=outfile)
 
 
-def build_plant_model():
+def build_plant_model(m=None):
 
     # Create a flowsheet, add properties, unit models, and arcs
-    m = declare_unit_model()
+    m = declare_unit_model(m)
 
     # Give all the required inputs to the model
     # Ensure that the degrees of freedom = 0 (model is complete)
