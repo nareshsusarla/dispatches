@@ -611,9 +611,9 @@ def plot_results(m,
              alpha=0.7, ls='-', lw=1.5, color=c[2])
     ax2.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp_unfixed_area/surrogate_salt_tank_level_{}hrs.png'.format(n_time_points))
+        plt.savefig('results/nlp_mp/surrogate_salt_tank_level_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('nlp_mp_unfixed_area_salt_tank_level_24hrs.png')
+        plt.savefig('results/nlp_mp/salt_tank_level_{}h.png'.format(n_time_points))
 
     # Plot boiler and charge and discharge heat exchangers heat duty
     fig2, ax3 = plt.subplots(figsize=(12, 8))
@@ -647,9 +647,9 @@ def plot_results(m,
     ax4.step([x + 1 for x in hours], lmp_array, marker='o', ms=marker_size, alpha=0.7, ls='-', lw=1.5, color=c[2])
     ax4.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp_unfixed_area/surrogate_heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('results/nlp_mp/surrogate_heat_duty_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('nlp_mp_unfixed_area_heat_duty_24hrs.png')
+        plt.savefig('results/nlp_mp/heat_duty_{}hrs.png'.format(n_time_points))
 
     # Plot net power and discharge power profiles
     fig3, ax5 = plt.subplots(figsize=(12, 8))
@@ -675,9 +675,9 @@ def plot_results(m,
              color=c[2])
     ax6.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp_unfixed_area/surrogate_power_{}hrs.png'.format(n_time_points))
+        plt.savefig('results/nlp_mp/surrogate_power_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('nlp_mp_unfixed_area_power_24hrs.png')
+        plt.savefig('results/nlp_mp/power_{}h.png'.format(n_time_points))
 
     plt.show()
 
@@ -740,8 +740,7 @@ if __name__ == '__main__':
     # Create a directory to save the results for each NLP sbproblem
     # and plots
     _mkdir('results')
-    _mkdir('results/nlp_mp_unfixed_area_{}h'.format(nhours))
-
+    _mkdir('results/nlp_mp')
 
     (m, blks, lmp, net_power, results, total_inventory,
      hot_tank_level, cold_tank_level, hxc_duty, hxd_duty,
