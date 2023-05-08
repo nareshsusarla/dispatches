@@ -833,7 +833,7 @@ def add_bounds(m):
     m.factor = 2
 
     # Add lower bound for boiler flow
-    m.fs.boiler.inlet.flow_mol.setlb(13390.5)
+    # m.fs.boiler.inlet.flow_mol.setlb(13390.5)
 
     # Charge heat exchanger
     m.fs.hxc.shell_inlet.flow_mol.setlb(m.flow_min)
