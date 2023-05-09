@@ -3351,7 +3351,7 @@ def run_gdp(m):
         m,
         tee=True,
         algorithm='RIC',
-        mip_solver='gurobi',
+        mip_solver='cbc',
         nlp_solver='ipopt',
         # OA_penalty_factor=1e4,
         # max_slack=1e4,
