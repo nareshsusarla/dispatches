@@ -63,13 +63,16 @@ plt.rc('font', **font)
 
 # _activate_nl_writer_version(2)
 
+# Make sure these have the same value in nlp_multiperiod script
 use_surrogate = False
+constant_salt = False
+fix_design = False
 
 def _get_lmp(n_time_points=None):
 
     # Select lmp source data and scaling factor according to that
-    use_rts_data = True
-    use_mod_rts_data = False
+    use_rts_data = False
+    use_mod_rts_data = True
     if use_rts_data:
         print('>>>>>> Using RTS LMP data')
         with open('rts_results_all_prices_base_case.npy', 'rb') as f:
@@ -77,14 +80,70 @@ def _get_lmp(n_time_points=None):
             price = np.load(f)
         lmp = price[0:nhours].tolist()
     elif use_mod_rts_data:
-        print('>>>>>> Using given LMP data')
-        price = [52.9684, 21.1168, 10.4, 5.419,
-                 20.419, 21.2877, 23.07, 25,
-                 18.4634, 0, 0, 0,
-                 0, 0, 0, 0,
-                 19.0342, 23.07, 200, 200,
-                 200, 200, 200, 200]
+        print('>>>>>> Using (modified or avrg) RTS LMP data')
+        # RTS modified data
+        # price = [52.9684, 21.1168, 10.4, 5.419,
+        #          20.419, 21.2877, 23.07, 25,
+        #          18.4634, 0, 0, 0,
+        #          0, 0, 0, 0,
+        #          19.0342, 23.07, 200, 200,
+        #          200, 200, 200, 200]
+        # RTS average 24 hrs
+        price = [
+            21.734392123626375, 20.991034120879117, 19.896812835164834, 18.83252368406595,
+            18.797422843406594, 20.550819736263733, 21.571611835164816, 18.6866115879121,
+            11.13006721978022, 9.296121148351645, 9.218053085164833, 10.285348115384613,
+            11.446111348901104, 13.139503247252758, 14.844101744505506, 17.63673195879121,
+            20.526543373626396, 26.187743260989023, 33.64193449450563, 34.581440082417686,
+            33.32562242857146, 29.430152887362656, 26.159412942307675, 23.720650788461544
+        ]
+        # # RTS average for 1 week
+        # price = [
+        #     20.829564538461536, 19.693028192307693, 17.820727653846156, 16.635251211538467,
+        #     16.858723211538457, 19.40059307692308, 20.643515596153847, 17.96632492307692,
+        #     11.641621326923078, 8.882227480769231, 8.57824726923077, 10.088016769230771,
+        #     11.98047917307692, 13.386592423076921, 15.169638807692307, 17.26273592307692,
+        #     20.160692365384612, 26.26299409615385, 35.899514692307676, 34.625430192307675,
+        #     33.08377317307692, 29.34617059615384, 25.27478221153846, 23.242250461538465,
+        #     20.579725442307698, 20.10433521153846, 19.583595423076922, 18.30950607692308,
+        #     17.745158134615387, 20.727536230769225, 21.299347000000004, 22.56708517307692,
+        #     13.05982015384615, 11.377053153846152, 12.062396769230768, 13.014763615384611,
+        #     13.309641346153843, 14.10522267307692, 15.761158846153844, 17.752077307692307,
+        #     22.15561392307692, 27.434314403846148, 32.038436692307684, 34.166914615384584,
+        #     32.15269176923077, 30.22890519230769, 26.737662596153843, 24.446553615384616,
+        #     23.87905498076924, 23.481888096153853, 22.33163884615385, 22.013695730769232,
+        #     22.056609076923085, 23.214242769230776, 20.77664930769231, 16.460505769230767,
+        #     10.694727730769232, 8.226054153846153, 8.556423807692308, 9.55585592307692,
+        #     9.452980692307694, 11.024066711538463, 12.853477865384612, 15.963486576923076,
+        #     20.566712480769226, 25.440112192307687, 33.19064453846151, 32.40535288461537,
+        #     32.056517980769215, 29.629065499999985, 26.52354048076922, 24.592951846153845,
+        #     21.957720769230775, 21.656073307692303, 20.644124711538463, 19.998112538461537,
+        #     18.79414169230769, 18.824993884615388, 18.83248876923077, 13.422123596153842,
+        #     5.286316461538462, 4.163297365384615, 5.335777173076924, 6.24375303846154,
+        #     7.785439769230767, 9.262351384615384, 11.446491019230766, 15.400954711538466,
+        #     18.16094686538462, 24.058750769230773, 33.21687103846154, 32.37216078846153,
+        #     31.566947326923067, 29.482025980769222, 26.620510826923073, 22.849809673076933,
+        #     20.383665711538455, 19.11278348076923, 18.931816269230772, 17.965620923076923,
+        #     18.811001730769235, 20.446076096153845, 22.172929730769226, 19.089245519230772,
+        #     12.140012634615385, 10.328201230769228, 10.470433615384612, 11.15892865384615,
+        #     12.674435192307689, 14.398074096153845, 15.69510803846154, 18.96061357692308,
+        #     21.639628192307693, 26.773128942307686, 32.45396540384614, 41.09640323076923,
+        #     32.790869153846145, 29.437534576923067, 26.267306057692316, 24.10291501923077,
+        #     22.63920815384616, 21.559509846153848, 19.997214846153845, 18.024930365384613,
+        #     17.87084488461539, 19.87102576923077, 23.644809192307687, 21.342310192307686,
+        #     13.331565326923073, 12.469750769230764, 10.064728865384613, 10.204487153846152,
+        #     11.857142999999997, 14.898623096153843, 16.153417134615385, 18.845525038461535,
+        #     20.57578742307692, 26.75846975, 36.999615134615375, 33.925467788461525,
+        #     38.73873730769229, 29.278822115384603, 26.149744538461544, 24.07332378846155,
+        #     21.87180526923077, 21.32962071153846, 19.968572096153853, 18.880548942307694,
+        #     19.445481173076924, 21.371270326923078, 23.631543249999996, 19.958685942307685,
+        #     11.75640690384615, 9.626263884615385, 9.458364096153847, 11.731631653846154,
+        #     13.062660269230769, 14.901592346153844, 16.829420499999994, 19.27173057692308,
+        #     20.426422365384614, 26.586432673076917, 31.694493961538452, 33.478351076923055,
+        #     32.889820288461515, 28.608546249999986, 25.542343884615384, 22.736751115384624
+        # ]
         lmp = price
+        print('lmp:', lmp)
         if len(price) < n_time_points:
             print()
             print('**ERROR: I need more LMP data!')
@@ -265,38 +324,31 @@ def run_pricetaker_analysis(nweeks=None,
     m.hours_set = RangeSet(1, n_time_points)
     m.hours_set2 = RangeSet(1, n_time_points - 1)
 
-    # Add nonanticipativaty constraints for charge and
-    # discharge areas
-    @m.Constraint(m.hours_set2)
-    def nonanticipativity_constraint_charge_area(b, h):
-        return b.period[h+1].fs.hxc.area == b.period[h].fs.hxc.area
+    if not fix_design:
+        # Add nonanticipativaty constraints for charge and
+        # discharge areas
+        @m.Constraint(m.hours_set2)
+        def nonanticipativity_constraint_charge_area(b, h):
+            return b.period[h+1].fs.hxc.area == b.period[h].fs.hxc.area
 
-    @m.Constraint(m.hours_set2)
-    def nonanticipativity_constraint_discharge_area(b, h):
-        return b.period[h+1].fs.hxd.area == b.period[h].fs.hxd.area
+        @m.Constraint(m.hours_set2)
+        def nonanticipativity_constraint_discharge_area(b, h):
+            return b.period[h+1].fs.hxd.area == b.period[h].fs.hxd.area
 
-    # Add nonanticipative constraints to ensure that the discharge
-    # heat exchanger has the same temperature for the hot salt than
-    # the one obtained during charge cycle.
-    @m.Constraint(m.hours_set,
-                  doc="Salt temperature in charge heat exchanger")
-    def constraint_discharge_temperature(b, h):
-        return b.period[h].fs.hxd.shell_inlet.temperature[0] == (
-            b.period[h].fs.hxc.tube_outlet.temperature[0]
-        )
-    @m.Constraint(m.hours_set2)
-    def nonanticipativity_constraint_discharge_hot_salt_temperature(b, h):
-        return (
-            b.period[h+1].fs.hxd.shell_inlet.temperature[0] ==
-            b.period[h].fs.hxd.shell_inlet.temperature[0]
-        )
-
-    if use_surrogate:
+        # Add nonanticipative constraints to ensure that the discharge
+        # heat exchanger has the same temperature for the hot salt than
+        # the one obtained during charge cycle.
+        @m.Constraint(m.hours_set,
+                      doc="Salt temperature in charge heat exchanger")
+        def constraint_discharge_temperature(b, h):
+            return b.period[h].fs.hxd.shell_inlet.temperature[0] == (
+                b.period[h].fs.hxc.tube_outlet.temperature[0]
+            )
         # Add constraint to ensure a hot salt temperature close to the
         # upper bound
-        @m.Constraint()
-        def rule_hot_salt_lb(b):
-            return b.period[1].fs.hxc.tube_outlet.temperature[0] == 853.15*pyunits.K
+        @m.Constraint(m.hours_set)
+        def rule_fix_hot_salt(b, h):
+            return b.period[h].fs.hxc.tube_outlet.temperature[0] == 853.15*pyunits.K
 
     ##################################################################
     # Add storage material capital costs and inventory balances      #
@@ -335,12 +387,18 @@ def run_pricetaker_analysis(nweeks=None,
     # variables. Different tank scenarios are included for the Solar
     # salt tank levels and the previous tank level of the tank is
     # based on that.
-    m.tank_min = 1e-3*pyunits.metric_ton
     m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
                                     to_units=pyunits.metric_ton)
-
+    # @m.Constraint()
+    # def power_init(b):
+    #     return m.period[1].fs.previous_power == 447.66
     m.period[1].fs.previous_power.fix(447.66)
+
     if tank_status == "hot_empty":
+        # @m.Constraint()
+        # def tank_init_amount(b):
+        #     # return m.period[1].fs.previous_salt_inventory_hot <= m.tank_init
+        #     return m.period[1].fs.previous_salt_inventory_hot == m.tank_init
         m.period[1].fs.previous_salt_inventory_hot.fix(m.tank_init)
 
         @m.Constraint()
@@ -359,11 +417,15 @@ def run_pricetaker_analysis(nweeks=None,
         blk.total_profit = pyo.Expression(
             expr=(
                 lmp[count]*blk.fs.net_power[0] - # revenue
-                (blk.fs.fuel_cost +
-                 blk.fs.plant_operating_cost) - # plant operating costs
-                (m.salt_purchase_cost +
-                 m.no_of_tanks*m.salt_tank_capital_cost +
-                 m.storage_hx_capital_cost) # storage capital costs
+                (
+                    blk.fs.fuel_cost +
+                    blk.fs.plant_operating_cost
+                ) - # plant operating costs
+                (
+                    m.salt_purchase_cost +
+                    m.no_of_tanks*m.salt_tank_capital_cost +
+                    m.storage_hx_capital_cost
+                ) # storage capital costs
             )
         )
         count += 1
@@ -376,16 +438,6 @@ def run_pricetaker_analysis(nweeks=None,
 
     # Declare the solver and a set of lists to save the results
     opt = pyo.SolverFactory('ipopt')
-
-    hot_tank_level = []
-    cold_tank_level = []
-    net_power = []
-    hxc_duty = []
-    hxd_duty = []
-    # boiler_heat_duty = []
-    plant_heat_duty = []
-    discharge_work = []
-    total_inventory = []
     print()
     print(">>Solve for {} hours of operation ({} day(s)) ".format(n_time_points,
                                                                   n_time_points/24))
@@ -393,21 +445,28 @@ def run_pricetaker_analysis(nweeks=None,
                         tee=True,
                         symbolic_solver_labels=True,
                         options={
-                            "max_iter": 200,
+                            "max_iter": 300,
                             "linear_solver": "ma27",
                             # "halt_on_ampl_error": "yes"
                         })
 
-    total_inventory.append(pyo.value(m.total_inventory))
+    hot_tank_level = []
+    cold_tank_level = []
+    net_power = []
+    hxc_duty = []
+    hxd_duty = []
+    plant_heat_duty = []
+    discharge_work = []
+    total_inventory = []
     steam_to_storage = []
     boiler_flow = []
+    boiler_heat_duty = []
+    total_inventory.append(pyo.value(m.total_inventory))
     for blk in blks:
         # Save results in lists
         hot_tank_level.append(pyo.value(blk.fs.salt_inventory_hot))
         cold_tank_level.append(pyo.value(blk.fs.salt_inventory_cold))
         plant_heat_duty.append(pyo.value(blk.fs.plant_heat_duty[0])) # in MW
-        # boiler_heat_duty.append([pyo.value(m.period[i].fs.boiler.heat_duty[0])*1e-6
-        #                          for i in range(n_time_points)]) # in MW
         discharge_work.append(pyo.value(blk.fs.es_turbine.work[0])*(-1e-6)) # in MW
         net_power.append(pyo.value(blk.fs.net_power[0]))
         hxc_duty.append(pyo.value(blk.fs.hxc.heat_duty[0])*1e-6)
@@ -421,15 +480,23 @@ def run_pricetaker_analysis(nweeks=None,
 
     log_close_to_bounds(m)
     log_infeasible_constraints(m)
-    print('hot_tank_level', hot_tank_level)
-    print('boiler_flow', boiler_flow)
-    print('steam_to_storage', steam_to_storage)
-    print('plant_heat_duty', plant_heat_duty)
+    
+    print('hot_tank_level=', hot_tank_level)
+    print('cold_tank_level=', cold_tank_level)
+    print('boiler_flow=', boiler_flow)
+    print('steam_to_storage=', steam_to_storage)
+    print('plant_heat_duty=', plant_heat_duty)
+   
+    if not use_surrogate:
+        for blk in blks:
+            boiler_heat_duty.append(pyo.value(blk.fs.boiler.heat_duty[0])*1e-6) # in MW
+    
+        print('boiler_heat_duty=', boiler_heat_duty)
 
     return (m, blks, lmp, net_power, results,
             total_inventory, hot_tank_level,
             cold_tank_level, hxc_duty, hxd_duty,
-            # boiler_heat_duty,
+            boiler_heat_duty,
             plant_heat_duty, discharge_work)
 
 
@@ -545,24 +612,24 @@ def plot_results(m,
                  cold_tank_level=None,
                  hxc_duty=None,
                  hxd_duty=None,
-                 # boiler_heat_duty=None,
+                 boiler_heat_duty=None,
                  plant_heat_duty=None,
                  discharge_work=None,
                  pmax=None):
 
 
     # List of colors to be used in the plots
-    c = ['darkred', 'midnightblue', 'tab:green', 'k', 'gray']
+    c = ['darkred', 'navy', 'tab:green', 'k', 'gray']
 
     if n_time_points <= 50:
         marker_size = 8
-        step_size = 1
+        step_size = 2
     elif n_time_points <= 100:
         marker_size = 6
         step_size = 4
     else:
         marker_size = 3
-        step_size = 8
+        step_size = 12
 
     # Save and convert array to list to include values at time zero
     # for all the data that is going to be plotted
@@ -577,8 +644,9 @@ def plot_results(m,
     hxd_array = np.asarray(hxd_duty[0:n_time_points]).flatten()
     hxc_duty_list = [0] + hxc_array.tolist()
     hxd_duty_list = [0] + hxd_array.tolist()
-    # boiler_heat_duty_array = np.asarray(boiler_heat_duty[0:n_time_points]).flatten()
-    # boiler_heat_duty_list = [0] + boiler_heat_duty_array.tolist()
+    if not use_surrogate:
+        boiler_heat_duty_array = np.asarray(boiler_heat_duty[0:n_time_points]).flatten()
+        boiler_heat_duty_list = [0] + boiler_heat_duty_array.tolist()
     plant_heat_duty_array = np.asarray(plant_heat_duty[0:n_time_points]).flatten()
     plant_heat_duty_list = [0] + plant_heat_duty_array.tolist()
     power_array = np.asarray(net_power[0:n_time_points]).flatten()
@@ -596,16 +664,16 @@ def plot_results(m,
     ax1.grid(linestyle=':', which='both', color=c[4], alpha=0.40)
     plt.axhline(pyo.value(m.total_inventory), ls=':', lw=1.5, color=c[4])
     ax1.step(hours_list, hot_tank_list, marker='o', ms=marker_size, lw=1.5, color=c[0], alpha=0.85,
-             label='Hot Tank')
-    ax1.fill_between(hours_list, hot_tank_list, step="pre", color=c[0], alpha=0.35)
+             label='Hot Salt')
+    ax1.fill_between(hours_list, hot_tank_list, step="pre", color=c[0], alpha=0.25)
     ax1.step(hours_list, cold_tank_list, marker='o', ms=marker_size, lw=1.5, color=c[1], alpha=0.65,
-             label='Cold Tank')
+             label='Cold Salt')
     ax1.fill_between(hours_list, cold_tank_list, step="pre", color=c[1], alpha=0.1)
     ax1.legend(loc="upper left", frameon=False)
     ax1.tick_params(axis='y')
     ax1.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax2 = ax1.twinx()
-    ax2.set_ylim((-25, 225))
+    # ax2.set_ylim((-25, 225))
     ax2.set_ylabel('Locational Marginal Price ($/MWh)', color=c[2])
     ax2.step([x + 1 for x in hours], lmp_array, marker='o', ms=marker_size,
              alpha=0.7, ls='-', lw=1.5, color=c[2])
@@ -613,7 +681,7 @@ def plot_results(m,
     if use_surrogate:
         plt.savefig('results/nlp_mp/surrogate_salt_tank_level_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp/salt_tank_level_{}h.png'.format(n_time_points))
+        plt.savefig('results/nlp_mp/salt_tank_level_{}hrs.png'.format(n_time_points))
 
     # Plot boiler and charge and discharge heat exchangers heat duty
     fig2, ax3 = plt.subplots(figsize=(12, 8))
@@ -623,33 +691,28 @@ def plot_results(m,
     ax3.spines["right"].set_visible(False)
     ax3.grid(linestyle=':', which='both', color='gray', alpha=0.40)
     # ax3.set_ylim((-25, 825))
-    # ax3.step(hours_list, boiler_heat_duty_list, marker='o', ms=marker_size, color=c[3], ls='-', lw=1.5, alpha=0.85,
-    #          label='Boiler')
-    # ax3.fill_between(hours_list, boiler_heat_duty_list, step="pre", color=c[3], alpha=0.15)
-    ax3.step(hours_list, plant_heat_duty_list, marker='o', ms=marker_size, color=c[3], ls='-', lw=1.5, alpha=0.85,
-             label='Plant')
-    ax3.fill_between(hours_list, plant_heat_duty_list, step="pre", color=c[3], alpha=0.15)
-    plt.axhline(pyo.value(max_storage_duty), ls=':', lw=1.5, color=c[4])
+    # plt.axhline(pyo.value(max_storage_duty), ls=':', lw=1.5, color=c[4])
     plt.axhline(pyo.value(min_storage_duty), ls=':', lw=1.5, color=c[4])
+    plt.axhline(max(hxc_duty_list)*1.1, ls=':', lw=1.5, color=c[4])
     ax3.step(hours_list, hxc_duty_list, marker='o', ms=marker_size, color=c[0], alpha=0.75,
-             label='Charge')
+             label='Charge HX')
     ax3.fill_between(hours_list, hxc_duty_list, step="pre", color=c[0], alpha=0.25)
     ax3.step(hours_list, hxd_duty_list, marker='o', ms=marker_size, color=c[1], alpha=0.75,
-             label='Discharge')
-    ax3.fill_between(hours_list, hxd_duty_list, step="pre", color=c[1], alpha=0.25)
+             label='Discharge HX')
+    ax3.fill_between(hours_list, hxd_duty_list, step="pre", color=c[1], alpha=0.1)
     ax3.tick_params(axis='y', labelcolor=c[3])
-    ax3.legend(loc="center left", frameon=False)
+    ax3.legend(loc="center right", frameon=False)
     ax3.tick_params(axis='y')
     ax3.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax4 = ax3.twinx()
-    ax4.set_ylim((-25, 225))
+    # ax4.set_ylim((-25, 225))
     ax4.set_ylabel('Locational Marginal Price ($/MWh)', color=c[2])
     ax4.step([x + 1 for x in hours], lmp_array, marker='o', ms=marker_size, alpha=0.7, ls='-', lw=1.5, color=c[2])
     ax4.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp/surrogate_heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('results/nlp_mp/surrogate_hx_heat_duty_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp/heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('results/nlp_mp/hx_heat_duty_{}hrs.png'.format(n_time_points))
 
     # Plot net power and discharge power profiles
     fig3, ax5 = plt.subplots(figsize=(12, 8))
@@ -660,16 +723,16 @@ def plot_results(m,
     ax5.grid(linestyle=':', which='both', color=c[4], alpha=0.40)
     plt.axhline(pyo.value(pmax), ls=':', lw=1.5, color=c[4])
     ax5.step(hours_list, power_list, marker='o', ms=marker_size, lw=1.5, color=c[3], alpha=0.85,
-             label='Plant Net Power')
+             label='Net Power')
     ax5.fill_between(hours_list, power_list, step="pre", color=c[3], alpha=0.15)
     ax5.step(hours_list, discharge_work_list, marker='o', ms=marker_size, color=c[1], alpha=0.75,
-             label='Discharge Turbine')
+             label='Storage Turbine')
     ax5.fill_between(hours_list, discharge_work_list, step="pre", color=c[1], alpha=0.15)
     ax5.tick_params(axis='y', labelcolor=c[1])
-    ax5.legend(loc="center left", frameon=False)
+    ax5.legend(loc="upper center", frameon=False)
     ax5.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax6 = ax5.twinx()
-    ax6.set_ylim((-25, 225))
+    # ax6.set_ylim((-25, 225))
     ax6.set_ylabel('Locational Marginal Price ($/MWh)', color=c[2])
     ax6.step([x + 1 for x in hours], lmp_array, marker='o', ms=marker_size, alpha=0.7, ls='-', lw=1.5,
              color=c[2])
@@ -677,7 +740,33 @@ def plot_results(m,
     if use_surrogate:
         plt.savefig('results/nlp_mp/surrogate_power_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp/power_{}h.png'.format(n_time_points))
+        plt.savefig('results/nlp_mp/power_{}hrs.png'.format(n_time_points))
+
+    # Plot boiler and charge and discharge heat exchangers heat duty
+    fig4, ax7 = plt.subplots(figsize=(12, 8))
+    ax7.set_xlabel('Time Period (hr)')
+    ax7.set_ylabel('Heat Duty (MW)', color=c[3])
+    ax7.spines["top"].set_visible(False)
+    ax7.spines["right"].set_visible(False)
+    ax7.grid(linestyle=':', which='both', color='gray', alpha=0.40)
+    ax7.step(hours_list, plant_heat_duty_list, marker='o', ms=marker_size, color=c[3], ls='-', lw=1.5, alpha=0.85,
+             label='Plant')
+    ax7.fill_between(hours_list, plant_heat_duty_list, step="pre", color=c[3], alpha=0.15)
+    if not use_surrogate:
+        ax7.step(hours_list, boiler_heat_duty_list, marker='o', ms=marker_size, color='gray', ls='-', lw=1.5, alpha=0.85, label='Boiler')
+    ax7.tick_params(axis='y', labelcolor=c[3])
+    ax7.legend(loc="center left", frameon=False)
+    ax7.tick_params(axis='y')
+    ax7.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
+    ax8 = ax7.twinx()
+    # ax8.set_ylim((-25, 225))
+    ax8.set_ylabel('Locational Marginal Price ($/MWh)', color=c[2])
+    ax8.step([x + 1 for x in hours], lmp_array, marker='o', ms=marker_size, alpha=0.7, ls='-', lw=1.5, color=c[2])
+    ax8.tick_params(axis='y', labelcolor=c[2])
+    if use_surrogate:
+        plt.savefig('results/nlp_mp/surrogate_plant_heat_duty_{}hrs.png'.format(n_time_points))
+    else:
+        plt.savefig('results/nlp_mp/plant_heat_duty_{}hrs.png'.format(n_time_points))
 
     plt.show()
 
@@ -702,12 +791,12 @@ if __name__ == '__main__':
     }
     solver = get_solver('ipopt', optarg)
 
-    lx = False
+    lx = True
     if lx:
         if use_surrogate:
             scaling_obj = 1e-1
         else:
-            scaling_obj = 1e-3
+            scaling_obj = 1e-1
     else:
         scaling_obj = 1e-1
     print()
@@ -728,14 +817,13 @@ if __name__ == '__main__':
         pmax = design_data_dict["plant_max_power"]*pyunits.MW + pmax_storage
 
     hours_per_day = 24
-    ndays = 7
+    ndays = 1
     nhours = hours_per_day*ndays
     nweeks = 1
 
     # Add number of hours per week
     n_time_points = nweeks*nhours
     tank_status = "hot_empty"
-    constant_salt = False # Make sure this has the same value in nlp_multiperiod script
 
     # Create a directory to save the results for each NLP sbproblem
     # and plots
@@ -744,7 +832,7 @@ if __name__ == '__main__':
 
     (m, blks, lmp, net_power, results, total_inventory,
      hot_tank_level, cold_tank_level, hxc_duty, hxd_duty,
-     # boiler_heat_duty,
+     boiler_heat_duty,
      plant_heat_duty, discharge_work) = run_pricetaker_analysis(nweeks=nweeks,
                                                                 n_time_points=n_time_points,
                                                                 pmin=pmin,
@@ -759,5 +847,5 @@ if __name__ == '__main__':
                  hot_tank_level=hot_tank_level, cold_tank_level=cold_tank_level,
                  net_power=net_power, hxc_duty=hxc_duty, hxd_duty=hxd_duty,
                  total_inventory=total_inventory,
-                 # boiler_heat_duty=boiler_heat_duty,
+                 boiler_heat_duty=boiler_heat_duty,
                  plant_heat_duty=plant_heat_duty, discharge_work=discharge_work, pmax=pmax)

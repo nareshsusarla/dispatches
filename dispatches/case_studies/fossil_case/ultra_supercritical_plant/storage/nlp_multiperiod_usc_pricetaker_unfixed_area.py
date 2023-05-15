@@ -56,6 +56,7 @@ from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
 
 use_surrogate = False
 constant_salt = False
+fix_design = False
 
 # Import integrated ultrasupercritical power plant model. Also,
 # include the data path for the model
@@ -78,7 +79,10 @@ def add_data(m):
     m.pmax_plant = design_data_dict["plant_max_power"]*pyunits.MW
     m.pmax_storage = design_data_dict["max_discharge_turbine_power"]*pyunits.MW
     m.min_storage_duty = design_data_dict["min_storage_duty"]*pyunits.MW
-    m.max_storage_duty = design_data_dict["max_storage_duty"]*pyunits.MW
+    if fix_design:
+        m.max_storage_duty = 150*pyunits.MW
+    else:
+        m.max_storage_duty = design_data_dict["max_storage_duty"]*pyunits.MW
     m.ramp_rate = design_data_dict["ramp_rate"]*pyunits.MW
     m.hxc_area_init = design_data_dict["hxc_area"]*pyunits.m**2
     m.hxd_area_init = design_data_dict["hxd_area"]*pyunits.m**2
@@ -88,6 +92,7 @@ def add_data(m):
                                         to_units=pyunits.metric_ton)
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,
                                    to_units=pyunits.metric_ton)
+
     # m.tank_min = 1e-3*pyunits.metric_ton
     m.tank_min = 0
 
@@ -244,10 +249,19 @@ def usc_unfix_dof(m):
         discharge_hxd.area.unfix()
         discharge_hxd.shell_inlet.temperature[0].unfix()
 
+    # Unfix hx pump pressure
+    m.fs.hx_pump.outlet.pressure[0].unfix()
+
     # Fix storage heat exchangers area and salt temperatures
     cold_salt_temperature = design_data_dict["cold_salt_temperature"]*pyunits.K
     m.fs.hxd.shell_outlet.temperature[0].fix(cold_salt_temperature)
 
+    if fix_design:
+        m.fs.hxc.area.fix(1837)
+        m.fs.hxd.area.fix(2058)
+        m.fs.hxc.tube_outlet.temperature[0].fix(829)
+        m.fs.hxd.shell_inlet.temperature[0].fix(829)
+        
 
 def usc_custom_init(m):
 

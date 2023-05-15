@@ -85,6 +85,7 @@ from pyomo.network.plugins import expand_arcs
 
 from IPython import embed
 logging.basicConfig(level=logging.INFO)
+logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
 
 # Import Property Packages (IAPWS95 for Water/Steam)
 from idaes.models.properties import iapws95
@@ -249,19 +250,19 @@ def create_integrated_model(m=None, method=None):
     m.fs.hxd.steam_reynolds_number = pyo.Expression(
         expr=(m.fs.hxd.tube_inlet.flow_mol[0]*m.fs.hxd.cold_side.properties_in[0].mw*
               m.fs.tube_inner_dia/
-              (m.fs.tube_cs_area*m.fs.n_tubes*m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"])),
+              (m.fs.tube_cs_area*m.fs.n_tubes*m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"])),
         doc="Steam Reynolds Number"
     )
     m.fs.hxd.steam_prandtl_number = pyo.Expression(
         expr=((m.fs.hxd.cold_side.properties_in[0].cp_mol/m.fs.hxd.cold_side.properties_in[0].mw)*
-              m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"]/
-              m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]),
+              m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"]/
+              m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"]),
         doc="Steam Prandtl Number"
     )
     m.fs.hxd.steam_nusselt_number = pyo.Expression(
         expr=(0.023*(m.fs.hxd.steam_reynolds_number**0.8)*(m.fs.hxd.steam_prandtl_number**(0.33))*
-              ((m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"]/
-                m.fs.hxd.cold_side.properties_out[0].visc_d_phase["Vap"])**0.14)),
+              ((m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"]/
+                m.fs.hxd.cold_side.properties_out[0].visc_d_phase["Liq"])**0.14)),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
     )
 
@@ -273,7 +274,7 @@ def create_integrated_model(m=None, method=None):
         doc="Salt side convective heat transfer coefficient [W/mK]"
     )
     m.fs.hxd.h_steam = pyo.Expression(
-        expr=(m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]*
+        expr=(m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"]*
               m.fs.hxd.steam_nusselt_number/m.fs.tube_inner_dia),
         doc="Steam side convective heat transfer coefficient [W/mK]"
     )
@@ -486,7 +487,7 @@ def _make_constraints(m, method=None):
     @m.fs.Constraint(m.fs.time,
                      doc="HX pump out pressure equal to BFP out pressure")
     def constraint_hxpump_presout(b, t):
-        return b.hx_pump.outlet.pressure[t] == m.main_steam_pressure*1.1231
+        return b.hx_pump.outlet.pressure[t] >= m.main_steam_pressure*1.1231
 
     m.fs.es_turbine_MW = pyo.units.convert((-1)*m.fs.es_turbine.work_mechanical[0],
                                            to_units=pyunits.MW)
@@ -576,7 +577,7 @@ def set_model_input(m):
 
     # Data from usc model
     m.fs.boiler_flow.fix(m.main_flow)  # mol/s
-    m.fs.steam_to_storage.fix(m.main_flow*0.15) # mol/s
+    m.fs.steam_to_storage.fix(m.main_flow*0.14) # mol/s
     m.fs.steam_to_discharge.fix(m.main_flow*0.1) # mol/s
 
     ###########################################################################
@@ -584,13 +585,13 @@ def set_model_input(m):
     ###########################################################################
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
-    m.fs.hxc.area.fix(2100)  # m2
+    m.fs.hxc.area.fix(2000)  # m2
     m.fs.hxd.area.fix(1200)  # m2
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.hxc.tube_inlet.flow_mass.fix(220)   # kg/s
+    m.fs.hxc.tube_inlet.flow_mass.fix(200)   # kg/s
     m.fs.hxc.tube_inlet.temperature.fix(513.15)  # K
     m.fs.hxc.tube_inlet.pressure.fix(101325)  # Pa
 
@@ -600,7 +601,7 @@ def set_model_input(m):
 
     # HX pump efficiency assumption
     m.fs.hx_pump.efficiency_pump.fix(0.8)
-    # m.fs.hx_pump.outlet.pressure[0].fix(m.main_steam_pressure*1.1231)
+    m.fs.hx_pump.outlet.pressure[0].fix(m.main_steam_pressure*1.1231)
 
     # m.fs.es_turbine.ratioP.fix(0.0286)
     m.fs.es_turbine.efficiency_isentropic.fix(0.8)
@@ -721,9 +722,9 @@ def build_costing(m,
     m.fs.coal_heat_duty_W = pyo.units.convert(m.fs.coal_heat_duty,
                                               to_units=pyunits.W)
     def rule_fuel_cost(b):
-        return b.fuel_cost*(365*24) == (
+        return b.fuel_cost == (
             b.operating_hours*b.coal_price*b.coal_heat_duty_W
-        )
+        )/(365*24)
     m.fs.eq_fuel_cost = pyo.Constraint(rule=rule_fuel_cost)
 
     # Calculate annualized capital and operating costs for full plant
@@ -741,10 +742,12 @@ def build_costing(m,
                                         bounds=(0, 1e6),
                                         doc="Plant variable and fixed operating cost in $/hour")
     def rule_plant_op_cost(b):
-        return b.plant_operating_cost*(365*24) == (
-            (16657.5*b.plant_power_out[0] + 6109833.3)/b.num_of_years + # fixed cost
-            (31754.7*b.plant_power_out[0]) # variable cost
-        )*(m.CE_index/575.4)
+        return b.plant_operating_cost == (
+            (
+                (16657.5*b.plant_power_out[0] + 6109833.3)/b.num_of_years + # fixed cost
+                (31754.7*b.plant_power_out[0]) # variable cost
+            )*(m.CE_index/575.4)
+        )/(365*24)
     m.fs.eq_plant_op_cost = pyo.Constraint(rule=rule_plant_op_cost)
 
     return m
@@ -801,8 +804,8 @@ def add_bounds(m):
     # Unless stated otherwise, the temperature is in K, pressure in
     # Pa, flow in mol/s, massic flow in kg/s, and heat and heat duty
     # in W
-    m.heat_duty_max = (pyo.units.convert(m.max_storage_duty, to_units=pyunits.W))*1.01
-    m.power_max_storage = (pyo.units.convert(-m.max_discharge_power, to_units=pyunits.W))*1.01
+    m.heat_duty_max = (pyo.units.convert(m.max_storage_duty, to_units=pyunits.W))
+    m.power_max_storage = (pyo.units.convert(-m.max_discharge_power, to_units=pyunits.W))
     m.factor = 2
 
     # Charge heat exchanger
@@ -1029,6 +1032,8 @@ def model_analysis(m,
     m.fs.steam_to_storage.unfix()
     m.fs.steam_to_discharge.unfix()
 
+    m.fs.hx_pump.outlet.pressure[0].unfix()
+    
     if not constant_salt:
         m.fs.salt_amount.unfix()
 
