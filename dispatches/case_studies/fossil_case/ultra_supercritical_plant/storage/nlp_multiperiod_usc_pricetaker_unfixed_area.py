@@ -56,7 +56,7 @@ from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
 
 use_surrogate = False
 constant_salt = False
-fix_design = False
+fix_design = True
 
 # Import integrated ultrasupercritical power plant model. Also,
 # include the data path for the model
@@ -79,19 +79,16 @@ def add_data(m):
     m.pmax_plant = design_data_dict["plant_max_power"]*pyunits.MW
     m.pmax_storage = design_data_dict["max_discharge_turbine_power"]*pyunits.MW
     m.min_storage_duty = design_data_dict["min_storage_duty"]*pyunits.MW
-    if fix_design:
-        m.max_storage_duty = 150*pyunits.MW
-    else:
-        m.max_storage_duty = design_data_dict["max_storage_duty"]*pyunits.MW
+    m.max_storage_duty = design_data_dict["max_storage_duty"]*pyunits.MW
     m.ramp_rate = design_data_dict["ramp_rate"]*pyunits.MW
-    m.hxc_area_init = design_data_dict["hxc_area"]*pyunits.m**2
-    m.hxd_area_init = design_data_dict["hxd_area"]*pyunits.m**2
     m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.min_inventory = pyo.units.convert(75000*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,
                                    to_units=pyunits.metric_ton)
+    m.hxc_area = design_data_dict["hxc_area"]
+    m.hxd_area = design_data_dict["hxd_area"]
 
     # m.tank_min = 1e-3*pyunits.metric_ton
     m.tank_min = 0
@@ -257,11 +254,21 @@ def usc_unfix_dof(m):
     m.fs.hxd.shell_outlet.temperature[0].fix(cold_salt_temperature)
 
     if fix_design:
-        m.fs.hxc.area.fix(1837)
-        m.fs.hxd.area.fix(2058)
-        m.fs.hxc.tube_outlet.temperature[0].fix(829)
-        m.fs.hxd.shell_inlet.temperature[0].fix(829)
-        
+        m.fs.hxc.area.fix(m.hxc_area)
+        m.fs.hxd.area.fix(m.hxd_area)
+        # # 828.596282
+        # m.fs.hxc.tube_outlet.temperature[0].fix(828.59)
+        # m.fs.hxd.shell_inlet.temperature[0].fix(828.59)
+        m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
+            expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
+        )
+        m.fs.charge_hot_salt_storage_ub_eq = pyo.Constraint(
+            expr=m.fs.hxc.tube_outlet.temperature[0] <= 830
+        )
+        m.fs.discharge_hot_salt_storage_ub_eq = pyo.Constraint(
+            expr=m.fs.hxd.shell_inlet.temperature[0] == m.fs.hxc.tube_outlet.temperature[0]
+        )
+
 
 def usc_custom_init(m):
 

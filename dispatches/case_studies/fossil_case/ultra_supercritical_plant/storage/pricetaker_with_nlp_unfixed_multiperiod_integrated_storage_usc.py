@@ -66,7 +66,7 @@ plt.rc('font', **font)
 # Make sure these have the same value in nlp_multiperiod script
 use_surrogate = False
 constant_salt = False
-fix_design = False
+fix_design = True
 
 def _get_lmp(n_time_points=None):
 

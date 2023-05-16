@@ -866,14 +866,14 @@ def add_bounds(m):
     m.fs.hxc.tube.properties_in[:].enth_mass.setub(m.fs.salt_enth_mass_max*m.factor)
     m.fs.hxc.tube.properties_out[:].enth_mass.setlb(m.fs.salt_enth_mass_min/m.factor)
     m.fs.hxc.tube.properties_out[:].enth_mass.setub(m.fs.salt_enth_mass_max*m.factor)
-    m.fs.hxc.overall_heat_transfer_coefficient.setlb(1)
+    m.fs.hxc.overall_heat_transfer_coefficient.setlb(0)
     m.fs.hxc.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxc.area.setlb(m.min_area)
     m.fs.hxc.area.setub(m.max_area)
-    m.fs.hxc.delta_temperature_in.setlb(9)
+    m.fs.hxc.delta_temperature_in.setlb(5)
     m.fs.hxc.delta_temperature_out.setlb(5)
-    m.fs.hxc.delta_temperature_in.setub(80.5)
-    m.fs.hxc.delta_temperature_out.setub(81)
+    m.fs.hxc.delta_temperature_in.setub(100)
+    m.fs.hxc.delta_temperature_out.setub(100)
 
     # Discharge heat exchanger
     m.fs.hxd.tube_inlet.flow_mol.setlb(m.flow_min)
@@ -898,14 +898,14 @@ def add_bounds(m):
     m.fs.hxd.shell.properties_in[:].enth_mass.setub(m.fs.salt_enth_mass_max*m.factor)
     m.fs.hxd.shell.properties_out[:].enth_mass.setlb(m.fs.salt_enth_mass_min/m.factor)
     m.fs.hxd.shell.properties_out[:].enth_mass.setub(m.fs.salt_enth_mass_max*m.factor)
-    m.fs.hxd.overall_heat_transfer_coefficient.setlb(1)
+    m.fs.hxd.overall_heat_transfer_coefficient.setlb(0)
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxd.area.setlb(m.min_area)
     m.fs.hxd.area.setub(m.max_area)
-    m.fs.hxd.delta_temperature_in.setlb(4.9)
-    m.fs.hxd.delta_temperature_out.setlb(10)
-    m.fs.hxd.delta_temperature_in.setub(300)
-    m.fs.hxd.delta_temperature_out.setub(300)
+    m.fs.hxd.delta_temperature_in.setlb(4)
+    m.fs.hxd.delta_temperature_out.setlb(5)
+    m.fs.hxd.delta_temperature_in.setub(350)
+    m.fs.hxd.delta_temperature_out.setub(550)
 
     # Add bounds for the HX pump
     for unit_k in [m.fs.hx_pump]:
@@ -1193,6 +1193,21 @@ def model_analysis(m,
     # m.fs.hxd.area.fix(838.3467)
     # m.fs.hxd.tube_inlet.flow_mol[0].fix(303.4589)
     # m.fs.plant_power_out[0].fix(pmax)
+
+    # # Test fixed design
+    # m.fs.hxc.area.fix(1837)
+    # m.fs.hxd.area.fix(2058)
+    # # m.fs.hxc.tube_outlet.temperature.fix(828)
+    # m.fs.hxd.shell_inlet.temperature.fix(828)
+    # m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
+    #     expr=m.fs.hxc.tube_outlet.temperature[0] >= 828.5
+    # )
+    # m.fs.charge_hot_salt_storage_ub_eq = pyo.Constraint(
+    #     expr=m.fs.hxc.tube_outlet.temperature[0] <= 830
+    # )
+    # m.fs.discharge_hot_salt_storage_ub_eq = pyo.Constraint(
+    #     expr=m.fs.hxd.shell_inlet.temperature[0] == m.fs.hxc.tube_outlet.temperature[0]
+    # )
 
     # When uncommented, make sure to comment the ramping constraints
     # @m.Constraint()
