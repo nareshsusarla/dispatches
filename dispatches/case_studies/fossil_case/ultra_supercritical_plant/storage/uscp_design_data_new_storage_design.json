@@ -8,7 +8,7 @@
     "min_discharge_turbine_power": 8,
     "max_discharge_turbine_power": 34,
     "min_storage_duty": 10,
-    "max_storage_duty": 150,
+    "max_storage_duty": 250,
     "max_salt_amount": 6739292,
     "max_salt_flow": 500,
     "hot_salt_temperature": 828.59,

@@ -701,7 +701,7 @@ def plot_results(m,
              label='Discharge HX')
     ax3.fill_between(hours_list, hxd_duty_list, step="pre", color=c[1], alpha=0.1)
     ax3.tick_params(axis='y', labelcolor=c[3])
-    ax3.legend(loc="center right", frameon=False)
+    ax3.legend(loc="upper center", frameon=False)
     ax3.tick_params(axis='y')
     ax3.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax4 = ax3.twinx()

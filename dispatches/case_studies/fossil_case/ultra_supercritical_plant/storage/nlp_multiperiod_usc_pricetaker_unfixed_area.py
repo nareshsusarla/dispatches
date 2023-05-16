@@ -263,7 +263,7 @@ def usc_unfix_dof(m):
             expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
         )
         m.fs.charge_hot_salt_storage_ub_eq = pyo.Constraint(
-            expr=m.fs.hxc.tube_outlet.temperature[0] <= 830
+            expr=m.fs.hxc.tube_outlet.temperature[0] <= 828.59
         )
         m.fs.discharge_hot_salt_storage_ub_eq = pyo.Constraint(
             expr=m.fs.hxd.shell_inlet.temperature[0] == m.fs.hxc.tube_outlet.temperature[0]
