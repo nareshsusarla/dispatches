@@ -3434,6 +3434,8 @@ def print_results(m, results):
     print(' Salt temperature in/out (K): {:.6f}/{:.6f}'.format(
         pyo.value(hx.tube_inlet.temperature[0]),
         pyo.value(hx.tube_outlet.temperature[0])))
+    print(' Overall heat transfer coefficient: {:.6f}'.format(
+        pyo.value(hx.overall_heat_transfer_coefficient[0])))
     print(' Delta temperature in/out (K): {:.6f}/{:.6f}'.format(
         pyo.value(hx.delta_temperature_in[0]),
         pyo.value(hx.delta_temperature_out[0])))
@@ -3576,7 +3578,7 @@ def model_analysis(m, solver, heat_duty=None, lmp_signal=None):
     results = run_gdp(m)
 
     print_results(m, results)
-    # print_reports(m)
+    return m
 
 
 if __name__ == "__main__":
