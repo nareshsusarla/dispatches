@@ -89,7 +89,7 @@ from IPython import embed
 logging.basicConfig(level=logging.INFO)
 
 
-scaling_obj = 1e-1
+scaling_obj = 1e1
 
 # Add design data from .json file
 with open('uscp_design_data_new_storage_design.json') as design_data:
