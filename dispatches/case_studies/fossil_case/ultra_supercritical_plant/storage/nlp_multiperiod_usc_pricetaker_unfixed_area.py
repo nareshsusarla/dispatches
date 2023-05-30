@@ -55,7 +55,7 @@ from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
 use_surrogate = False
-constant_salt = False
+constant_salt = True
 fix_design = True
 
 # Import integrated ultrasupercritical power plant model. Also,
