@@ -1135,7 +1135,7 @@ def model_analysis(m,
     m.pmax_total = pmax + m.pmax_storage
     m.min_temp = design_data_dict["min_solar_salt_temperature"]*pyunits.K
     m.max_temp = design_data_dict["max_solar_salt_temperature"]*pyunits.K
-    m.min_inventory = pyo.units.convert(75000*pyunits.kg,
+    m.min_inventory = pyo.units.convert(45000*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = m.max_salt_amount # in mton
     m.tank_min = 1e-3*pyunits.metric_ton
@@ -1245,7 +1245,7 @@ def model_analysis(m,
                                        doc="Cold salt inventory at the end of the time period")
     # Fix the previous salt inventory based on the tank scenario
     if tank_status == "hot_empty":
-        m.fs.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
+        m.fs.tank_init = pyo.units.convert(75100*pyunits.kg,
                                            to_units=pyunits.metric_ton)
         m.fs.previous_salt_inventory_hot.fix(m.fs.tank_init)
         m.fs.previous_salt_inventory_cold.fix(m.tank_max - m.fs.tank_init)

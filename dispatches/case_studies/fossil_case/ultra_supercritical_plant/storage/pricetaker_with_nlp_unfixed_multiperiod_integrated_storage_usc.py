@@ -30,6 +30,7 @@ import logging
 import numpy as np
 import json
 import os
+import pandas as pd
 
 # Import Pyomo objects
 import pyomo.environ as pyo
@@ -65,7 +66,7 @@ plt.rc('font', **font)
 
 # Make sure these have the same value in nlp_multiperiod script
 use_surrogate = False
-constant_salt = False
+constant_salt = True
 fix_design = True
 
 def _get_lmp(n_time_points=None):
@@ -397,12 +398,12 @@ def run_pricetaker_analysis(nweeks=None,
     # variables. Different tank scenarios are included for the Solar
     # salt tank levels and the previous tank level of the tank is
     # based on that.
-    m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
+    m.tank_init = pyo.units.convert(75100*pyunits.kg,
                                     to_units=pyunits.metric_ton)
     # @m.Constraint()
     # def power_init(b):
     #     return m.period[1].fs.previous_power == 447.66
-    m.period[1].fs.previous_power.fix(447.66)
+    m.period[1].fs.previous_power.fix(436.66)
 
     if tank_status == "hot_empty":
         # @m.Constraint()
@@ -472,6 +473,11 @@ def run_pricetaker_analysis(nweeks=None,
     boiler_flow = []
     boiler_heat_duty = []
     total_inventory.append(pyo.value(m.total_inventory))
+    fuel_cost = []
+    plant_operating_cost = []
+    salt_cost = []
+    tank_cost = []
+    hx_cost = []
     for blk in blks:
         # Save results in lists
         hot_tank_level.append(pyo.value(blk.fs.salt_inventory_hot))
@@ -481,6 +487,12 @@ def run_pricetaker_analysis(nweeks=None,
         net_power.append(pyo.value(blk.fs.net_power[0]))
         hxc_duty.append(pyo.value(blk.fs.hxc.heat_duty[0])*1e-6)
         hxd_duty.append(pyo.value(blk.fs.hxd.heat_duty[0])*1e-6)
+        fuel_cost.append(pyo.value(blk.fs.fuel_cost))
+        plant_operating_cost.append(pyo.value(blk.fs.plant_operating_cost))
+        salt_cost.append(pyo.value(m.salt_purchase_cost))
+        tank_cost.append(pyo.value(m.no_of_tanks*m.salt_tank_capital_cost))
+        hx_cost.append(pyo.value(m.storage_hx_capital_cost))
+
         if use_surrogate:
             steam_to_storage.append(pyo.value(blk.fs.steam_to_storage[0]))
             boiler_flow.append(pyo.value(blk.fs.boiler_flow[0]))
@@ -490,6 +502,23 @@ def run_pricetaker_analysis(nweeks=None,
 
     log_close_to_bounds(m)
     log_infeasible_constraints(m)
+    df_results = pd.DataFrame.from_dict({
+        "hot_tank_level": hot_tank_level,
+        "cold_tank_level": cold_tank_level,
+        "plant_heat_duty": plant_heat_duty,
+        "discharge_work": discharge_work,
+        "net_power": net_power,
+        "hxc_duty": hxc_duty,
+        "hxd_duty": hxd_duty,
+        "fuel_cost": fuel_cost,
+        "plant_operating_cost": plant_operating_cost,
+        "salt_cost": salt_cost,
+        "tank_cost": tank_cost,
+        "hx_cost": hx_cost,
+        "lmp": lmp
+    }
+    )
+    df_results.to_excel("results_output_fixed_nolb.xlsx")
     
     print('hot_tank_level=', hot_tank_level)
     print('cold_tank_level=', cold_tank_level)
