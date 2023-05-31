@@ -1726,7 +1726,7 @@ def build_costing(m, solver=None):
     m.fs.charge.solar_salt_disjunct.salt_amount = Expression(
         expr=(m.fs.charge.solar_salt_disjunct.hxc.tube_inlet.flow_mass[0] *
               m.fs.charge.hours_per_day * 3600),
-        doc="Total Solar salt inventory flow in gal per min"
+        doc="Total Solar salt inventory flow in kg"
     )
     m.fs.charge.solar_salt_disjunct.salt_purchase_cost = Var(
         initialize=100000,
@@ -3387,6 +3387,8 @@ def print_results(m, results):
             print(d.name, ' should be selected!')
     print('')
     print('Objective ($/hr): {:.6f}'.format((value(m.obj) / scaling_obj)))
+    print('salt amount (kg): {:.6f}'.format(
+        pyo.value(m.fs.charge.solar_salt_disjunct.salt_amount)))
     print('Plant capital cost ($/yr): {:.6f}'.format(
         pyo.value(m.fs.charge.plant_capital_cost)))
     print('Plant fixed operating costs ($/yr): {:.6f}'.format(

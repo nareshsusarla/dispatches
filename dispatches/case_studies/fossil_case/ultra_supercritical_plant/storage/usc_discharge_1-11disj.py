@@ -65,7 +65,7 @@ from dispatches.properties import solarsalt_properties
 logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
 
 
-scaling_obj = 1e-1
+scaling_obj = 1e-2
 
 def create_discharge_model(m, add_efficiency=None, power_max=None):
     """Create flowsheet and add unit models.
@@ -381,7 +381,7 @@ def _solar_salt_ohtc_calculation(m):
             m.fs.discharge.hxd_tube_inner_dia /
             (m.fs.discharge.hxd_tube_cs_area *
              m.fs.discharge.hxd_n_tubes *
-             m.fs.discharge.hxd.cold_side.properties_in[0].visc_d_phase["Vap"])
+             m.fs.discharge.hxd.cold_side.properties_in[0].visc_d_phase["Liq"])
         ),
         doc="Steam Reynolds Number")
 
@@ -391,8 +391,8 @@ def _solar_salt_ohtc_calculation(m):
             (m.fs.discharge.hxd.cold_side.properties_in[0].cp_mol /
              m.fs.discharge.hxd.cold_side.properties_in[0].mw) *
             m.fs.discharge.hxd.cold_side.
-            properties_in[0].visc_d_phase["Vap"] /
-            m.fs.discharge.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"]
+            properties_in[0].visc_d_phase["Liq"] /
+            m.fs.discharge.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]
         ),
         doc="Steam Prandtl Number")
 
@@ -403,8 +403,8 @@ def _solar_salt_ohtc_calculation(m):
             (m.fs.discharge.hxd.steam_reynolds_number**0.8) *
             (m.fs.discharge.hxd.steam_prandtl_number**(0.33)) *
             (
-                (m.fs.discharge.hxd.cold_side.properties_in[0].visc_d_phase["Vap"] /
-                 m.fs.discharge.hxd.cold_side.properties_out[0].visc_d_phase["Liq"]) ** 0.14
+                (m.fs.discharge.hxd.cold_side.properties_in[0].visc_d_phase["Liq"] /
+                 m.fs.discharge.hxd.cold_side.properties_out[0].visc_d_phase["Vap"]) ** 0.14
             )
         ),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia")
@@ -420,7 +420,7 @@ def _solar_salt_ohtc_calculation(m):
         doc="Salt side convective heat transfer coefficient in W/m.K")
     m.fs.discharge.hxd.h_steam = pyo.Expression(
         expr=(
-            m.fs.discharge.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"] *
+            m.fs.discharge.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"] *
             m.fs.discharge.hxd.steam_nusselt_number /
             m.fs.discharge.hxd_tube_inner_dia
         ),
@@ -869,7 +869,7 @@ def set_model_input(m):
     # during initialization, but is unfixed and determined during
     # optimization
     m.fs.discharge.hxd.shell_inlet.flow_mass.fix(200)
-    m.fs.discharge.hxd.shell_inlet.temperature.fix(831.15)
+    m.fs.discharge.hxd.shell_inlet.temperature.fix(828.59)
     m.fs.discharge.hxd.shell_inlet.pressure.fix(101325)
 
     # Splitter inlet is fixed for initialization and will be unfixed right after
@@ -1213,7 +1213,7 @@ def add_bounds(m, power_max=None):
 
     """
 
-    m.flow_max = m.main_flow * 3        # Units in mol/s
+    m.flow_max = m.main_flow * 1.2        # Units in mol/s
     m.storage_flow_max = 0.2 * m.flow_max # Units in mol/s
     m.salt_flow_max = 1000                # Units in kg/s
     m.heat_duty_bound = 200e6             # Units in MW
@@ -1255,10 +1255,10 @@ def add_bounds(m, power_max=None):
         hxd.costing.base_cost_per_unit.setub(1e6)
         hxd.costing.material_factor.setlb(0)
         hxd.costing.material_factor.setub(10)
-        hxd.delta_temperature_in.setlb(10)
-        hxd.delta_temperature_out.setlb(20)
+        hxd.delta_temperature_in.setlb(4)
+        hxd.delta_temperature_out.setlb(5)
         hxd.delta_temperature_in.setub(350)
-        hxd.delta_temperature_out.setub(500)
+        hxd.delta_temperature_out.setub(350)
 
     # Add bounds needed in units declared in condensate source
     # disjunction
@@ -1409,6 +1409,8 @@ def print_results(m, results):
         pyo.value(m.fs.discharge.es_turbine.control_volume.work[0]) * (-1e-6)))
     print('Boiler Efficiency (%): {:.2f}'.format(
         pyo.value(m.fs.boiler_efficiency) * 100))
+    print('Overall Heat Transfer Coefficient (W/m2/K): {:.2f}'.format(
+        pyo.value(m.fs.discharge.hxd.overall_heat_transfer_coefficient[0])))
     print()
     print("**Discrete design decisions (Disjunction)")
     for d in m.component_data_objects(ctype=Disjunct,
@@ -1418,8 +1420,20 @@ def print_results(m, results):
             print(d.name, ' should be selected!')
     print('Discharge heat exchanger area (m2): {:.2f}'.format(
         pyo.value(m.fs.discharge.hxd.area)))
+    print('steam flow (mol/s): {:.2f}'.format(
+        pyo.value(m.fs.discharge.hxd.tube_outlet.flow_mol[0])))
+    print('salt flow (mol/s): {:.2f}'.format(
+        pyo.value(m.fs.discharge.hxd.shell_outlet.flow_mass[0])))
     print('Discharge heat exchanger heat duty (MW): {:.2f}'.format(
         pyo.value(m.fs.discharge.hxd.heat_duty[0]) * 1e-6))
+    print('steam temp in (K): {:.2f}'.format(
+        pyo.value(m.fs.discharge.hxd.cold_side.properties_in[0].temperature)))
+    print('steam temp out (K): {:.2f}'.format(
+        pyo.value(m.fs.discharge.hxd.cold_side.properties_out[0].temperature)))
+    print('salt temp in (K): {:.2f}'.format(
+        pyo.value(m.fs.discharge.hxd.shell_inlet.temperature[0])))
+    print('salt temp out (K): {:.2f}'.format(
+        pyo.value(m.fs.discharge.hxd.shell_outlet.temperature[0])))
     print('====================================================')
     print()
     print('Solver details')
@@ -1433,7 +1447,7 @@ def model_analysis(m, heat_duty=None):
     """
 
     # Fix variables in the flowsheet
-    m.fs.plant_power_out.fix(400)
+    m.fs.plant_power_out.fix(470)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
     m.fs.discharge.hxd.heat_duty.fix(heat_duty * 1e6)
 
