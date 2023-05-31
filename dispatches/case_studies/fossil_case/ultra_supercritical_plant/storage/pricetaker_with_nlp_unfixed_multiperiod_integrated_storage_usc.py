@@ -365,7 +365,7 @@ def run_pricetaker_analysis(nweeks=None,
     # Add storage material capital costs and inventory balances      #
     ##################################################################
 
-    m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
+    m.max_inventory = pyo.units.convert(6795755.93*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.total_inventory = pyo.Var(initialize=max_salt_amount,
                                 bounds=(0, m.max_inventory),
@@ -398,12 +398,12 @@ def run_pricetaker_analysis(nweeks=None,
     # variables. Different tank scenarios are included for the Solar
     # salt tank levels and the previous tank level of the tank is
     # based on that.
-    m.tank_init = pyo.units.convert(75100*pyunits.kg,
+    m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
                                     to_units=pyunits.metric_ton)
     # @m.Constraint()
     # def power_init(b):
     #     return m.period[1].fs.previous_power == 447.66
-    m.period[1].fs.previous_power.fix(436.66)
+    m.period[1].fs.previous_power.fix(436)
 
     if tank_status == "hot_empty":
         # @m.Constraint()
@@ -518,7 +518,7 @@ def run_pricetaker_analysis(nweeks=None,
         "lmp": lmp
     }
     )
-    df_results.to_excel("results_output_fixed_nolb.xlsx")
+    df_results.to_excel("results_output_fixed_0530.xlsx")
     
     print('hot_tank_level=', hot_tank_level)
     print('cold_tank_level=', cold_tank_level)
@@ -838,7 +838,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-1
+        scaling_obj = 1e-2
     print()
     print('scaling_obj:', scaling_obj)
 

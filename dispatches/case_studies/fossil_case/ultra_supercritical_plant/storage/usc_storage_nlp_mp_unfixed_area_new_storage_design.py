@@ -256,19 +256,19 @@ def create_integrated_model(m, method=None):
     m.fs.hxd.steam_reynolds_number = pyo.Expression(
         expr=(m.fs.hxd.tube_inlet.flow_mol[0]*m.fs.hxd.cold_side.properties_in[0].mw*
               m.fs.tube_inner_dia/
-              (m.fs.tube_cs_area*m.fs.n_tubes*m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"])),
+              (m.fs.tube_cs_area*m.fs.n_tubes*m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"])),
         doc="Steam Reynolds Number"
     )
     m.fs.hxd.steam_prandtl_number = pyo.Expression(
         expr=((m.fs.hxd.cold_side.properties_in[0].cp_mol/m.fs.hxd.cold_side.properties_in[0].mw)*
-              m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"]/
-              m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"]),
+              m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"]/
+              m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]),
         doc="Steam Prandtl Number"
     )
     m.fs.hxd.steam_nusselt_number = pyo.Expression(
         expr=(0.023*(m.fs.hxd.steam_reynolds_number**0.8)*(m.fs.hxd.steam_prandtl_number**(0.33))*
-              ((m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"]/
-                m.fs.hxd.cold_side.properties_out[0].visc_d_phase["Liq"])**0.14)),
+              ((m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"]/
+                m.fs.hxd.cold_side.properties_out[0].visc_d_phase["Vap"])**0.14)),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
     )
 
@@ -280,7 +280,7 @@ def create_integrated_model(m, method=None):
         doc="Salt side convective heat transfer coefficient [W/mK]"
     )
     m.fs.hxd.h_steam = pyo.Expression(
-        expr=(m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"]*
+        expr=(m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]*
               m.fs.hxd.steam_nusselt_number/m.fs.tube_inner_dia),
         doc="Steam side convective heat transfer coefficient [W/mK]"
     )
@@ -333,8 +333,8 @@ def add_data(m):
     m.hot_salt_temp_init = design_data_dict["hot_salt_temperature"]*pyunits.K
     m.min_salt_temp = design_data_dict["min_solar_salt_temperature"]*pyunits.K
     m.max_salt_temp = design_data_dict["max_solar_salt_temperature"]*pyunits.K
-    m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
-                                        to_units=pyunits.metric_ton)
+    # m.max_inventory = m.max_salt_amount
+    m.max_inventory = pyo.units.convert(1e7*pyunits.kg, to_units=pyunits.metric_ton)
 
     # Chemical engineering cost index for 2019
     m.CE_index = 607.5
@@ -1135,7 +1135,7 @@ def model_analysis(m,
     m.pmax_total = pmax + m.pmax_storage
     m.min_temp = design_data_dict["min_solar_salt_temperature"]*pyunits.K
     m.max_temp = design_data_dict["max_solar_salt_temperature"]*pyunits.K
-    m.min_inventory = pyo.units.convert(45000*pyunits.kg,
+    m.min_inventory = pyo.units.convert(80000*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = m.max_salt_amount # in mton
     m.tank_min = 1e-3*pyunits.metric_ton

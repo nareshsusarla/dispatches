@@ -83,7 +83,7 @@ def add_data(m):
     m.ramp_rate = design_data_dict["ramp_rate"]*pyunits.MW
     m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
                                         to_units=pyunits.metric_ton)
-    m.min_inventory = pyo.units.convert(75000*pyunits.kg,
+    m.min_inventory = pyo.units.convert(1*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,
                                    to_units=pyunits.metric_ton)
@@ -257,17 +257,17 @@ def usc_unfix_dof(m):
         m.fs.hxc.area.fix(m.hxc_area)
         m.fs.hxd.area.fix(m.hxd_area)
         # # 828.596282
-        # m.fs.hxc.tube_outlet.temperature[0].fix(828.59)
-        # m.fs.hxd.shell_inlet.temperature[0].fix(828.59)
-        m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
-            expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
-        )
-        m.fs.charge_hot_salt_storage_ub_eq = pyo.Constraint(
-            expr=m.fs.hxc.tube_outlet.temperature[0] <= 828.59
-        )
-        m.fs.discharge_hot_salt_storage_ub_eq = pyo.Constraint(
-            expr=m.fs.hxd.shell_inlet.temperature[0] == m.fs.hxc.tube_outlet.temperature[0]
-        )
+        m.fs.hxc.tube_outlet.temperature[0].fix(828)
+        m.fs.hxd.shell_inlet.temperature[0].fix(828)
+        # m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
+        #     expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
+        # )
+        # m.fs.charge_hot_salt_storage_ub_eq = pyo.Constraint(
+        #     expr=m.fs.hxc.tube_outlet.temperature[0] <= 828.59
+        # )
+        # m.fs.discharge_hot_salt_storage_ub_eq = pyo.Constraint(
+        #     expr=m.fs.hxd.shell_inlet.temperature[0] == m.fs.hxc.tube_outlet.temperature[0]
+        # )
 
 
 def usc_custom_init(m):
