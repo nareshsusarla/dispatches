@@ -88,7 +88,7 @@ def add_data(m):
     m.hxd_area_init = design_data_dict["hxd_area"]*pyunits.m**2
     m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
                                         to_units=pyunits.metric_ton)
-    m.min_inventory = pyo.units.convert(75000*pyunits.kg,
+    m.min_inventory = pyo.units.convert(1*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,
                                    to_units=pyunits.metric_ton)

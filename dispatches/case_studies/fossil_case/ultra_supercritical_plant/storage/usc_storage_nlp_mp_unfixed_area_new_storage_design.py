@@ -256,19 +256,19 @@ def create_integrated_model(m, method=None):
     m.fs.hxd.steam_reynolds_number = pyo.Expression(
         expr=(m.fs.hxd.tube_inlet.flow_mol[0]*m.fs.hxd.cold_side.properties_in[0].mw*
               m.fs.tube_inner_dia/
-              (m.fs.tube_cs_area*m.fs.n_tubes*m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"])),
+              (m.fs.tube_cs_area*m.fs.n_tubes*m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"])),
         doc="Steam Reynolds Number"
     )
     m.fs.hxd.steam_prandtl_number = pyo.Expression(
         expr=((m.fs.hxd.cold_side.properties_in[0].cp_mol/m.fs.hxd.cold_side.properties_in[0].mw)*
-              m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"]/
-              m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"]),
+              m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"]/
+              m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]),
         doc="Steam Prandtl Number"
     )
     m.fs.hxd.steam_nusselt_number = pyo.Expression(
         expr=(0.023*(m.fs.hxd.steam_reynolds_number**0.8)*(m.fs.hxd.steam_prandtl_number**(0.33))*
-              ((m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Vap"]/
-                m.fs.hxd.cold_side.properties_out[0].visc_d_phase["Liq"])**0.14)),
+              ((m.fs.hxd.cold_side.properties_in[0].visc_d_phase["Liq"]/
+                m.fs.hxd.cold_side.properties_out[0].visc_d_phase["Vap"])**0.14)),
         doc="Steam Nusslet Number from 2001 Zavoico, Sandia"
     )
 
@@ -280,7 +280,7 @@ def create_integrated_model(m, method=None):
         doc="Salt side convective heat transfer coefficient [W/mK]"
     )
     m.fs.hxd.h_steam = pyo.Expression(
-        expr=(m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Vap"]*
+        expr=(m.fs.hxd.cold_side.properties_in[0].therm_cond_phase["Liq"]*
               m.fs.hxd.steam_nusselt_number/m.fs.tube_inner_dia),
         doc="Steam side convective heat transfer coefficient [W/mK]"
     )

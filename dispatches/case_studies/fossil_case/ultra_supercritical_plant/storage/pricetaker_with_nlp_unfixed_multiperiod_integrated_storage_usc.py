@@ -804,7 +804,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-1
+        scaling_obj = 1e-2
     print()
     print('scaling_obj:', scaling_obj)
 
