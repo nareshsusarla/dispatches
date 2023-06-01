@@ -257,8 +257,8 @@ def usc_unfix_dof(m):
         m.fs.hxc.area.fix(m.hxc_area)
         m.fs.hxd.area.fix(m.hxd_area)
         # # 828.596282
-        m.fs.hxc.tube_outlet.temperature[0].fix(828)
-        m.fs.hxd.shell_inlet.temperature[0].fix(828)
+        m.fs.hxc.tube_outlet.temperature[0].fix(828.59)
+        m.fs.hxd.shell_inlet.temperature[0].fix(828.59)
         # m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
         #     expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
         # )

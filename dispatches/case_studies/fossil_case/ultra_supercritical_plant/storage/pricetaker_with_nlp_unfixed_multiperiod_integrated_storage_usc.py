@@ -365,7 +365,7 @@ def run_pricetaker_analysis(nweeks=None,
     # Add storage material capital costs and inventory balances      #
     ##################################################################
 
-    m.max_inventory = pyo.units.convert(6795755.93*pyunits.kg,
+    m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.total_inventory = pyo.Var(initialize=max_salt_amount,
                                 bounds=(0, m.max_inventory),
@@ -403,7 +403,7 @@ def run_pricetaker_analysis(nweeks=None,
     # @m.Constraint()
     # def power_init(b):
     #     return m.period[1].fs.previous_power == 447.66
-    m.period[1].fs.previous_power.fix(436)
+    m.period[1].fs.previous_power.fix(447.66)
 
     if tank_status == "hot_empty":
         # @m.Constraint()

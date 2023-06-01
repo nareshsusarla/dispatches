@@ -834,14 +834,14 @@ def add_bounds(m):
     # in W
     m.main_flow = 17854
     m.flow_min = 0 # in mol/s
-    m.flow_max = m.main_flow*2  # in mol/s
+    m.flow_max = m.main_flow*3  # in mol/s
     m.flow_max_storage = 0.2*m.flow_max
     m.heat_duty_max = (m.max_storage_duty*1e6*pyunits.W/pyunits.MW)
     m.power_max_storage = (pyo.units.convert(m.max_discharge_power, to_units=pyunits.W))
     m.factor = 2
 
     # Add lower bound for boiler flow
-    # m.fs.boiler.inlet.flow_mol.setlb(13390.5)
+    m.fs.boiler.inlet.flow_mol.setlb(13390.5)
 
     # Charge heat exchanger
     m.fs.hxc.shell_inlet.flow_mol.setlb(m.flow_min)
@@ -904,7 +904,7 @@ def add_bounds(m):
     m.fs.hxd.area.setub(m.max_area)
     m.fs.hxd.delta_temperature_in.setlb(4)
     m.fs.hxd.delta_temperature_out.setlb(5)
-    m.fs.hxd.delta_temperature_in.setub(350)
+    m.fs.hxd.delta_temperature_in.setub(500)
     m.fs.hxd.delta_temperature_out.setub(350)
 
     # Add bounds for the HX pump
