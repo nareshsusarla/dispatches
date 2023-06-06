@@ -16,7 +16,7 @@
     "min_storage_area": 0,
     "max_storage_area": 6000,
     "min_storage_area_design": 500,
-    "max_storage_area_design": 2500,
+    "max_storage_area_design": 3000,
     "min_solar_salt_temperature": 513.15,
     "max_solar_salt_temperature": 853.15,
     "operating_hours_per_day": 24,

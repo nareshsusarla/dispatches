@@ -30,6 +30,7 @@ import logging
 import numpy as np
 import json
 import os
+import pandas as pd
 
 # Import Pyomo objects
 import pyomo.environ as pyo
@@ -349,11 +350,17 @@ def run_pricetaker_analysis(nweeks=None,
             return b.period[h].fs.hxd.shell_inlet.temperature[0] == (
                 b.period[h].fs.hxc.tube_outlet.temperature[0]
             )
-        # Add constraint to ensure a hot salt temperature close to the
-        # upper bound
-        @m.Constraint(m.hours_set)
-        def rule_fix_hot_salt(b, h):
-            return b.period[h].fs.hxc.tube_outlet.temperature[0] == 853.15*pyunits.K
+        @m.Constraint(m.hours_set2,
+                      doc="Salt temperature in charge heat exchanger")
+        def constraint_charge_temperature(b, h):
+            return b.period[h].fs.hxc.tube_outlet.temperature[0] == (
+                b.period[h+1].fs.hxc.tube_outlet.temperature[0]
+            )
+        # # Add constraint to ensure a hot salt temperature close to the
+        # # upper bound
+        # @m.Constraint(m.hours_set)
+        # def rule_fix_hot_salt(b, h):
+        #     return b.period[h].fs.hxc.tube_outlet.temperature[0] == 853.15*pyunits.K
 
     ##################################################################
     # Add storage material capital costs and inventory balances      #
@@ -398,6 +405,11 @@ def run_pricetaker_analysis(nweeks=None,
     # def power_init(b):
     #     return m.period[1].fs.previous_power == 447.66
     m.period[1].fs.previous_power.fix(447.66)
+
+    @m.Constraint()
+    def rule_total_heat_balance(b):
+        return sum([b.period[h].fs.hxd_duty for h in m.hours_set]) <= sum([b.period[h].fs.hxc_duty for h in m.hours_set])
+
 
     if tank_status == "hot_empty":
         # @m.Constraint()
@@ -467,6 +479,11 @@ def run_pricetaker_analysis(nweeks=None,
     boiler_flow = []
     boiler_heat_duty = []
     total_inventory.append(pyo.value(m.total_inventory))
+    fuel_cost = []
+    plant_operating_cost = []
+    salt_cost = []
+    tank_cost = []
+    hx_cost = []
     for blk in blks:
         # Save results in lists
         hot_tank_level.append(pyo.value(blk.fs.salt_inventory_hot))
@@ -476,6 +493,12 @@ def run_pricetaker_analysis(nweeks=None,
         net_power.append(pyo.value(blk.fs.net_power[0]))
         hxc_duty.append(pyo.value(blk.fs.hxc.heat_duty[0])*1e-6)
         hxd_duty.append(pyo.value(blk.fs.hxd.heat_duty[0])*1e-6)
+        fuel_cost.append(pyo.value(blk.fs.fuel_cost))
+        plant_operating_cost.append(pyo.value(blk.fs.plant_operating_cost))
+        salt_cost.append(pyo.value(m.salt_purchase_cost))
+        tank_cost.append(pyo.value(m.no_of_tanks*m.salt_tank_capital_cost))
+        hx_cost.append(pyo.value(m.storage_hx_capital_cost))
+
         if use_surrogate:
             steam_to_storage.append(pyo.value(blk.fs.steam_to_storage[0]))
             boiler_flow.append(pyo.value(blk.fs.boiler_flow[0]))
@@ -485,6 +508,23 @@ def run_pricetaker_analysis(nweeks=None,
 
     log_close_to_bounds(m)
     log_infeasible_constraints(m)
+    df_results = pd.DataFrame.from_dict({
+        "hot_tank_level": hot_tank_level,
+        "cold_tank_level": cold_tank_level,
+        "plant_heat_duty": plant_heat_duty,
+        "discharge_work": discharge_work,
+        "net_power": net_power,
+        "hxc_duty": hxc_duty,
+        "hxd_duty": hxd_duty,
+        "fuel_cost": fuel_cost,
+        "plant_operating_cost": plant_operating_cost,
+        "salt_cost": salt_cost,
+        "tank_cost": tank_cost,
+        "hx_cost": hx_cost,
+        "lmp": lmp
+    }
+    )
+    df_results.to_excel("results_simultaneous_0602_fix.xlsx")
     
     print('hot_tank_level=', hot_tank_level)
     print('cold_tank_level=', cold_tank_level)
@@ -685,9 +725,9 @@ def plot_results(m,
              alpha=0.7, ls='-', lw=1.5, color=c[2])
     ax2.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp/surrogate_salt_tank_level_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//surrogate_salt_tank_level_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp/salt_tank_level_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//salt_tank_level_{}hrs.png'.format(n_time_points))
 
     # Plot boiler and charge and discharge heat exchangers heat duty
     fig2, ax3 = plt.subplots(figsize=(12, 8))
@@ -716,9 +756,9 @@ def plot_results(m,
     ax4.step([x + 1 for x in hours], lmp_array, marker='o', ms=marker_size, alpha=0.7, ls='-', lw=1.5, color=c[2])
     ax4.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp/surrogate_hx_heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//surrogate_hx_heat_duty_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp/hx_heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//hx_heat_duty_{}hrs.png'.format(n_time_points))
 
     # Plot net power and discharge power profiles
     fig3, ax5 = plt.subplots(figsize=(12, 8))
@@ -744,9 +784,9 @@ def plot_results(m,
              color=c[2])
     ax6.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp/surrogate_power_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//surrogate_power_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp/power_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//power_{}hrs.png'.format(n_time_points))
 
     # Plot boiler and charge and discharge heat exchangers heat duty
     fig4, ax7 = plt.subplots(figsize=(12, 8))
@@ -770,9 +810,9 @@ def plot_results(m,
     ax8.step([x + 1 for x in hours], lmp_array, marker='o', ms=marker_size, alpha=0.7, ls='-', lw=1.5, color=c[2])
     ax8.tick_params(axis='y', labelcolor=c[2])
     if use_surrogate:
-        plt.savefig('results/nlp_mp/surrogate_plant_heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//surrogate_plant_heat_duty_{}hrs.png'.format(n_time_points))
     else:
-        plt.savefig('results/nlp_mp/plant_heat_duty_{}hrs.png'.format(n_time_points))
+        plt.savefig('results//nlp_mp//plant_heat_duty_{}hrs.png'.format(n_time_points))
 
     plt.show()
 
@@ -804,7 +844,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-2
+        scaling_obj = 1e-1
     print()
     print('scaling_obj:', scaling_obj)
 
@@ -834,7 +874,7 @@ if __name__ == '__main__':
     # Create a directory to save the results for each NLP sbproblem
     # and plots
     _mkdir('results')
-    _mkdir('results/nlp_mp')
+    _mkdir('results//nlp_mp')
 
     (m, blks, lmp, net_power, results, total_inventory,
      hot_tank_level, cold_tank_level, hxc_duty, hxd_duty,
