@@ -524,7 +524,7 @@ def run_pricetaker_analysis(nweeks=None,
         "lmp": lmp
     }
     )
-    df_results.to_excel("results_simultaneous_0602_fix.xlsx")
+    df_results.to_excel("results_simultaneous_0606_7days.xlsx")
     
     print('hot_tank_level=', hot_tank_level)
     print('cold_tank_level=', cold_tank_level)
@@ -844,7 +844,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-1
+        scaling_obj = 1e1
     print()
     print('scaling_obj:', scaling_obj)
 
@@ -863,7 +863,7 @@ if __name__ == '__main__':
         pmax = design_data_dict["plant_max_power"]*pyunits.MW + pmax_storage
 
     hours_per_day = 24
-    ndays = 1
+    ndays = 7
     nhours = hours_per_day*ndays
     nweeks = 1
 

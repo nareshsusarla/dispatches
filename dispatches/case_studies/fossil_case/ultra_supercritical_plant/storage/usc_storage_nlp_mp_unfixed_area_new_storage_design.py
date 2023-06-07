@@ -902,10 +902,14 @@ def add_bounds(m):
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxd.area.setlb(m.min_area)
     m.fs.hxd.area.setub(m.max_area)
+    # m.fs.hxd.delta_temperature_in.setlb(4.9)
+    # m.fs.hxd.delta_temperature_out.setlb(10)
+    # m.fs.hxd.delta_temperature_in.setub(300)
+    # m.fs.hxd.delta_temperature_out.setub(300)
     m.fs.hxd.delta_temperature_in.setlb(4.9)
-    m.fs.hxd.delta_temperature_out.setlb(10)
-    m.fs.hxd.delta_temperature_in.setub(300)
-    m.fs.hxd.delta_temperature_out.setub(300)
+    m.fs.hxd.delta_temperature_out.setlb(5)
+    m.fs.hxd.delta_temperature_in.setub(350)
+    m.fs.hxd.delta_temperature_out.setub(350)
 
     # Add bounds for the HX pump
     for unit_k in [m.fs.hx_pump]:
