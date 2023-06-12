@@ -908,8 +908,8 @@ def add_bounds(m):
     # m.fs.hxd.delta_temperature_out.setub(300)
     m.fs.hxd.delta_temperature_in.setlb(4.9)
     m.fs.hxd.delta_temperature_out.setlb(5)
-    m.fs.hxd.delta_temperature_in.setub(350)
-    m.fs.hxd.delta_temperature_out.setub(350)
+    m.fs.hxd.delta_temperature_in.setub(300)
+    m.fs.hxd.delta_temperature_out.setub(300)
 
     # Add bounds for the HX pump
     for unit_k in [m.fs.hx_pump]:

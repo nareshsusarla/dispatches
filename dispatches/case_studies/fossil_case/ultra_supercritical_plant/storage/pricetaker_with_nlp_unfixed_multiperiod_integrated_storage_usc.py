@@ -399,16 +399,18 @@ def run_pricetaker_analysis(nweeks=None,
     # variables. Different tank scenarios are included for the Solar
     # salt tank levels and the previous tank level of the tank is
     # based on that.
-    m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
+    # m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
+    m.tank_init = pyo.units.convert(75100*pyunits.kg,
                                     to_units=pyunits.metric_ton)
     # @m.Constraint()
     # def power_init(b):
     #     return m.period[1].fs.previous_power == 447.66
-    m.period[1].fs.previous_power.fix(447.66)
+    # m.period[1].fs.previous_power.fix(447.66)
+    m.period[1].fs.previous_power.fix(283)
 
-    @m.Constraint()
-    def rule_total_heat_balance(b):
-        return sum([b.period[h].fs.hxd_duty for h in m.hours_set]) <= sum([b.period[h].fs.hxc_duty for h in m.hours_set])
+    # @m.Constraint()
+    # def rule_total_heat_balance(b):
+    #     return sum([b.period[h].fs.hxd_duty for h in m.hours_set]) <= sum([b.period[h].fs.hxc_duty for h in m.hours_set])
 
 
     if tank_status == "hot_empty":
@@ -524,7 +526,7 @@ def run_pricetaker_analysis(nweeks=None,
         "lmp": lmp
     }
     )
-    df_results.to_excel("results_simultaneous_0606_7days.xlsx")
+    df_results.to_excel("results_simultaneous_0612_24h.xlsx")
     
     print('hot_tank_level=', hot_tank_level)
     print('cold_tank_level=', cold_tank_level)
@@ -706,7 +708,7 @@ def plot_results(m,
     ax1.set_ylabel('Salt Amount (metric ton)', color=c[3])
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
-    ax1.set_ylim((0, 2600))
+    ax1.set_ylim((0, 3000))
     ax1.grid(linestyle=':', which='both', color=c[4], alpha=0.40)
     # plt.axhline(pyo.value(m.total_inventory), ls=':', lw=1.5, color=c[4])
     ax1.step(hours_list, hot_tank_list, marker='o', ms=marker_size, lw=1.5, color=c[0], alpha=0.85,
@@ -837,14 +839,14 @@ if __name__ == '__main__':
     }
     solver = get_solver('ipopt', optarg)
 
-    lx = True
+    lx = False
     if lx:
         if use_surrogate:
             scaling_obj = 1e-1
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e1
+        scaling_obj = 1e-2
     print()
     print('scaling_obj:', scaling_obj)
 
@@ -863,7 +865,7 @@ if __name__ == '__main__':
         pmax = design_data_dict["plant_max_power"]*pyunits.MW + pmax_storage
 
     hours_per_day = 24
-    ndays = 7
+    ndays = 1
     nhours = hours_per_day*ndays
     nweeks = 1
 

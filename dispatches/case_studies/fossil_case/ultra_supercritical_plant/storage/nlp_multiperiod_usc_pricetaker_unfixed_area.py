@@ -93,8 +93,8 @@ def add_data(m):
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,
                                    to_units=pyunits.metric_ton)
 
-    # m.tank_min = 1e-3*pyunits.metric_ton
-    m.tank_min = 0
+    m.tank_min = 1e-3*pyunits.metric_ton
+    # m.tank_min = 0
 
 
 def create_usc_model(m=None, pmin=None, pmax=None):
