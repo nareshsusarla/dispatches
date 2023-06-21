@@ -399,9 +399,15 @@ def usc_custom_init(m):
     def constraint_salt_maxflow_cold(b):
         return b.hxc_flow_mass <= b.previous_salt_inventory_cold
 
+    solver.solve(blk, tee=True)
+    print("  ")
+    print("  ")
+    print("I WAS HERE")
+    print("  ")
+    print("  ")
     init_model = to_json(blk, return_dict=True)
     from_json(m, sd=init_model)
-
+    return
 
 # The tank level and power output are linked between contiguous time
 # periods

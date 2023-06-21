@@ -63,6 +63,7 @@ from idaes.models.costing.SSLW import (SSLWCosting, SSLWCostingData,
                                        PumpType, PumpMaterial, PumpMotorType)
 
 from idaes.core.util import model_serializer as ms
+from idaes.core.util.model_diagnostics import DegeneracyHunter
 
 # Import IDAES Libraries
 from idaes.models.unit_models import PressureChanger
@@ -71,11 +72,13 @@ from idaes.models_extra.power_generation.unit_models.helm import (HelmMixer,
                                                                   HelmSplitter)
 from idaes.models.unit_models.heat_exchanger import (
     delta_temperature_underwood_callback)
+from idaes.core.util.model_statistics import large_residuals_set
+
 from idaes.models.unit_models.pressure_changer import ThermodynamicAssumption
 import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
 from idaes.core.util.exceptions import ConfigurationError
-
+from idaes.core.util.scaling import list_unscaled_constraints, list_unscaled_variables
 from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
@@ -90,6 +93,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 scaling_obj = 1e1
+milp_solver =  pyo.SolverFactory('gurobi')
 
 # Add design data from .json file
 with open('uscp_design_data_new_storage_design.json') as design_data:
@@ -220,12 +224,12 @@ def create_integrated_model(m, method=None):
     # Calculate overall heat transfer coefficient
     @m.fs.hxc.Constraint(m.fs.time)
     def constraint_hxc_ohtc(b, t):
-        return (
+        return ((
             b.overall_heat_transfer_coefficient[t] *
             (2*m.fs.k_steel*b.h_steam +
              m.fs.tube_outer_dia*m.fs.log_tube_dia_ratio*b.h_salt*b.h_steam +
              m.fs.tube_dia_ratio*b.h_salt*2*m.fs.k_steel)
-        ) == 2*m.fs.k_steel*b.h_salt*b.h_steam
+        )*1e-5 == 2*m.fs.k_steel*b.h_salt*b.h_steam*1e-5)
 
     # ------- Discharge Heat Exchanger Heat Transfer Coefficient -------
     # Discharge heat exchanger salt and steam side constraints to
@@ -288,12 +292,12 @@ def create_integrated_model(m, method=None):
     @m.fs.hxd.Constraint(m.fs.time,
                          doc="Overall heat transfer coefficient for hxd")
     def constraint_hxd_ohtc(b, t):
-        return (
+        return ((
             b.overall_heat_transfer_coefficient[t]*
             (2*m.fs.k_steel*b.h_steam +
              m.fs.tube_outer_dia*m.fs.log_tube_dia_ratio*b.h_salt*b.h_steam +
              m.fs.tube_dia_ratio*b.h_salt*2*m.fs.k_steel)
-        ) == 2*m.fs.k_steel*b.h_salt*b.h_steam
+        )*1e-5 == 2*m.fs.k_steel*b.h_salt*b.h_steam*1e-5)
 
     m.fs.es_turbine = HelmTurbineStage(property_package=m.fs.prop_water)
 
@@ -625,6 +629,15 @@ def set_scaling_factors(m):
         iscale.set_scaling_factor(fluid.shell.heat, 1e-6)
         iscale.set_scaling_factor(fluid.tube.heat, 1e-6)
 
+    iscale.constraint_scaling_transform(m.fs.hxd.hot_side.properties_out[0.0].enthalpy_eq["Liq"], 1e-3)
+    iscale.constraint_scaling_transform(m.fs.hxd.hot_side.properties_in[0.0].enthalpy_eq["Liq"], 1e-3)
+
+    iscale.constraint_scaling_transform(m.fs.hxd.delta_temperature_out_equation[0.0], 100)
+    iscale.constraint_scaling_transform(m.fs.hxd.delta_temperature_out_equation[0.0], 100)
+
+    iscale.constraint_scaling_transform(m.fs.hxd.heat_transfer_equation[0.0], 1e-5)
+    iscale.constraint_scaling_transform(m.fs.hxc.heat_transfer_equation[0.0], 1e-5)
+
     iscale.set_scaling_factor(m.fs.hx_pump.control_volume.work, 1e-6)
     iscale.set_scaling_factor(m.fs.es_turbine.control_volume.work, 1e-6)
 
@@ -706,14 +719,24 @@ def initialize(m,
             )
 
     res = solver.solve(m,
-                       tee=False,
+                       tee=True,
                        symbolic_solver_labels=True,
                        options=optarg)
 
     print("Charge Model Initialization = ",
           res.solver.termination_condition)
     print("***************   Charge Model Initialized   ********************")
-
+    print("  ")
+    print("  ")
+    print("****Model Build Initialized: Check Residuals *************************")
+    lrs = large_residuals_set(m)
+    for i in lrs:
+        print(i.name)
+    # assert False
+    # dh1 = DegeneracyHunter(m, solver=milp_solver)
+    # dh1.check_residuals(tol=0.1)
+    print("  ")
+    print("  ")
     # m.fs.hxd.report()
     # quit()
 def build_costing(m,
@@ -787,9 +810,18 @@ def initialize_with_costing(m, solver=None):
     calculate_variable_from_constraint(m.fs.plant_operating_cost,
                                        m.fs.eq_plant_op_cost)
 
-    res = solver.solve(m, tee=False, symbolic_solver_labels=True)
+    res = solver.solve(m, tee=True, symbolic_solver_labels=True)
     print("Cost Initialization = ", res.solver.termination_condition)
     print("******************** Costing Initialized *************************")
+    print('')
+    print('')
+    print("******************** Costing Initialized: Check Residuals *************************")
+    lrs2 = large_residuals_set(m)
+    for i in lrs2:
+        print(i.name)
+    # dh2 = DegeneracyHunter(m, solver=milp_solver)
+    # dh2.check_residuals(tol=0.1)
+
     print('')
     print('')
 
@@ -1117,7 +1149,7 @@ def print_results(m, results):
 
     log_infeasible_constraints(m)
     log_close_to_bounds(m)
-
+    list_unscaled_constraints(m)
 
 def model_analysis(m,
                    solver=None,
@@ -1135,7 +1167,7 @@ def model_analysis(m,
     m.pmax_total = pmax + m.pmax_storage
     m.min_temp = design_data_dict["min_solar_salt_temperature"]*pyunits.K
     m.max_temp = design_data_dict["max_solar_salt_temperature"]*pyunits.K
-    m.min_inventory = pyo.units.convert(80000*pyunits.kg,
+    m.min_inventory = pyo.units.convert(75100*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = m.max_salt_amount # in mton
     m.tank_min = 1e-3*pyunits.metric_ton
@@ -1317,20 +1349,78 @@ def model_analysis(m,
     print('DOF before solve = ', degrees_of_freedom(m))
 
     # Solve the design optimization model
-    results = solver.solve(
-        m,
-        tee=True,
-        symbolic_solver_labels=True,
-        options={
-            "linear_solver": "ma27",
-            "max_iter": 200
-        }
-    )
-    m.fs.condenser_mix.makeup.display()
-    print_results(m, results)
+    # results = solver.solve(
+    #     m,
+    #     tee=True,
+    #     symbolic_solver_labels=True,
+    #     options={
+    #         "linear_solver": "ma27",
+    #         "max_iter": 200
+    #     }
+    # )
+    print("  ")
+    print("  ")
+    print("Print out all constraints with residuals before calling solve")
+    lrs = large_residuals_set(m)
+    for i in lrs:
+        print(i.name)
+
+    print("  ")
+    print("  ")
+    print("Solve with 0 Iterations")
+    results = solver.solve(m,
+                        tee=True,
+                        symbolic_solver_labels=True,
+                        options={
+                            "max_iter": 0,
+                            "linear_solver": "ma57",
+                            # "halt_on_ampl_error": "yes"
+                        })
+    # dh = DegeneracyHunter(m, solver=milp_solver)
+
+    print("  ")
+    print("  ")
+    print("Print out all constraints with residuals larger than 0.1")
+    lrs = large_residuals_set(m)
+    for i in lrs:
+        print(i.name)
+    # dh.check_residuals(tol=0.1)
+    assert False
+    print("  ")
+    print("  ")
+    print("Which variables are within their bounds by a given tolerance?")
+    dh.check_variable_bounds(tol=1.0)
+
+    print("  ")
+    print("  ")
+    print("Solve with 50 Iterations")
+    results = solver.solve(m,
+                        tee=True,
+                        symbolic_solver_labels=True,
+                        options={
+                            "max_iter": 50,
+                            "linear_solver": "ma57",
+                            # "halt_on_ampl_error": "yes"
+                        })
+    # print("  ")
+    # print("  ")
+    # print("Check the rank of the Jacobian of the equality constraints")
+    # n_deficient = dh.check_rank_equality_constraints()
+    # print("  ")
+    # print("  ")
+    # print(" Identify candidate degenerate constraints")
+    # ds = dh.find_candidate_equations(verbose=True,tee=True)
+    # print("  ")
+    # print("  ")
+    # print(" Find irreducible degenerate sets")
+    # ids = dh.find_irreducible_degenerate_sets(verbose=True)
+
+    # m.fs.condenser_mix.makeup.display()
+    # print_results(m, results)
 
     # log_close_to_bounds(m)
     # log_infeasible_constraints(m)
+    
 
 
 if __name__ == "__main__":
@@ -1373,3 +1463,5 @@ if __name__ == "__main__":
                        tank_status=tank_status,
                        fix_power=fix_power,
                        constant_salt=constant_salt)
+
+

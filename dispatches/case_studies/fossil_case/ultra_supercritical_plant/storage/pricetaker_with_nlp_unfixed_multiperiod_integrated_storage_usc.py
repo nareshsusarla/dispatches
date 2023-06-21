@@ -52,6 +52,7 @@ from dispatches.properties import solarsalt_properties
 from idaes.core import UnitModelCostingBlock
 from idaes.models.costing.SSLW import (SSLWCosting, SSLWCostingData,
                                        PumpType, PumpMaterial, PumpMotorType)
+from idaes.core.util.model_diagnostics import DegeneracyHunter
 logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
 
 # Import objects for plots
@@ -398,12 +399,13 @@ def run_pricetaker_analysis(nweeks=None,
     # variables. Different tank scenarios are included for the Solar
     # salt tank levels and the previous tank level of the tank is
     # based on that.
-    m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
+    # m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
+    m.tank_init = pyo.units.convert(75100*pyunits.kg,
                                     to_units=pyunits.metric_ton)
     # @m.Constraint()
     # def power_init(b):
     #     return m.period[1].fs.previous_power == 447.66
-    m.period[1].fs.previous_power.fix(447.66)
+    m.period[1].fs.previous_power.fix(436)
 
     if tank_status == "hot_empty":
         # @m.Constraint()
@@ -452,14 +454,53 @@ def run_pricetaker_analysis(nweeks=None,
     print()
     print(">>Solve for {} hours of operation ({} day(s)) ".format(n_time_points,
                                                                   n_time_points/24))
+    # print("  ")
+    # print("  ")
+    # print("Solve with 0 Iterations")
     results = opt.solve(m,
                         tee=True,
                         symbolic_solver_labels=True,
                         options={
-                            "max_iter": 300,
-                            "linear_solver": "ma27",
+                            "max_iter": 200,
+                            "linear_solver": "ma57",
                             # "halt_on_ampl_error": "yes"
                         })
+    # milp_solver =  pyo.SolverFactory('gurobi')
+    # dh = DegeneracyHunter(m, solver=milp_solver)
+
+    # print("  ")
+    # print("  ")
+    # print("Print out all constraints with residuals larger than 0.1")
+    # dh.check_residuals(tol=0.1)
+
+    # print("  ")
+    # print("  ")
+    # print("Which variables are within their bounds by a given tolerance?")
+    # dh.check_variable_bounds(tol=1.0)
+
+    # print("  ")
+    # print("  ")
+    # print("Solve with 50 Iterations")
+    # results = opt.solve(m,
+    #                     tee=True,
+    #                     symbolic_solver_labels=True,
+    #                     options={
+    #                         "max_iter": 50,
+    #                         "linear_solver": "ma57",
+    #                         # "halt_on_ampl_error": "yes"
+    #                     })
+    # print("  ")
+    # print("  ")
+    # print("Check the rank of the Jacobian of the equality constraints")
+    # n_deficient = dh.check_rank_equality_constraints()
+    # print("  ")
+    # print("  ")
+    # print(" Identify candidate degenerate constraints")
+    # ds = dh.find_candidate_equations(verbose=True,tee=True)
+    # print("  ")
+    # print("  ")
+    # print(" Find irreducible degenerate sets")
+    # ids = dh.find_irreducible_degenerate_sets(verbose=True)
 
     hot_tank_level = []
     cold_tank_level = []
@@ -532,6 +573,7 @@ def run_pricetaker_analysis(nweeks=None,
     
         print('boiler_heat_duty=', boiler_heat_duty)
 
+    # return m
     return (m, blks, lmp, net_power, results,
             total_inventory, hot_tank_level,
             cold_tank_level, hxc_duty, hxd_duty,
@@ -831,7 +873,7 @@ if __name__ == '__main__':
     }
     solver = get_solver('ipopt', optarg)
 
-    lx = True
+    lx = False
     if lx:
         if use_surrogate:
             scaling_obj = 1e-1
@@ -870,6 +912,13 @@ if __name__ == '__main__':
     _mkdir('results')
     _mkdir('results/nlp_mp')
 
+    # m = run_pricetaker_analysis(nweeks=nweeks,
+    #                             n_time_points=n_time_points,
+    #                             pmin=pmin,
+    #                             pmax=pmax,
+    #                             tank_status=tank_status,
+    #                             max_salt_amount=max_salt_amount,
+    #                             constant_salt=constant_salt)
     (m, blks, lmp, net_power, results, total_inventory,
      hot_tank_level, cold_tank_level, hxc_duty, hxd_duty,
      boiler_heat_duty,
