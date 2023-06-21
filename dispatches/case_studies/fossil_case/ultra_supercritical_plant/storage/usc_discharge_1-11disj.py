@@ -30,7 +30,7 @@ from IPython import embed
 import pyomo.environ as pyo
 from pyomo.environ import (Block, Param, Constraint, Objective,
                            TransformationFactory, SolverFactory,
-                           Expression, value, log, exp, Var)
+                           Expression, value, log, exp, Var, maximize)
 from pyomo.environ import units as pyunits
 from pyomo.network import Arc
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
@@ -55,17 +55,21 @@ from idaes.models.costing.SSLW import (
     SSLWCostingData
 )
 from idaes.core.util.exceptions import ConfigurationError
-
+from idaes.core.util.scaling import (list_unscaled_variables,
+                                     list_unscaled_constraints,
+                                     list_badly_scaled_variables,
+                                     extreme_jacobian_entries)
 # Import ultra supercritical power plant model
 from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
 # Import properties package for Solar salt
 from dispatches.properties import solarsalt_properties
-logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
+# logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 
 
-scaling_obj = 1e-2
+scaling_obj = 1e0
 
 def create_discharge_model(m, add_efficiency=None, power_max=None):
     """Create flowsheet and add unit models.
@@ -119,6 +123,12 @@ def create_discharge_model(m, add_efficiency=None, power_max=None):
     # Declare disjuncts in disjunction 1
     m.fs.discharge.condpump_source_disjunct = Disjunct(
         rule=condpump_source_disjunct_equations)
+    m.fs.discharge.fwh1_source_disjunct = Disjunct(
+        rule=fwh1_source_disjunct_equations)
+    m.fs.discharge.fwh2_source_disjunct = Disjunct(
+        rule=fwh2_source_disjunct_equations)
+    m.fs.discharge.fwh3_source_disjunct = Disjunct(
+        rule=fwh3_source_disjunct_equations)
     m.fs.discharge.fwh4_source_disjunct = Disjunct(
         rule=fwh4_source_disjunct_equations)
     m.fs.discharge.fwh5_source_disjunct = Disjunct(
@@ -127,6 +137,10 @@ def create_discharge_model(m, add_efficiency=None, power_max=None):
         rule=booster_source_disjunct_equations)
     m.fs.discharge.bfp_source_disjunct = Disjunct(
         rule=bfp_source_disjunct_equations)
+    m.fs.discharge.fwh6_source_disjunct = Disjunct(
+        rule=fwh6_source_disjunct_equations)
+    m.fs.discharge.fwh8_source_disjunct = Disjunct(
+        rule=fwh8_source_disjunct_equations)
     m.fs.discharge.fwh9_source_disjunct = Disjunct(
         rule=fwh9_source_disjunct_equations)
 
@@ -455,10 +469,15 @@ def _disconnect_arcs(m):
 
     for arc_s in [
             m.fs.condpump_to_fwh1,
+            m.fs.fwh1_to_fwh2,
+            m.fs.fwh2_to_fwh3,
+            m.fs.fwh3_to_fwh4,
             m.fs.fwh4_to_fwh5,
             m.fs.fwh5_to_deaerator,
             m.fs.booster_to_fwh6,
+            m.fs.fwh6_to_fwh7,
             m.fs.bfp_to_fwh8,
+            m.fs.fwh8_to_fwh9,
             m.fs.fwh9_to_boiler
             ]:
         arc_s.expanded_block.enth_mol_equality.deactivate()
@@ -497,9 +516,14 @@ def add_disjunction(m):
     m.fs.hxd_source_disjunction = Disjunction(
         expr=[
             m.fs.discharge.booster_source_disjunct,
+            m.fs.discharge.fwh1_source_disjunct,
+            m.fs.discharge.fwh2_source_disjunct,
+            m.fs.discharge.fwh3_source_disjunct,
             m.fs.discharge.bfp_source_disjunct,
             m.fs.discharge.fwh4_source_disjunct,
             m.fs.discharge.fwh5_source_disjunct,
+            m.fs.discharge.fwh6_source_disjunct,
+            m.fs.discharge.fwh8_source_disjunct,
             m.fs.discharge.fwh9_source_disjunct,
             m.fs.discharge.condpump_source_disjunct
             ]
@@ -532,6 +556,24 @@ def condpump_source_disjunct_equations(disj):
         doc="Connection from ES splitter to FWH1"
     )
 
+    m.fs.discharge.condpump_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.condpump_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.condpump_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
     m.fs.discharge.condpump_source_disjunct.fwh4_to_fwh5 = Arc(
         source=m.fs.fwh[4].tube_outlet,
         destination=m.fs.fwh[5].tube_inlet,
@@ -550,10 +592,22 @@ def condpump_source_disjunct_equations(disj):
         doc="Connection from booster pump to FWH6"
     )
 
+    m.fs.discharge.condpump_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+
     m.fs.discharge.condpump_source_disjunct.bfp_to_fwh8 = Arc(
         source=m.fs.bfp.outlet,
         destination=m.fs.fwh[8].tube_inlet,
         doc="Connection from BFP to FWH8"
+    )
+
+    m.fs.discharge.condpump_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
     )
 
     m.fs.discharge.condpump_source_disjunct.fwh9_to_boiler = Arc(
@@ -576,23 +630,23 @@ def fwh5_source_disjunct_equations(disj):
         doc="Connection from condenser pump to FWH1"
     )
 
-    # m.fs.discharge.fwh5_source_disjunct.fwh1_to_fwh2 = Arc(
-    #     source=m.fs.fwh[1].tube_outlet,
-    #     destination=m.fs.fwh[2].tube_inlet,
-    #     doc="Connection from FWH1 to FWH2"
-    # )
+    m.fs.discharge.fwh5_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
 
-    # m.fs.discharge.fwh5_source_disjunct.fwh2_to_fwh3 = Arc(
-    #     source=m.fs.fwh[2].tube_outlet,
-    #     destination=m.fs.fwh[3].tube_inlet,
-    #     doc="Connection from FWH2 to FWH3"
-    # )
+    m.fs.discharge.fwh5_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
 
-    # m.fs.discharge.fwh5_source_disjunct.fwh3_to_fwh4 = Arc(
-    #     source=m.fs.fwh[3].tube_outlet,
-    #     destination=m.fs.fwh[4].tube_inlet,
-    #     doc="Connection from FWH3 to FWH4"
-    # )
+    m.fs.discharge.fwh5_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
 
     m.fs.discharge.fwh5_source_disjunct.fwh4_to_fwh5 = Arc(
         source=m.fs.fwh[4].tube_outlet,
@@ -617,11 +671,11 @@ def fwh5_source_disjunct_equations(disj):
         doc="Connection from booster pump to FWH6"
     )
 
-    # m.fs.discharge.fwh5_source_disjunct.fwh6_to_fwh7 = Arc(
-    #     source=m.fs.fwh[6].tube_outlet,
-    #     destination=m.fs.fwh[7].tube_inlet,
-    #     doc="Connection from FWH6 to FWH7"
-    # )
+    m.fs.discharge.fwh5_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
 
     m.fs.discharge.fwh5_source_disjunct.bfp_to_fwh8 = Arc(
         source=m.fs.bfp.outlet,
@@ -629,17 +683,250 @@ def fwh5_source_disjunct_equations(disj):
         doc="Connection from BFP to FWH8"
     )
 
-    # m.fs.discharge.fwh5_source_disjunct.fwh8_to_fwh9 = Arc(
-    #     source=m.fs.fwh[8].tube_outlet,
-    #     destination=m.fs.fwh[9].tube_inlet,
-    #     doc="Connection from FWH8 to FWH9"
-    # )
+    m.fs.discharge.fwh5_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
+    )
 
     m.fs.discharge.fwh5_source_disjunct.fwh9_to_boiler = Arc(
         source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet
     )
 
+
+def fwh1_source_disjunct_equations(disj):
+    """Disjunction 1: Water is sourced from FWH1
+    """
+
+    m = disj.model()
+
+    # Define arcs to connect units within disjunct
+    m.fs.discharge.fwh1_source_disjunct.condpump_to_fwh1 = Arc(
+        source=m.fs.cond_pump.outlet,
+        destination=m.fs.fwh[1].tube_inlet,
+        doc="Connection from condenser pump to FWH1"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh1_to_essplit = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.discharge.es_split.inlet,
+        doc="Connection from FWH1 to ES splitter"
+    )
+    m.fs.discharge.fwh1_source_disjunct.essplit_to_fwh2 = Arc(
+        source=m.fs.discharge.es_split.to_fwh,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from ES splitter to FWH2"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh4_to_fwh5 = Arc(
+        source=m.fs.fwh[4].tube_outlet,
+        destination=m.fs.fwh[5].tube_inlet,
+        doc="Connection from FWH4 to FWH5"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh5_to_deaerator = Arc(
+        source=m.fs.fwh[5].tube_outlet,
+        destination=m.fs.deaerator.feedwater,
+        doc="Connection from FWH5 to deaerator"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.booster_to_fwh6 = Arc(
+        source=m.fs.booster.outlet,
+        destination=m.fs.fwh[6].tube_inlet,
+        doc="Connection from booster to FWH6"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.bfp_to_fwh8 = Arc(
+        source=m.fs.bfp.outlet,
+        destination=m.fs.fwh[8].tube_inlet,
+        doc="Connection from BFP to FWH8"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
+    )
+
+    m.fs.discharge.fwh1_source_disjunct.fwh9_to_boiler = Arc(
+        source=m.fs.fwh[9].tube_outlet,
+        destination=m.fs.boiler.inlet,
+        doc="Connection from FWH9 to boiler"
+    )
+
+
+def fwh2_source_disjunct_equations(disj):
+    """Disjunction 1: Water is sourced from FWH2
+    """
+
+    m = disj.model()
+
+    # Define arcs to connect units within disjunct
+    m.fs.discharge.fwh2_source_disjunct.condpump_to_fwh1 = Arc(
+        source=m.fs.cond_pump.outlet,
+        destination=m.fs.fwh[1].tube_inlet,
+        doc="Connection from condenser pump to FWH1"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh2_to_essplit = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.discharge.es_split.inlet,
+        doc="Connection from FWH2 to ES splitter"
+    )
+    m.fs.discharge.fwh2_source_disjunct.essplit_to_fwh3 = Arc(
+        source=m.fs.discharge.es_split.to_fwh,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from ES splitter to FWH3"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh4_to_fwh5 = Arc(
+        source=m.fs.fwh[4].tube_outlet,
+        destination=m.fs.fwh[5].tube_inlet,
+        doc="Connection from FWH4 to FWH5"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh5_to_deaerator = Arc(
+        source=m.fs.fwh[5].tube_outlet,
+        destination=m.fs.deaerator.feedwater,
+        doc="Connection from FWH5 to deaerator"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.booster_to_fwh6 = Arc(
+        source=m.fs.booster.outlet,
+        destination=m.fs.fwh[6].tube_inlet,
+        doc="Connection from booster pump to FWH6"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.bfp_to_fwh8 = Arc(
+        source=m.fs.bfp.outlet,
+        destination=m.fs.fwh[8].tube_inlet,
+        doc="Connection from BFP to FWH8"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
+    )
+
+    m.fs.discharge.fwh2_source_disjunct.fwh9_to_boiler = Arc(
+        source=m.fs.fwh[9].tube_outlet,
+        destination=m.fs.boiler.inlet
+    )
+
+
+def fwh3_source_disjunct_equations(disj):
+    """Disjunction 1: Water is sourced from FWH3
+    """
+
+    m = disj.model()
+
+    # Define arcs to connect units within disjunct
+    m.fs.discharge.fwh3_source_disjunct.condpump_to_fwh1 = Arc(
+        source=m.fs.cond_pump.outlet,
+        destination=m.fs.fwh[1].tube_inlet
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh3_to_essplit = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.discharge.es_split.inlet,
+        doc="Connection from FWH3 to ES splitter"
+    )
+    m.fs.discharge.fwh3_source_disjunct.essplit_to_fwh4 = Arc(
+        source=m.fs.discharge.es_split.to_fwh,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from ES splitter to FWH4"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh4_to_fwh5 = Arc(
+        source=m.fs.fwh[4].tube_outlet,
+        destination=m.fs.fwh[5].tube_inlet,
+        doc="Connection from FWH4 to FWH5"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh5_to_deaerator = Arc(
+        source=m.fs.fwh[5].tube_outlet,
+        destination=m.fs.deaerator.feedwater,
+        doc="Connection from FWH5 to deaerator"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.booster_to_fwh6 = Arc(
+        source=m.fs.booster.outlet,
+        destination=m.fs.fwh[6].tube_inlet,
+        doc="Connection from booster pump to FWH6"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.bfp_to_fwh8 = Arc(
+        source=m.fs.bfp.outlet,
+        destination=m.fs.fwh[8].tube_inlet,
+        doc="Connection from BFP to FWH8"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
+    )
+
+    m.fs.discharge.fwh3_source_disjunct.fwh9_to_boiler = Arc(
+        source=m.fs.fwh[9].tube_outlet,
+        destination=m.fs.boiler.inlet
+    )
 
 def fwh4_source_disjunct_equations(disj):
     """Block of equations for disjunct 2 in disjunction 1 for the selection
@@ -650,6 +937,30 @@ def fwh4_source_disjunct_equations(disj):
     m = disj.model()
 
     # Define arcs to connect units within disjunct
+    m.fs.discharge.fwh4_source_disjunct.condpump_to_fwh1 = Arc(
+        source=m.fs.cond_pump.outlet,
+        destination=m.fs.fwh[1].tube_inlet,
+        doc="Connection from condenser pump to FWH1"
+    )
+
+    m.fs.discharge.fwh4_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.fwh4_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.fwh4_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
     m.fs.discharge.fwh4_source_disjunct.fwh4_to_essplit = Arc(
         source=m.fs.fwh[4].tube_outlet,
         destination=m.fs.discharge.es_split.inlet,
@@ -659,12 +970,6 @@ def fwh4_source_disjunct_equations(disj):
         source=m.fs.discharge.es_split.to_fwh,
         destination=m.fs.fwh[5].tube_inlet,
         doc="Connection from ES splitter to FWH5"
-    )
-
-    m.fs.discharge.fwh4_source_disjunct.condpump_to_fwh1 = Arc(
-        source=m.fs.cond_pump.outlet,
-        destination=m.fs.fwh[1].tube_inlet,
-        doc="Connection from condenser pump to FWH1"
     )
 
     m.fs.discharge.fwh4_source_disjunct.fwh5_to_deaerator = Arc(
@@ -679,10 +984,22 @@ def fwh4_source_disjunct_equations(disj):
         doc="Connection from booster pump to FWH6"
     )
 
+    m.fs.discharge.fwh4_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+
     m.fs.discharge.fwh4_source_disjunct.bfp_to_fwh8 = Arc(
         source=m.fs.bfp.outlet,
         destination=m.fs.fwh[8].tube_inlet,
         doc="Connection from BFP to FWH8"
+    )
+
+    m.fs.discharge.fwh4_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
     )
 
     m.fs.discharge.fwh4_source_disjunct.fwh9_to_boiler = Arc(
@@ -701,15 +1018,28 @@ def booster_source_disjunct_equations(disj):
     m = disj.model()
 
     # Define arcs to connect units within disjunct
-    m.fs.discharge.booster_source_disjunct.booster_to_essplit = Arc(
-        source=m.fs.booster.outlet,
-        destination=m.fs.discharge.es_split.inlet,
-        doc="Connection from Booster pump to ES splitter"
+    m.fs.discharge.booster_source_disjunct.condpump_to_fwh1 = Arc(
+        source=m.fs.cond_pump.outlet,
+        destination=m.fs.fwh[1].tube_inlet,
+        doc="Connection from condenser pump to FWH1"
     )
-    m.fs.discharge.booster_source_disjunct.essplit_to_fwh6 = Arc(
-        source=m.fs.discharge.es_split.to_fwh,
-        destination=m.fs.fwh[6].tube_inlet,
-        doc="Connection from ES splitter to FWH6"
+
+    m.fs.discharge.booster_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.booster_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.booster_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
     )
 
     m.fs.discharge.booster_source_disjunct.fwh4_to_fwh5 = Arc(
@@ -724,10 +1054,21 @@ def booster_source_disjunct_equations(disj):
         doc="Connection from FWH5 to deaerator"
     )
 
-    m.fs.discharge.booster_source_disjunct.condpump_to_fwh1 = Arc(
-        source=m.fs.cond_pump.outlet,
-        destination=m.fs.fwh[1].tube_inlet,
-        doc="Connection from condenser pump to FWH1"
+    m.fs.discharge.booster_source_disjunct.booster_to_essplit = Arc(
+        source=m.fs.booster.outlet,
+        destination=m.fs.discharge.es_split.inlet,
+        doc="Connection from Booster pump to ES splitter"
+    )
+    m.fs.discharge.booster_source_disjunct.essplit_to_fwh6 = Arc(
+        source=m.fs.discharge.es_split.to_fwh,
+        destination=m.fs.fwh[6].tube_inlet,
+        doc="Connection from ES splitter to FWH6"
+    )
+
+    m.fs.discharge.booster_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
     )
 
     m.fs.discharge.booster_source_disjunct.bfp_to_fwh8 = Arc(
@@ -736,10 +1077,94 @@ def booster_source_disjunct_equations(disj):
         doc="Connection from BFP to FWH8"
     )
 
+    m.fs.discharge.booster_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
+    )
+
     m.fs.discharge.booster_source_disjunct.fwh9_to_boiler = Arc(
         source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet,
         doc="Connection from FWH9 to boiler"
+    )
+
+
+def fwh6_source_disjunct_equations(disj):
+    """Disjunction 1: Water is sourced from FWH6
+    """
+
+    m = disj.model()
+
+    # Define arcs to connect units within disjunct
+    m.fs.discharge.fwh6_source_disjunct.condpump_to_fwh1 = Arc(
+        source=m.fs.cond_pump.outlet,
+        destination=m.fs.fwh[1].tube_inlet,
+        doc="Connection from condenser pump to FWH1"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh4_to_fwh5 = Arc(
+        source=m.fs.fwh[4].tube_outlet,
+        destination=m.fs.fwh[5].tube_inlet,
+        doc="Connection from FWH4 to FWH5"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh5_to_deaerator = Arc(
+        source=m.fs.fwh[5].tube_outlet,
+        destination=m.fs.deaerator.feedwater,
+        doc="Connection from FWH5 to deaerator"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.booster_to_fwh6 = Arc(
+        source=m.fs.booster.outlet,
+        destination=m.fs.fwh[6].tube_inlet,
+        doc="Connection from booster pump to FWH6"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh6_to_essplit = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.discharge.es_split.inlet,
+        doc="Connection from FWH6 to ES splitter"
+    )
+    m.fs.discharge.fwh6_source_disjunct.essplit_to_fwh7 = Arc(
+        source=m.fs.discharge.es_split.to_fwh,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from ES splitter to FWH7"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.bfp_to_fwh8 = Arc(
+        source=m.fs.bfp.outlet,
+        destination=m.fs.fwh[8].tube_inlet,
+        doc="Connection from BFP to FWH8"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
+    )
+
+    m.fs.discharge.fwh6_source_disjunct.fwh9_to_boiler = Arc(
+        source=m.fs.fwh[9].tube_outlet,
+        destination=m.fs.boiler.inlet
     )
 
 
@@ -781,16 +1206,122 @@ def bfp_source_disjunct_equations(disj):
         doc="Connection from condenser pump to FWH1"
     )
 
+    m.fs.discharge.bfp_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.bfp_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.bfp_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
     m.fs.discharge.bfp_source_disjunct.booster_to_fwh6 = Arc(
         source=m.fs.booster.outlet,
         destination=m.fs.fwh[6].tube_inlet,
         doc="Connection from booster pump to FWH6"
     )
 
+    m.fs.discharge.bfp_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+    m.fs.discharge.bfp_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
+    )
     m.fs.discharge.bfp_source_disjunct.fwh9_to_boiler = Arc(
         source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet,
         doc="Connection from FWH9 to boiler"
+    )
+
+
+def fwh8_source_disjunct_equations(disj):
+    """Disjunction 1: Water is sourced from FWH8
+    """
+
+    m = disj.model()
+
+    # Define arcs to connect units within disjunct
+    m.fs.discharge.fwh8_source_disjunct.condpump_to_fwh1 = Arc(
+        source=m.fs.cond_pump.outlet,
+        destination=m.fs.fwh[1].tube_inlet,
+        doc="Connection from condenser pump to FWH1"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh4_to_fwh5 = Arc(
+        source=m.fs.fwh[4].tube_outlet,
+        destination=m.fs.fwh[5].tube_inlet,
+        doc="Connection from FWH4 to FWH5"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh5_to_deaerator = Arc(
+        source=m.fs.fwh[5].tube_outlet,
+        destination=m.fs.deaerator.feedwater,
+        doc="Connection from FWH5 to deaerator"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.booster_to_fwh6 = Arc(
+        source=m.fs.booster.outlet,
+        destination=m.fs.fwh[6].tube_inlet,
+        doc="Connection from booster pump to FWH6"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.bfp_to_fwh8 = Arc(
+        source=m.fs.bfp.outlet,
+        destination=m.fs.fwh[8].tube_inlet,
+        doc="Connection from BFP to FWH8"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh8_to_essplit = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.discharge.es_split.inlet,
+        doc="Connection from FWH8 to ES splitter"
+    )
+    m.fs.discharge.fwh8_source_disjunct.essplit_to_fwh9 = Arc(
+        source=m.fs.discharge.es_split.to_fwh,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from ES splitter to FWH9"
+    )
+
+    m.fs.discharge.fwh8_source_disjunct.fwh9_to_boiler = Arc(
+        source=m.fs.fwh[9].tube_outlet,
+        destination=m.fs.boiler.inlet
     )
 
 
@@ -832,10 +1363,40 @@ def fwh9_source_disjunct_equations(disj):
         doc="Connection from condenser pump to FWH1"
     )
 
+    m.fs.discharge.fwh9_source_disjunct.fwh1_to_fwh2 = Arc(
+        source=m.fs.fwh[1].tube_outlet,
+        destination=m.fs.fwh[2].tube_inlet,
+        doc="Connection from FWH1 to FWH2"
+    )
+
+    m.fs.discharge.fwh9_source_disjunct.fwh2_to_fwh3 = Arc(
+        source=m.fs.fwh[2].tube_outlet,
+        destination=m.fs.fwh[3].tube_inlet,
+        doc="Connection from FWH2 to FWH3"
+    )
+
+    m.fs.discharge.fwh9_source_disjunct.fwh3_to_fwh4 = Arc(
+        source=m.fs.fwh[3].tube_outlet,
+        destination=m.fs.fwh[4].tube_inlet,
+        doc="Connection from FWH3 to FWH4"
+    )
+
     m.fs.discharge.fwh9_source_disjunct.booster_to_fwh6 = Arc(
         source=m.fs.booster.outlet,
         destination=m.fs.fwh[6].tube_inlet,
         doc="Connection from booster to FWH6"
+    )
+
+    m.fs.discharge.fwh9_source_disjunct.fwh6_to_fwh7 = Arc(
+        source=m.fs.fwh[6].tube_outlet,
+        destination=m.fs.fwh[7].tube_inlet,
+        doc="Connection from FWH6 to FWH7"
+    )
+
+    m.fs.discharge.fwh9_source_disjunct.fwh8_to_fwh9 = Arc(
+        source=m.fs.fwh[8].tube_outlet,
+        destination=m.fs.fwh[9].tube_inlet,
+        doc="Connection from FWH8 to FWH9"
     )
 
     m.fs.discharge.fwh9_source_disjunct.bfp_to_fwh8 = Arc(
@@ -863,17 +1424,17 @@ def set_model_input(m):
     ###########################################################################
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
-    m.fs.discharge.hxd.area.fix(500)
+    m.fs.discharge.hxd.area.fix(1000)
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.discharge.hxd.shell_inlet.flow_mass.fix(200)
+    m.fs.discharge.hxd.shell_inlet.flow_mass.fix(211)
     m.fs.discharge.hxd.shell_inlet.temperature.fix(828.59)
     m.fs.discharge.hxd.shell_inlet.pressure.fix(101325)
 
     # Splitter inlet is fixed for initialization and will be unfixed right after
-    m.fs.discharge.es_split.inlet.flow_mol.fix(19840)
+    m.fs.discharge.es_split.inlet.flow_mol.fix(19203.6)
     m.fs.discharge.es_split.inlet.enth_mol.fix(52232)
     m.fs.discharge.es_split.inlet.pressure.fix(3.4958e7)
 
@@ -924,17 +1485,24 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     m.fs.discharge.hxd.initialize(outlvl=outlvl,
                                   optarg=optarg)
 
+    m.fs.discharge.es_turbine.constraint_esturbine_temperature_out.deactivate()
     propagate_state(m.fs.discharge.hxd_to_esturbine)
     m.fs.discharge.es_turbine.initialize(outlvl=outlvl,
                                          optarg=optarg)
     m.fs.discharge.es_split.inlet.unfix()
+    m.fs.discharge.es_turbine.constraint_esturbine_temperature_out.activate()
 
     # Fix disjuncts for initialization
     m.fs.discharge.condpump_source_disjunct.indicator_var.fix(False)
+    m.fs.discharge.fwh1_source_disjunct.indicator_var.fix(False)
+    m.fs.discharge.fwh2_source_disjunct.indicator_var.fix(False)
+    m.fs.discharge.fwh3_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.fwh4_source_disjunct.indicator_var.fix(True)
     m.fs.discharge.fwh5_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.booster_source_disjunct.indicator_var.fix(False)
+    m.fs.discharge.fwh6_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.bfp_source_disjunct.indicator_var.fix(False)
+    m.fs.discharge.fwh8_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.fwh9_source_disjunct.indicator_var.fix(False)
 
     # Add options to GDPopt
@@ -960,6 +1528,18 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     for v1, v2 in zip(m_init_var_names, m_orig_var_names):
         v2.value == v1.value
 
+    print("list of unscaled variables: ")
+    list_unscaled_variables(m_init)
+    print(" ")
+    print(" ")
+    print("list of unscaled constraints: ")
+    list_unscaled_constraints(m_init)
+    print(" ")
+    print(" ")
+    print("list of badly scaled variables: ")
+    list_badly_scaled_variables(m_init)
+    print(" ")
+    print(" ")
     print("***************  Discharge Model Initialized  ********************")
 
 
@@ -1163,6 +1743,66 @@ def build_costing(m, solver=None, optarg=None):
         m.fs.discharge.operating_cost,
         m.fs.discharge.op_cost_eq)
 
+    ###########################################################################
+    #  Add capital and operating cost for full plant
+    ###########################################################################
+
+    # Add variables and functions to calculate the plant capital cost
+    # and plant variable and fixed operating costs. Equations from
+    # "USC Cost function.pptx" sent by Naresh
+    m.fs.discharge.plant_capital_cost = pyo.Var(
+        initialize=1000000,
+        bounds=(0, 1e12),
+        doc="Annualized capital cost for the plant in $")
+    m.fs.discharge.plant_fixed_operating_cost = pyo.Var(
+        initialize=1000000,
+        bounds=(0, 1e12),
+        doc="Plant fixed operating cost in $/yr")
+    m.fs.discharge.plant_variable_operating_cost = pyo.Var(
+        initialize=1000000,
+        bounds=(0, 1e12),
+        doc="Plant variable operating cost in $/yr")
+
+    def plant_cap_cost_rule(b):
+        return b.plant_capital_cost == (
+            ((2688973 * m.fs.plant_power_out[0]  # in MW
+              + 618968072) /
+             b.num_of_years
+            ) * (m.CE_index / 575.4)
+        )
+    m.fs.discharge.plant_cap_cost_eq = Constraint(rule=plant_cap_cost_rule)
+
+    # Initialize capital cost of power plant
+    calculate_variable_from_constraint(
+        m.fs.discharge.plant_capital_cost,
+        m.fs.discharge.plant_cap_cost_eq)
+
+    def op_fixed_plant_cost_rule(b):
+        return b.plant_fixed_operating_cost == (
+            ((16657.5 * m.fs.plant_power_out[0]  # in MW
+              + 6109833.3) /
+             b.num_of_years
+            ) * (m.CE_index / 575.4)  # annualized, in $/y
+        )
+    m.fs.discharge.op_fixed_plant_cost_eq = pyo.Constraint(
+        rule=op_fixed_plant_cost_rule)
+
+    def op_variable_plant_cost_rule(b):
+        return b.plant_variable_operating_cost == (
+            (31754.7 * m.fs.plant_power_out[0]  # in MW
+            ) * (m.CE_index / 575.4) # in $/yr
+        )
+    m.fs.discharge.op_variable_plant_cost_eq = pyo.Constraint(
+        rule=op_variable_plant_cost_rule)
+
+    # Initialize plant fixed and variable operating costs
+    calculate_variable_from_constraint(
+        m.fs.discharge.plant_fixed_operating_cost,
+        m.fs.discharge.op_fixed_plant_cost_eq)
+    calculate_variable_from_constraint(
+        m.fs.discharge.plant_variable_operating_cost,
+        m.fs.discharge.op_variable_plant_cost_eq)
+
     # Clone the model to transform and initialize
     # then copy the initialized variable values
     m_cost = m.clone()
@@ -1197,10 +1837,15 @@ def unfix_disjuncts_post_initialization(m):
     """
 
     m.fs.discharge.condpump_source_disjunct.indicator_var.unfix()
+    m.fs.discharge.fwh1_source_disjunct.indicator_var.unfix()
+    m.fs.discharge.fwh2_source_disjunct.indicator_var.unfix()
+    m.fs.discharge.fwh3_source_disjunct.indicator_var.unfix()
     m.fs.discharge.fwh4_source_disjunct.indicator_var.unfix()
     m.fs.discharge.fwh5_source_disjunct.indicator_var.unfix()
+    m.fs.discharge.fwh6_source_disjunct.indicator_var.unfix()
     m.fs.discharge.booster_source_disjunct.indicator_var.unfix()
     m.fs.discharge.bfp_source_disjunct.indicator_var.unfix()
+    m.fs.discharge.fwh8_source_disjunct.indicator_var.unfix()
     m.fs.discharge.fwh9_source_disjunct.indicator_var.unfix()
 
     print("******************** Disjuncts Unfixed *************************")
@@ -1213,7 +1858,7 @@ def add_bounds(m, power_max=None):
 
     """
 
-    m.flow_max = m.main_flow * 1.2        # Units in mol/s
+    m.flow_max = m.main_flow * 3        # Units in mol/s
     m.storage_flow_max = 0.2 * m.flow_max # Units in mol/s
     m.salt_flow_max = 1000                # Units in kg/s
     m.heat_duty_bound = 200e6             # Units in MW
@@ -1255,7 +1900,7 @@ def add_bounds(m, power_max=None):
         hxd.costing.base_cost_per_unit.setub(1e6)
         hxd.costing.material_factor.setlb(0)
         hxd.costing.material_factor.setub(10)
-        hxd.delta_temperature_in.setlb(4)
+        hxd.delta_temperature_in.setlb(9)
         hxd.delta_temperature_out.setlb(5)
         hxd.delta_temperature_in.setub(350)
         hxd.delta_temperature_out.setub(350)
@@ -1352,6 +1997,16 @@ def print_model(_, nlp_model, nlp_data):
         print('      Condensate from boiler feed pump is selected')
     elif nlp.fwh9_source_disjunct.binary_indicator_var.value == 1:
         print('      Condensate from FWH9 is selected')
+    elif nlp.fwh1_source_disjunct.binary_indicator_var.value == 1:
+        print('      Condensate from FWH1 is selected')
+    elif nlp.fwh2_source_disjunct.binary_indicator_var.value == 1:
+        print('      Condensate from FWH2 is selected')
+    elif nlp.fwh3_source_disjunct.binary_indicator_var.value == 1:
+        print('      Condensate from FWH3 is selected')
+    elif nlp.fwh6_source_disjunct.binary_indicator_var.value == 1:
+        print('      Condensate from FWH6 is selected')
+    elif nlp.fwh8_source_disjunct.binary_indicator_var.value == 1:
+        print('      Condensate from FWH8 is selected')
     elif nlp.fwh4_source_disjunct.binary_indicator_var.value == 1:
         print('      Condensate from FWH4 is selected')
     elif nlp.fwh5_source_disjunct.binary_indicator_var.value == 1:
@@ -1447,7 +2102,7 @@ def model_analysis(m, heat_duty=None):
     """
 
     # Fix variables in the flowsheet
-    m.fs.plant_power_out.fix(470)
+    # m.fs.net_power.fix(470)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
     m.fs.discharge.hxd.heat_duty.fix(heat_duty * 1e6)
 
@@ -1458,14 +2113,35 @@ def model_analysis(m, heat_duty=None):
     m.fs.discharge.hxd.shell_inlet.flow_mass.unfix()
     m.fs.discharge.hxd.area.unfix()
 
+    m.fs.net_power_cons = Constraint(
+        expr=(m.fs.net_power == 436),
+        doc="Fixing the net power"
+    )
+
+    # Calculate revenue
+    m.fs.revenue = Expression(
+        expr=(22 * m.fs.net_power),
+        doc="Revenue function in $/h assuming 1 hr operation"
+    )
 
     # Add total cost as the objective function
     m.obj = Objective(
         expr=(
-            m.fs.discharge.capital_cost +
-            m.fs.discharge.operating_cost
+             (m.fs.discharge.capital_cost +
+            m.fs.discharge.operating_cost)
             ) * scaling_obj
     )
+    # m.obj = Objective(
+    #     expr=(
+    #         m.fs.revenue -
+    #         (m.fs.discharge.operating_cost +
+    #          m.fs.discharge.plant_fixed_operating_cost +
+    #          m.fs.discharge.plant_variable_operating_cost) / (365 * 24) -
+    #         (m.fs.discharge.capital_cost +
+    #         m.fs.discharge.operating_cost) / (365 * 24)
+    #         ) * scaling_obj,
+    #         sense=maximize
+    # )
 
 
 if __name__ == "__main__":
@@ -1496,5 +2172,21 @@ if __name__ == "__main__":
     print()
     results = run_gdp(m)
 
+    print("list of unscaled variables: ")
+    list_unscaled_variables(m)
+    print(" ")
+    print(" ")
+    print("list of unscaled constraints: ")
+    list_unscaled_constraints(m)
+    print(" ")
+    print(" ")
+    print("list of badly scaled variables: ")
+    list_badly_scaled_variables(m)
+    print(" ")
+    print(" ")
+    # print("Extreme Jacobian Entries: ")
+    # extreme_jacobian_entries(m)
+    # print(" ")
+    # print(" ")
     # Print results
     print_results(m, results)
