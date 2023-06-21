@@ -28,10 +28,10 @@ Additional main assumptions are as follows:
 (1) The flowsheet and main steam conditions, i. e. pressure &
     temperature are adopted from the aforementioned DOE report
 (2) Heater unit models are used to model main steam boiler, reheater,
-    and condenser.  (3) Multi-stage turbines are modeled as multiple
+    and condenser.  
+(3) Multi-stage turbines are modeled as multiple
     lumped single stage turbines
 
-updated (02/16/2022)
 """
 
 # Notes by esrawli:
@@ -122,6 +122,8 @@ logging.getLogger('pyomo.repn.plugins.nl_writer').setLevel(logging.ERROR)
 scaling_obj = 1
 save_csv = True
 
+print("Using scaling_obj={}".format(scaling_obj))
+
 def create_charge_model(m, method=None, max_power=None):
     """Create flowsheet and add unit models.
     """
@@ -168,11 +170,11 @@ def create_charge_model(m, method=None, max_power=None):
     ###########################################################################
     #  Add variables to global model
     ###########################################################################
-    m.fs.charge.cooler_heat_duty = Var(m.fs.time,
+    m.fs.charge.cooler_heat_duty = pyo.Var(m.fs.time,
                                        doc="Cooler heat duty in W",
                                        bounds=(-1e10, 0),
                                        initialize=0)
-    m.fs.charge.cooler_capital_cost = Var(bounds=(0, 1e8),
+    m.fs.charge.cooler_capital_cost = pyo.Var(bounds=(0, 1e8),
                                           doc="Annualized cooler capital cost in $/y",
                                           initialize=0)
 
@@ -180,8 +182,9 @@ def create_charge_model(m, method=None, max_power=None):
     #  Declare disjuncts
     ###########################################################################
     # Disjunction 1 for the storage fluid selection consists of 2 disjuncts:
-    #   1. solar_salt_disjunct ======> solar salt used as the storage medium
-    #   2. hitec_salt_disjunct ======> hitec salt used as the storage medium
+    #   1. solar_salt_disjunct ======> solar salt used as the storage material
+    #   2. hitec_salt_disjunct ======> hitec salt used as the storage material
+    #   3. thermal_oil_disjunct =====> thermal oil used as the storage material
     # Disjunction 2 for the steam source selection consists of 2 disjuncts:
     #   1. vhp_source_disjunct ===> high pressure steam for heat source
     #   2. hp_source_disjunct ===> intermediate pressure steam for heat source
@@ -402,8 +405,6 @@ def _make_constraints(m, method=None, max_power=None):
     def constraint_hxpump_presout(b, t):
         return b.charge.hx_pump.outlet.pressure[t] >= \
             (m.main_steam_pressure * 1.1231)
-        # return m.fs.charge.hx_pump.outlet.pressure[t] == \
-        #     (m.main_steam_pressure * 1.1231)
 
     m.fs.max_power = Param(
         initialize=max_power,
@@ -415,7 +416,7 @@ def _make_constraints(m, method=None, max_power=None):
         + 0.7357,
         doc="Boiler efficiency in fraction"
     )
-    m.fs.coal_heat_duty = Var(
+    m.fs.coal_heat_duty = pyo.Var(
         initialize=1000,
         bounds=(0, 1e5),
         doc="Coal heat duty supplied to boiler (MW)")
@@ -790,17 +791,6 @@ def thermal_oil_disjunct_equations(disj):
     # Nusselt number for the salt and steam side of thermal oil charge
     # heat exchanger
     oil_hxc = m.fs.charge.thermal_oil_disjunct.hxc
-    # m.fs.charge.thermal_oil_disjunct.hxc.oil_in_visc_d_phase = Expression(
-    #     expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].visc_kin["Liq"] *
-    #     # m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density * 1e-4
-    #     m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_in[0].density["Liq"] * 1e-6 # conversion from mm2/s to m2/s
-    # )
-
-    # m.fs.charge.thermal_oil_disjunct.hxc.oil_out_visc_d_phase = Expression(
-    #     expr=m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].visc_kin["Liq"] *
-    #     # m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].density * 1e-4
-    #     m.fs.charge.thermal_oil_disjunct.hxc.side_2.properties_out[0].density["Liq"] * 1e-6  # conversion from mm2/s to m2/s
-    # )
 
     oil_hxc.oil_reynolds_number = Expression(
         expr=(
@@ -1043,7 +1033,6 @@ def cooler_disjunct_equations(disj):
              + 5e-10 * (m.fs.charge.cooler_disjunct.cooler.heat_duty[0]**2)
             ) / m.fs.charge.num_of_years
         )
-        # expr=m.fs.charge.cooler_capital_cost == 0
     )
 
 
@@ -1089,8 +1078,10 @@ def recycle_mixer_sink_disjunct_equations(disj):
     )
 
     m.fs.charge.recycle_mixer_sink_disjunct.recyclemixer_pressure_cosntraint = Constraint(
-        expr=m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out_state[0].pressure == \
-        m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.mixed_state[0].pressure,
+        expr=(
+            m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out_state[0].pressure == 
+            m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.mixed_state[0].pressure
+        ),
         doc="Recycle mixer outlet pressure equal to minimum pressure in inlets")
 
     m.fs.charge.recycle_mixer_sink_disjunct.hxpump_to_recyclemix = Arc(
@@ -1398,14 +1389,14 @@ def set_model_input(m):
     ###########################################################################
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
-    m.fs.charge.solar_salt_disjunct.hxc.area.fix(2400)  # m2
+    m.fs.charge.solar_salt_disjunct.hxc.area.fix(2000)  # m2
     m.fs.charge.hitec_salt_disjunct.hxc.area.fix(1200)  # m2
     m.fs.charge.thermal_oil_disjunct.hxc.area.fix(2000)  # from Andres's model
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.charge.solar_salt_disjunct.hxc.tube_inlet.flow_mass.fix(300)   # kg/s
+    m.fs.charge.solar_salt_disjunct.hxc.tube_inlet.flow_mass.fix(250)   # kg/s
     m.fs.charge.solar_salt_disjunct.hxc.tube_inlet.temperature.fix(513.15)  # K
     m.fs.charge.solar_salt_disjunct.hxc.tube_inlet.pressure.fix(101325)  # Pa
 
@@ -1425,7 +1416,7 @@ def set_model_input(m):
     # inlet to the pump is liquid. However, this is unfixed during
     # design optimization. The temperature is at the outlet of cooler
     # is constrained in the model
-    m.fs.charge.cooler_disjunct.cooler.outlet.enth_mol[0].fix(10000)
+    m.fs.charge.cooler_disjunct.cooler.outlet.enth_mol[0].fix(14000)
     m.fs.charge.cooler_disjunct.cooler.deltaP[0].fix(0)
 
     # HX pump efficiecncy assumption
@@ -1491,31 +1482,8 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     """Initialize the units included in the charge model
     """
 
-    # optarg = {
-    #     "max_iter": 300,
-    #     "halt_on_ampl_error": "yes",
-    # }
-    # solver = get_solver(solver, optarg)
-
     # Include scaling factors
     iscale.calculate_scaling_factors(m)
-
-    # #-------- added by esrawli
-    # # add this after deactivating arc that connected FWH9 and
-    # # boiler. Ask Naresh
-    # m.fs.turbine_splitter[1].split_fraction[:, "outlet_2"].fix()
-
-    # # Initialize boiler
-    # # Data from FWH9 outlet and same value as base model init but with
-    # # decimals
-    # m.fs.boiler.inlet.pressure.fix(32216913.227980793)
-    # m.fs.boiler.inlet.enth_mol.fix(23737.50414833061)
-    # # m.fs.boiler.inlet.flow_mol.fix(m.fs.fwh[9].outlet_2.flow_mol[0])
-    # # m.fs.boiler.inlet.enth_mol.fix(m.fs.fwh[9].outlet_2.enth_mol[0])
-    # # m.fs.boiler.inlet.pressure.fix(m.fs.fwh[9].outlet_2.pressure[0])
-    # m.fs.boiler.initialize(outlvl=outlvl, optarg=solver.options)
-    # # m.fs.boiler.display()
-    # # --------
 
     # Initialize splitters
     propagate_state(m.fs.charge.vhp_source_disjunct.boiler_to_essvhp)
@@ -1528,19 +1496,14 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     # Re-initialize turbines connected to splitters since the flow is
     # not the same as before
     propagate_state(m.fs.charge.hp_source_disjunct.boiler_to_turb1)
-    # m.fs.turbine[1].inlet.fix()
     m.fs.turbine[1].initialize(outlvl=outlvl,
                                optarg=solver.options)
     propagate_state(m.fs.charge.hp_source_disjunct.esshp_to_turb3)
-    # m.fs.turbine[3].inlet.fix()
     m.fs.turbine[3].initialize(outlvl=outlvl,
                                optarg=solver.options)
 
     # Initialize connector
-    # propagate_state(m.fs.charge.vhp_source_disjunct.vhpsplit_to_connector)
     propagate_state(m.fs.charge.hp_source_disjunct.hpsplit_to_connector)
-    # propagate_state(m.fs.charge.ip_source_disjunct.ipsplit_to_connector)
-    # m.fs.charge.connector.inlet.fix()
     m.fs.charge.connector.initialize(outlvl=outlvl,
                                      optarg=solver.options)
 
@@ -1549,34 +1512,28 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     # initialization. Note that these should be unfixed during
     # optimization
     propagate_state(m.fs.charge.solar_salt_disjunct.connector_to_hxc)
-    # m.fs.charge.solar_salt_disjunct.hxc.tube_inlet.fix()
     m.fs.charge.solar_salt_disjunct.hxc.initialize(outlvl=outlvl,
                                                    optarg=solver.options)
 
     propagate_state(m.fs.charge.hitec_salt_disjunct.connector_to_hxc)
-    # m.fs.charge.hitec_salt_disjunct.hxc.tube_inlet.fix()
     m.fs.charge.hitec_salt_disjunct.hxc.initialize(
         outlvl=outlvl, optarg=solver.options)
 
     propagate_state(m.fs.charge.thermal_oil_disjunct.connector_to_hxc)
-    # m.fs.charge.thermal_oil_disjunct.hxc.tube_inlet.fix()
     m.fs.charge.thermal_oil_disjunct.hxc.initialize(outlvl=outlvl)
 
     # Initialize cooler connector
     propagate_state(m.fs.charge.solar_salt_disjunct.hxc_to_coolconnector)
-    # m.fs.charge.cooler_connector.inlet.fix()
     m.fs.charge.cooler_connector.initialize(outlvl=outlvl,
                                             optarg=solver.options)
 
     # Initialize cooler
     propagate_state(m.fs.charge.cooler_disjunct.coolconnector_to_cooler)
-    # m.fs.charge.cooler_disjunct.cooler.inlet.fix()
     m.fs.charge.cooler_disjunct.cooler.initialize(outlvl=outlvl,
                                                   optarg=solver.options)
 
     # Initialize HX pump
     propagate_state(m.fs.charge.cooler_disjunct.cooler_to_hxpump)
-    # m.fs.charge.hx_pump.inlet.fix()
     m.fs.charge.hx_pump.initialize(outlvl=outlvl,
                                    optarg=solver.options)
 
@@ -1584,47 +1541,6 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     propagate_state(m.fs.charge.recycle_mixer_sink_disjunct.bfp_to_recyclemix)
     propagate_state(m.fs.charge.recycle_mixer_sink_disjunct.hxpump_to_recyclemix)
     m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.initialize(outlvl=outlvl)
-
-    # Re-initialize FWH6 using booster outlet
-    # m.fs.fwh[6].fwh_vfrac_constraint.deactivate()
-    # m.fs.fwh[6].tube_inlet.flow_mol.fix(m.fs.booster.outlet.flow_mol[0])
-    # m.fs.fwh[6].tube_inlet.enth_mol.fix(m.fs.booster.outlet.enth_mol[0])
-    # m.fs.fwh[6].tube_inlet.pressure.fix(m.fs.booster.outlet.pressure[0])
-    # m.fs.fwh[6].initialize(outlvl=outlvl,
-    #                        optarg=solver.options)
-    # m.fs.fwh[6].fwh_vfrac_constraint.activate()
-
-    # Re-initialize FWH7 using FWH6 outlet
-    # m.fs.fwh[7].fwh_vfrac_constraint.deactivate()
-    # m.fs.fwh[7].tube_inlet.flow_mol.fix(m.fs.fwh[6].tube_outlet.flow_mol[0])
-    # m.fs.fwh[7].tube_inlet.enth_mol.fix(m.fs.fwh[6].tube_outlet.enth_mol[0])
-    # m.fs.fwh[7].tube_inlet.pressure.fix(m.fs.fwh[6].tube_outlet.pressure[0])
-    # m.fs.fwh[7].initialize(outlvl=outlvl,
-    #                        optarg=solver.options)
-    # m.fs.fwh[7].fwh_vfrac_constraint.activate()
-
-    # Re-initialize FWH8 using bfp outlet
-    # m.fs.fwh[8].fwh_vfrac_constraint.deactivate()
-    # propagate_state(m.fs.charge.recycle_mixer_sink_disjunct.recyclemix_to_fwh8)
-    # m.fs.fwh[8].tube_inlet.flow_mol.fix(m.fs.bfp.outlet.flow_mol[0])
-    # m.fs.fwh[8].tube_inlet.enth_mol.fix(m.fs.bfp.outlet.enth_mol[0])
-    # m.fs.fwh[8].tube_inlet.pressure.fix(m.fs.bfp.outlet.pressure[0])
-    # m.fs.fwh[8].inlet_2.fix()
-    # m.fs.fwh[8].initialize(outlvl=outlvl,
-    #                        optarg=solver.options)
-    # m.fs.fwh[8].fwh_vfrac_constraint.activate()
-
-
-    # Re-initialize FWH9 using FWH8 outlet 2
-    # m.fs.fwh[9].fwh_vfrac_constraint.deactivate()
-    # propagate_state(m.fs.charge.recycle_mixer_sink_disjunct.recyclemix_to_fwh8)
-    # m.fs.fwh[9].tube_inlet.flow_mol.fix(m.fs.fwh[8].tube_outlet.flow_mol[0])
-    # m.fs.fwh[9].tube_inlet.enth_mol.fix(m.fs.fwh[8].tube_outlet.enth_mol[0])
-    # m.fs.fwh[9].tube_inlet.pressure.fix(m.fs.fwh[8].tube_outlet.pressure[0])
-    # m.fs.fwh[9].inlet_2.fix()
-    # m.fs.fwh[9].initialize(outlvl=outlvl,
-    #                        optarg=solver.options)
-    # m.fs.fwh[9].fwh_vfrac_constraint.activate()
 
     #  Mixer 1 initialization
     propagate_state(m.fs.charge.mixer1_sink_disjunct.fwh8_to_mix1)
@@ -1690,9 +1606,6 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     print("***************   Charge Model Initialized   ********************")
     print("***************   Charge Model Initialized   ********************")
 
-    # Unfix FWHs inlets (helps on the costing solution)
-    # m.fs.fwh[8].tube_inlet.unfix()
-    # m.fs.fwh[9].tube_inlet.unfix()
 
 
 def build_costing(m, solver=None):
@@ -1728,7 +1641,7 @@ def build_costing(m, solver=None):
               m.fs.charge.hours_per_day * 3600),
         doc="Total Solar salt inventory flow in kg"
     )
-    m.fs.charge.solar_salt_disjunct.salt_purchase_cost = Var(
+    m.fs.charge.solar_salt_disjunct.salt_purchase_cost = pyo.Var(
         initialize=100000,
         bounds=(0, 1e7),
         doc="Solar salt purchase cost in $"
@@ -1749,7 +1662,7 @@ def build_costing(m, solver=None):
               m.fs.charge.hours_per_day * 3600),
         doc="Total Hitec salt inventory flow in gal per min"
     )
-    m.fs.charge.hitec_salt_disjunct.salt_purchase_cost = Var(
+    m.fs.charge.hitec_salt_disjunct.salt_purchase_cost = pyo.Var(
         initialize=100000,
         bounds=(0, 1e7),
         doc="Hitec salt purchase cost in $"
@@ -1770,7 +1683,7 @@ def build_costing(m, solver=None):
               m.fs.charge.hours_per_day * 3600),
         doc="Total Thermal oil inventory flow in kg/s"
     )
-    m.fs.charge.thermal_oil_disjunct.salt_purchase_cost = Var(
+    m.fs.charge.thermal_oil_disjunct.salt_purchase_cost = pyo.Var(
         initialize=100000,
         bounds=(0, 1e10),
         doc="Thermal oil purchase cost in $"
@@ -2003,7 +1916,7 @@ def build_costing(m, solver=None):
     )
 
     # Calculate and initialize total purchase cost of Hitec salt pump
-    m.fs.charge.hitec_salt_disjunct.spump_purchase_cost = Var(
+    m.fs.charge.hitec_salt_disjunct.spump_purchase_cost = pyo.Var(
         initialize=100000,
         bounds=(0, 1e7),
         doc="Salt pump and motor purchase cost in $"
@@ -2129,7 +2042,7 @@ def build_costing(m, solver=None):
     # Tank size and dimension computation
     m.fs.charge.solar_salt_disjunct.tank_volume = pyo.Var(
         initialize=1000,
-        bounds=(1, 5000),
+        bounds=(1, 6000),
         units=pyunits.m**3,
         doc="Volume of the Salt Tank w/20% excess capacity")
     m.fs.charge.solar_salt_disjunct.tank_surf_area = pyo.Var(
@@ -2147,13 +2060,9 @@ def build_costing(m, solver=None):
         bounds=(0.5, 13),
         units=pyunits.m,
         doc="Length of the salt tank [m]")
-    m.fs.charge.solar_salt_disjunct.no_of_tanks = pyo.Var(
+    m.fs.charge.solar_salt_disjunct.no_of_tanks = pyo.Param(
         initialize=1,
-        bounds=(1, 3),
         doc='No of Tank units to use cost correlations')
-
-    # Fix the number of Solar salt storage tanks
-    m.fs.charge.solar_salt_disjunct.no_of_tanks.fix()
 
     # Compute Solar salt tank volume with a 10% margin
     def solar_tank_volume_rule(b):
@@ -2257,33 +2166,29 @@ def build_costing(m, solver=None):
 
     # ---------- Hitec salt ----------
     # Calculate size and dimension of Hitec salt storage tank
-    m.fs.charge.hitec_salt_disjunct.tank_volume = Var(
+    m.fs.charge.hitec_salt_disjunct.tank_volume = pyo.Var(
         initialize=1000,
         bounds=(1, 10000),
         units=pyunits.m**3,
         doc="Volume of the Salt Tank w/20% excess capacity")
-    m.fs.charge.hitec_salt_disjunct.tank_surf_area = Var(
+    m.fs.charge.hitec_salt_disjunct.tank_surf_area = pyo.Var(
         initialize=1000,
         bounds=(1, 5000),
         units=pyunits.m**2,
         doc="surface area of the Salt Tank")
-    m.fs.charge.hitec_salt_disjunct.tank_diameter = Var(
+    m.fs.charge.hitec_salt_disjunct.tank_diameter = pyo.Var(
         initialize=1.0,
         bounds=(0.5, 40),
         units=pyunits.m,
         doc="Diameter of the Salt Tank ")
-    m.fs.charge.hitec_salt_disjunct.tank_height = Var(
+    m.fs.charge.hitec_salt_disjunct.tank_height = pyo.Var(
         initialize=1.0,
         bounds=(0.5, 13),
         units=pyunits.m,
         doc="Length of the salt tank [m]")
-    m.fs.charge.hitec_salt_disjunct.no_of_tanks = Var(
+    m.fs.charge.hitec_salt_disjunct.no_of_tanks = pyo.Param(
         initialize=1,
-        bounds=(1, 4),
         doc='No of Tank units to use cost correlations')
-
-    # Number of tanks change
-    m.fs.charge.hitec_salt_disjunct.no_of_tanks.fix()
 
     # Computing tank volume with a 20% margin
     def hitec_tank_volume_rule(b):
@@ -2332,15 +2237,15 @@ def build_costing(m, solver=None):
     # costing
     m.fs.charge.hitec_salt_disjunct.costing = Block()
 
-    m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost = Var(
+    m.fs.charge.hitec_salt_disjunct.costing.tank_material_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
-    m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost = Var(
+    m.fs.charge.hitec_salt_disjunct.costing.tank_insulation_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
-    m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost = Var(
+    m.fs.charge.hitec_salt_disjunct.costing.tank_foundation_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
@@ -2380,33 +2285,29 @@ def build_costing(m, solver=None):
 
     # ---------- Thermal oil ----------
     # Calculate size and dimension of thermal oil storage tank
-    m.fs.charge.thermal_oil_disjunct.tank_volume = Var(
+    m.fs.charge.thermal_oil_disjunct.tank_volume = pyo.Var(
         initialize=1000,
         bounds=(1, 20000),
         units=pyunits.m**3,
         doc="Volume of the Salt Tank w/20% excess capacity")
-    m.fs.charge.thermal_oil_disjunct.tank_surf_area = Var(
+    m.fs.charge.thermal_oil_disjunct.tank_surf_area = pyo.Var(
         initialize=1000,
         bounds=(1, 6000),
         units=pyunits.m**2,
         doc="surface area of the Salt Tank")
-    m.fs.charge.thermal_oil_disjunct.tank_diameter = Var(
+    m.fs.charge.thermal_oil_disjunct.tank_diameter = pyo.Var(
         initialize=1.0,
         bounds=(0.5, 40),
         units=pyunits.m,
         doc="Diameter of the Salt Tank ")
-    m.fs.charge.thermal_oil_disjunct.tank_height = Var(
+    m.fs.charge.thermal_oil_disjunct.tank_height = pyo.Var(
         initialize=1.0,
         bounds=(0.5, 13),
         units=pyunits.m,
         doc="Length of the salt tank [m]")
-    m.fs.charge.thermal_oil_disjunct.no_of_tanks = Var(
+    m.fs.charge.thermal_oil_disjunct.no_of_tanks = pyo.Param(
         initialize=1,
-        bounds=(1, 4),
         doc='No of Tank units to use cost correlations')
-
-    # Number of tanks change
-    m.fs.charge.thermal_oil_disjunct.no_of_tanks.fix()
 
     # Compute thermal oil tank volume with a 10% margin
     def oil_tank_volume_rule(b):
@@ -2454,15 +2355,15 @@ def build_costing(m, solver=None):
     # Declare a dummy pyomo block for thermal oil storage tank for
     # costing
     m.fs.charge.thermal_oil_disjunct.costing = Block()
-    m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost = Var(
+    m.fs.charge.thermal_oil_disjunct.costing.tank_material_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
-    m.fs.charge.thermal_oil_disjunct.costing.tank_insulation_cost = Var(
+    m.fs.charge.thermal_oil_disjunct.costing.tank_insulation_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
-    m.fs.charge.thermal_oil_disjunct.costing.tank_foundation_cost = Var(
+    m.fs.charge.thermal_oil_disjunct.costing.tank_foundation_cost = pyo.Var(
         initialize=5000,
         bounds=(1000, 1e7)
     )
@@ -2511,9 +2412,9 @@ def build_costing(m, solver=None):
         initialize=1000000,
         bounds=(0, 1e10),
         doc="Annualized capital cost")
-    m.fs.charge.solar_salt_disjunct.capital_cost = Var(
+    m.fs.charge.solar_salt_disjunct.capital_cost = pyo.Var(
         initialize=1000000,
-        bounds=(0, 1e7),
+        bounds=(0, 1e8),
         doc="Annualized capital cost for solar salt")
 
     # Annualize capital cost for the solar salt
@@ -2540,9 +2441,9 @@ def build_costing(m, solver=None):
         m.fs.charge.solar_salt_disjunct.cap_cost_eq)
 
     # ---------- Hitec salt ----------
-    m.fs.charge.hitec_salt_disjunct.capital_cost = Var(
+    m.fs.charge.hitec_salt_disjunct.capital_cost = pyo.Var(
         initialize=1000000,
-        bounds=(0, 1e7),
+        bounds=(0, 1e8),
         doc="Annualized capital cost for solar salt")
 
     # Annualize capital cost for the hitec salt
@@ -2569,9 +2470,9 @@ def build_costing(m, solver=None):
         m.fs.charge.hitec_salt_disjunct.cap_cost_eq)
 
     # ---------- Thermal oil ----------
-    m.fs.charge.thermal_oil_disjunct.capital_cost = Var(
+    m.fs.charge.thermal_oil_disjunct.capital_cost = pyo.Var(
         initialize=1000000,
-        bounds=(0, 1e10),
+        bounds=(0, 1e12),
         doc="Annualized capital cost for thermal oil")
 
     # Annualize capital cost for the thermal oil
@@ -2710,7 +2611,7 @@ def build_costing(m, solver=None):
     print("******************** Costing Initialized *************************")
     print()
     print()
-
+    
 
 def unfix_disjuncts_post_initialization(m):
     """This method unfixes the disjuncts that were fixed only
@@ -2818,6 +2719,7 @@ def add_bounds(m):
     # in W
 
     m.flow_max = m.main_flow * 1.2  # in mol/s
+    m.storage_flow_max = m.main_flow * 0.2
     m.salt_flow_max = 1000  # in kg/s
     m.fs.heat_duty_max = 200e6 # in MW
     m.factor = 2
@@ -2825,11 +2727,11 @@ def add_bounds(m):
     for salt_hxc in [m.fs.charge.solar_salt_disjunct.hxc,
                      m.fs.charge.hitec_salt_disjunct.hxc]:
         salt_hxc.shell_inlet.flow_mol.setlb(0)
-        salt_hxc.shell_inlet.flow_mol.setub(0.2 * m.flow_max)
+        salt_hxc.shell_inlet.flow_mol.setub(m.storage_flow_max)
         salt_hxc.tube_inlet.flow_mass.setlb(0)
         salt_hxc.tube_inlet.flow_mass.setub(m.salt_flow_max)
         salt_hxc.shell_outlet.flow_mol.setlb(0)
-        salt_hxc.shell_outlet.flow_mol.setub(0.2 * m.flow_max)
+        salt_hxc.shell_outlet.flow_mol.setub(m.storage_flow_max)
         salt_hxc.tube_outlet.flow_mass.setlb(0)
         salt_hxc.tube_outlet.flow_mass.setub(m.salt_flow_max)
         salt_hxc.tube_inlet.pressure.setlb(101320)
@@ -2908,9 +2810,9 @@ def add_bounds(m):
                    m.fs.charge.cooler_disjunct.cooler,
                    m.fs.charge.cooler_connector]:
         unit_k.inlet.flow_mol.setlb(0)
-        unit_k.inlet.flow_mol.setub(0.2*m.flow_max)
+        unit_k.inlet.flow_mol.setub(m.storage_flow_max)
         unit_k.outlet.flow_mol.setlb(0)
-        unit_k.outlet.flow_mol.setub(0.2*m.flow_max)
+        unit_k.outlet.flow_mol.setub(m.storage_flow_max)
     # m.fs.charge.cooler_disjunct.cooler.heat_duty.setlb(-1e9) # from Andres's model
     m.fs.charge.cooler_disjunct.cooler.heat_duty.setub(0)
 
@@ -2923,7 +2825,7 @@ def add_bounds(m):
     for split in [m.fs.charge.vhp_source_disjunct.ess_vhp_split,
                   m.fs.charge.hp_source_disjunct.ess_hp_split]:
         split.to_hxc.flow_mol[:].setlb(0)
-        split.to_hxc.flow_mol[:].setub(0.2 * m.flow_max)
+        split.to_hxc.flow_mol[:].setub(m.storage_flow_max)
         split.to_turbine.flow_mol[:].setlb(0)
         split.to_turbine.flow_mol[:].setub(m.flow_max)
         split.split_fraction[0.0, "to_hxc"].setlb(0)
@@ -2939,7 +2841,7 @@ def add_bounds(m):
                 m.fs.charge.mixer3_sink_disjunct.mixer3,
                 m.fs.charge.mixer4_sink_disjunct.mixer4]:
         mix.from_hx_pump.flow_mol.setlb(0)
-        mix.from_hx_pump.flow_mol.setub(0.2 * m.flow_max)
+        mix.from_hx_pump.flow_mol.setub(m.storage_flow_max)
         mix.outlet.flow_mol.setlb(0)
         mix.outlet.flow_mol.setub(m.flow_max)
     m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol.setlb(0)
@@ -2960,7 +2862,7 @@ def add_bounds(m):
     m.fs.charge.hx_pump.control_volume.work[0].setub(1e10)
 
     m.fs.plant_power_out[0].setlb(300)
-    m.fs.plant_power_out[0].setub(700)
+    m.fs.plant_power_out[0].setub(436)
 
     for unit_k in [m.fs.booster]:
         unit_k.inlet.flow_mol[:].setlb(0)  # mol/s
@@ -3153,67 +3055,65 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     nlp_model.disjunction4_selection = {}
     print('       ___________________________________________')
     if nlp_model.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
+        material_disj = nlp_model.fs.charge.solar_salt_disjunct
         nlp_model.disjunction1_selection[m_iter] = 'Solar salt is selected'
         print('        Disjunction 1: Solar salt is selected')
-        print('         Delta temperature at inlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.
-                  delta_temperature_in[0])))
-        print('         Delta temperature at outlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.
-                  delta_temperature_out[0])))
-        print('         Heat exchanger area (m): {:.4f}'.format(
-            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.area)))
-        print('         Heat exchanger ohtc: {:.4f}'.format(
-            value(nlp_model.fs.charge.solar_salt_disjunct.hxc.overall_heat_transfer_coefficient[0])))
     elif nlp_model.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
+        material_disj = nlp_model.fs.charge.hitec_salt_disjunct
         nlp_model.disjunction1_selection[m_iter] = 'Hitec salt is selected'
         print('        Disjunction 1: Hitec salt is selected')
-        print('         Delta temperature at inlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.
-                  delta_temperature_in[0])))
-        print('         Delta temperature at outlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.
-                  delta_temperature_out[0])))
-        print('         Heat exchanger area (m): {:.4f}'.format(
-            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.area)))
-        print('         Heat exchanger ohtc: {:.4f}'.format(
-            value(nlp_model.fs.charge.hitec_salt_disjunct.hxc.overall_heat_transfer_coefficient[0])))
-    else:
+    elif nlp_model.fs.charge.thermal_oil_disjunct.indicator_var.value == 1:
+        material_disj = nlp_model.fs.charge.thermal_oil_disjunct
         nlp_model.disjunction1_selection[m_iter] = 'Thermal oil is selected'
         print('        Disjunction 1: Thermal oil is selected')
-        print('         Delta temperature at inlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.
-                  delta_temperature_in[0])))
-        print('         Delta temperature at outlet (K): {:.4f}'.format(
-            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.
-                  delta_temperature_out[0])))
-        print('         Heat exchanger area (m): {:.4f}'.format(
-            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.area)))
-        print('         Heat exchanger ohtc: {:.4f}'.format(
-            value(nlp_model.fs.charge.thermal_oil_disjunct.hxc.overall_heat_transfer_coefficient[0])))
+    else:
+        print('No more options!')
+       
+    print('         Delta temperature at inlet (K): {:.4f}'.format(
+        pyo.value(material_disj.hxc.delta_temperature_in[0])))
+    print('         Delta temperature at outlet (K): {:.4f}'.format(
+        pyo.value(material_disj.hxc.delta_temperature_out[0])))
+    print('         Area (m2): {:.4f}'.format(
+        pyo.value(material_disj.hxc.area)))
+    print('         Heat duty (MW): {:.4f}'.format(
+        pyo.value(material_disj.hxc.heat_duty[0]) * 1e-6))
+    print('         Cost ($/y): {:.4f}'.format(
+        pyo.value(material_disj.hxc.costing.capital_cost / nlp_model.fs.charge.num_of_years)))
+    print('         Steam flow to storage (mol/s): {:.4f}'.format(
+        pyo.value(material_disj.hxc.shell_inlet.flow_mol[0])))
+    print('         Salt flow (kg/s): {:.4f}'.format(
+        pyo.value(material_disj.hxc.tube_inlet.flow_mass[0])))
+    print('         Water temperature in/out (K): {:.4f}/{:.4f}'.format(
+        pyo.value(material_disj.hxc.hot_side.properties_in[0].temperature),
+        pyo.value(material_disj.hxc.hot_side.properties_out[0].temperature)))
+    print('         Salt temperature in/out (K): {:.4f}/{:.4f}'.format(
+        pyo.value(material_disj.hxc.tube_inlet.temperature[0]),
+        pyo.value(material_disj.hxc.tube_outlet.temperature[0])))
+    print('         Heat exchanger OHTC: {:.4f}'.format(
+        pyo.value(material_disj.hxc.overall_heat_transfer_coefficient[0])))
 
     if nlp_model.fs.charge.vhp_source_disjunct.indicator_var.value == 1:
         nlp_model.disjunction2_selection[m_iter] = 'VHP source is selected'
         print('        Disjunction 2: VHP source is selected')
         print('         ESS VHP split fraction to hxc:',
-              value(nlp_model.fs.charge.vhp_source_disjunct.ess_vhp_split.split_fraction[0, "to_hxc"]))
+              pyo.value(nlp_model.fs.charge.vhp_source_disjunct.ess_vhp_split.split_fraction[0, "to_hxc"]))
     else:
         nlp_model.disjunction2_selection[m_iter] = 'HP is selected'
         print('        Disjunction 2: HP source is selected')
         print('         ESS HP split fraction to hxc:',
-              value(nlp_model.fs.charge.hp_source_disjunct.ess_hp_split.split_fraction[0, "to_hxc"]))
+              pyo.value(nlp_model.fs.charge.hp_source_disjunct.ess_hp_split.split_fraction[0, "to_hxc"]))
 
     if nlp_model.fs.charge.cooler_disjunct.indicator_var.value == 1:
         nlp_model.disjunction3_selection[m_iter] = 'Cooler is selected'
         print('        Disjunction 3: Cooler is selected')
         print('         Cooler capital cost ($/yr):',
-              value(nlp_model.fs.charge.cooler_capital_cost))
+              pyo.value(nlp_model.fs.charge.cooler_capital_cost))
         print('         Cooler heat duty (MW):',
               nlp_model.fs.charge.cooler_disjunct.cooler.heat_duty[0].value * 1e-6)
         print('         Cooler Tout: ',
-              value(nlp_model.fs.charge.cooler_disjunct.cooler.control_volume.properties_out[0].temperature))
+              pyo.value(nlp_model.fs.charge.cooler_disjunct.cooler.control_volume.properties_out[0].temperature))
         print('         Cooler Tsat: ',
-              value(nlp_model.fs.charge.cooler_disjunct.cooler.control_volume.properties_out[0].temperature_sat))
+              pyo.value(nlp_model.fs.charge.cooler_disjunct.cooler.control_volume.properties_out[0].temperature_sat))
     if nlp_model.fs.charge.no_cooler_disjunct.indicator_var.value == 1:
         nlp_model.disjunction3_selection[m_iter] = 'No cooler is selected'
         print('        Disjunction 3: No cooler is selected')
@@ -3223,67 +3123,67 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     if nlp_model.fs.charge.recycle_mixer_sink_disjunct.indicator_var.value == 1:
         nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer is selected'
         print('        Disjunction 4: Recycle mixer is selected')
-        print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
         print('         HX pump outlet flow:',
-              value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
         print('         Recycle mixer inlet from BFW:',
-              value(nlp_model.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol[0]))
         print('         Recycle mixer inlet from hx pump:',
-              value(nlp_model.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_hx_pump.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_hx_pump.flow_mol[0]))
     elif nlp_model.fs.charge.mixer1_sink_disjunct.indicator_var.value == 1:
         nlp_model.disjunction4_selection[m_iter] = 'Mixer 1 is selected'
         print('        Disjunction 4: Mixer 1 is selected')
-        print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
         print('         HX pump outlet flow:',
-              value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
         print('         Mixer 1 inlet from FWH8:',
-              value(nlp_model.fs.charge.mixer1_sink_disjunct.mixer1.from_fwh8.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer1_sink_disjunct.mixer1.from_fwh8.flow_mol[0]))
         print('         Mixer 1 inlet from HX pump:',
-              value(nlp_model.fs.charge.mixer1_sink_disjunct.mixer1.from_hx_pump.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer1_sink_disjunct.mixer1.from_hx_pump.flow_mol[0]))
+        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
     elif nlp_model.fs.charge.mixer2_sink_disjunct.indicator_var.value == 1:
         nlp_model.disjunction4_selection[m_iter] = 'Mixer 2 is selected'
         print('        Disjunction 4: Mixer 2 is selected')
-        print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
         print('         HX pump outlet flow:',
-              value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
         print('         Mixer 2 inlet from FWH9:',
-              value(nlp_model.fs.charge.mixer2_sink_disjunct.mixer2.from_fwh9.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer2_sink_disjunct.mixer2.from_fwh9.flow_mol[0]))
         print('         Mixer 2 inlet from HX pump:',
-              value(nlp_model.fs.charge.mixer2_sink_disjunct.mixer2.from_hx_pump.flow_mol[0]))
-        print('         Boiler inlet flow:', value(nlp_model.fs.boiler.inlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer2_sink_disjunct.mixer2.from_hx_pump.flow_mol[0]))
+        print('         Boiler inlet flow:', pyo.value(nlp_model.fs.boiler.inlet.flow_mol[0]))
     elif nlp_model.fs.charge.mixer3_sink_disjunct.indicator_var.value == 1:
         nlp_model.disjunction4_selection[m_iter] = 'Mixer 3 is selected'
         print('        Disjunction 4: Mixer 3 is selected')
-        print('         BFW outlet flow:', value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
         print('         HX pump outlet flow:',
-              value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
         print('         FWH6 outlet 2 flow:',
-              value(nlp_model.fs.fwh[6].tube_outlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.fwh[6].tube_outlet.flow_mol[0]))
         print('         Mixer 3 inlet from FWH6:',
-              value(nlp_model.fs.charge.mixer3_sink_disjunct.mixer3.from_fwh6.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer3_sink_disjunct.mixer3.from_fwh6.flow_mol[0]))
         print('         Mixer 3 inlet from HX pump:',
-              value(nlp_model.fs.charge.mixer3_sink_disjunct.mixer3.from_hx_pump.flow_mol[0]))
-        print('         Boiler inlet flow:', value(nlp_model.fs.boiler.inlet.flow_mol[0]))
-        print('         FWH9 inlet 1 flow:', value(nlp_model.fs.fwh[9].shell_inlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer3_sink_disjunct.mixer3.from_hx_pump.flow_mol[0]))
+        print('         Boiler inlet flow:', pyo.value(nlp_model.fs.boiler.inlet.flow_mol[0]))
+        print('         FWH9 inlet 1 flow:', pyo.value(nlp_model.fs.fwh[9].shell_inlet.flow_mol[0]))
     elif nlp_model.fs.charge.mixer4_sink_disjunct.indicator_var.value == 1:
         nlp_model.disjunction4_selection[m_iter] = 'Mixer 4 is selected'
         print('        Disjunction 4: Mixer 4 is selected')
         print('         HX pump outlet flow:',
-              value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
         print('         Booster outlet flow:',
-              value(nlp_model.fs.booster.outlet.flow_mol[0]))
+              pyo.value(nlp_model.fs.booster.outlet.flow_mol[0]))
         print('         Mixer 4 inlet from Booster:',
-              value(nlp_model.fs.charge.mixer4_sink_disjunct.mixer4.from_booster.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer4_sink_disjunct.mixer4.from_booster.flow_mol[0]))
         print('         Mixer 4 inlet from HX pump:',
-              value(nlp_model.fs.charge.mixer4_sink_disjunct.mixer4.from_hx_pump.flow_mol[0]))
+              pyo.value(nlp_model.fs.charge.mixer4_sink_disjunct.mixer4.from_hx_pump.flow_mol[0]))
     else:
         print('         No other sink alternatives!')
 
@@ -3291,22 +3191,22 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     # for k in nlp_model.set_turbine:
     #     # nlp_model.fs.turbine[k].display()
     #     print('        Turbine {} work (MW): {:.4f}'.
-    #           format(k, value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
-    print('         Boiler efficiency (%): {:.6f}'.format(value(nlp_model.fs.boiler_efficiency) * 100))
-    print('         Cycle efficiency (%): {:.6f}'.format(value(nlp_model.fs.cycle_efficiency) * 100))
+    #           format(k, pyo.value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
+    print('         Boiler efficiency (%): {:.4f}'.format(pyo.value(nlp_model.fs.boiler_efficiency) * 100))
+    print('         Cycle efficiency (%): {:.4f}'.format(pyo.value(nlp_model.fs.cycle_efficiency) * 100))
     for k in nlp_model.set_turbine_splitter:
         print("         Turbine splitter {} split fraction 2: {:.4f}".
               format(k,
-                     value(nlp_model.fs.turbine_splitter[k].split_fraction[0, "outlet_2"])))
+                     pyo.value(nlp_model.fs.turbine_splitter[k].split_fraction[0, "outlet_2"])))
     print('       ___________________________________________')
     print('')
 
     # Save results in dictionaries
     nlp_model.objective_value = {}
-    nlp_model.objective_value[m_iter] = value(nlp_model.obj) / scaling_obj
+    nlp_model.objective_value[m_iter] = pyo.value(nlp_model.obj) / scaling_obj
 
     nlp_model.cooler_heat_duty = {}
-    nlp_model.cooler_heat_duty[m_iter] = value(nlp_model.fs.charge.cooler_heat_duty[0]) * 1e-6 # MW
+    nlp_model.cooler_heat_duty[m_iter] = pyo.value(nlp_model.fs.charge.cooler_heat_duty[0]) * 1e-6 # MW
 
     if True:
         writer = csv.writer(csvfile)
@@ -3320,9 +3220,6 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
              nlp_model.objective_value[m_iter])
         )
         csvfile.flush()
-
-    # log_close_to_bounds(nlp_model)
-    # log_infeasible_constraints(nlp_model)
 
 
 def create_csv_header():
@@ -3351,7 +3248,7 @@ def run_gdp(m):
         m,
         tee=True,
         algorithm='RIC',
-        mip_solver='cbc',
+        mip_solver='gurobi',
         nlp_solver='ipopt',
         # OA_penalty_factor=1e4,
         # max_slack=1e4,
@@ -3366,7 +3263,7 @@ def run_gdp(m):
             options={
                 "linear_solver": "ma27",
                 # "tol": 1e-6,
-                "max_iter": 150
+                "max_iter": 200
             }
         )
     )
@@ -3386,27 +3283,27 @@ def print_results(m, results):
         if abs(d.indicator_var.value - 1) < 1e-6:
             print(d.name, ' should be selected!')
     print('')
-    print('Objective ($/hr): {:.6f}'.format((value(m.obj) / scaling_obj)))
-    print('salt amount (kg): {:.6f}'.format(
+    print('Objective ($/hr): {:.4f}'.format((pyo.value(m.obj) / scaling_obj)))
+    print('salt amount (kg): {:.4f}'.format(
         pyo.value(m.fs.charge.solar_salt_disjunct.salt_amount)))
-    print('Plant capital cost ($/yr): {:.6f}'.format(
+    print('Plant capital cost ($/yr): {:.4f}'.format(
         pyo.value(m.fs.charge.plant_capital_cost)))
-    print('Plant fixed operating costs ($/yr): {:.6f}'.format(
+    print('Plant fixed operating costs ($/yr): {:.4f}'.format(
         pyo.value(m.fs.charge.plant_fixed_operating_cost)))
-    print('Plant variable operating costs ($/yr): {:.6f}'.format(
+    print('Plant variable operating costs ($/yr): {:.4f}'.format(
         pyo.value(m.fs.charge.plant_variable_operating_cost)))
-    print('Charge capital cost ($/yr): {:.6f}'.format(pyo.value(m.fs.charge.capital_cost)))
-    print('Charge operating costs ($/yr): {:.6f}'.format(pyo.value(m.fs.charge.operating_cost)))
-    print('Plant Power (MW): {:.6f}'.format(value(m.fs.plant_power_out[0])))
-    print('Boiler/cycle efficiency (%): {:.6f}/{:.6f}'.format(
+    print('Charge capital cost ($/yr): {:.4f}'.format(pyo.value(m.fs.charge.capital_cost)))
+    print('Charge operating costs ($/yr): {:.4f}'.format(pyo.value(m.fs.charge.operating_cost)))
+    print('Plant Power (MW): {:.4f}'.format(pyo.value(m.fs.plant_power_out[0])))
+    print('Boiler/cycle efficiency (%): {:.4f}/{:.4f}'.format(
         pyo.value(m.fs.boiler_efficiency) * 100,
         pyo.value(m.fs.cycle_efficiency) * 100))
-    print('Boiler feed water flow (mol/s): {:.6f}'.format(value(m.fs.boiler.inlet.flow_mol[0])))
-    print('Boiler duty (MW_th): {:.6f}'.format(
+    print('Boiler feed water flow (mol/s): {:.4f}'.format(pyo.value(m.fs.boiler.inlet.flow_mol[0])))
+    print('Boiler duty (MW_th): {:.4f}'.format(
         pyo.value((m.fs.boiler.heat_duty[0] +
                    m.fs.reheater[1].heat_duty[0] +
                    m.fs.reheater[2].heat_duty[0]) * 1e-6)))
-    print('Cooling duty (MW_th): {:.6f}'.format(pyo.value(m.fs.charge.cooler_heat_duty[0]) * -1e-6))
+    print('Cooling duty (MW_th): {:.4f}'.format(pyo.value(m.fs.charge.cooler_heat_duty[0]) * -1e-6))
     print('')
     if m.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
         print('Solar heat exchanger is selected!')
@@ -3422,34 +3319,34 @@ def print_results(m, results):
         hx = m.fs.charge.thermal_oil_disjunct.hxc
 
     print('Charge heat exhanger:')
-    print(' Area (m2): {:.6f}'.format(
+    print(' Area (m2): {:.4f}'.format(
         pyo.value(hx.area)))
-    print(' Heat duty (MW): {:.6f}'.format(pyo.value(hx.heat_duty[0]) * 1e-6))
-    print(' Cost ($/y): {:.6f}'.format(
+    print(' Heat duty (MW): {:.4f}'.format(pyo.value(hx.heat_duty[0]) * 1e-6))
+    print(' Cost ($/y): {:.4f}'.format(
         pyo.value(hx.costing.capital_cost / m.fs.charge.num_of_years)))
-    print(' Steam flow to storage (mol/s): {:.6f}'.format(
+    print(' Steam flow to storage (mol/s): {:.4f}'.format(
         pyo.value(hx.shell_inlet.flow_mol[0])))
-    print(' Salt flow (kg/s): {:.6f}'.format(pyo.value(hx.tube_inlet.flow_mass[0])))
-    print(' Water temperature in/out (K): {:.6f}/{:.6f}'.format(
+    print(' Salt flow (kg/s): {:.4f}'.format(pyo.value(hx.tube_inlet.flow_mass[0])))
+    print(' Water temperature in/out (K): {:.4f}/{:.4f}'.format(
         pyo.value(hx.hot_side.properties_in[0].temperature),
         pyo.value(hx.hot_side.properties_out[0].temperature)))
-    print(' Salt temperature in/out (K): {:.6f}/{:.6f}'.format(
+    print(' Salt temperature in/out (K): {:.4f}/{:.4f}'.format(
         pyo.value(hx.tube_inlet.temperature[0]),
         pyo.value(hx.tube_outlet.temperature[0])))
-    print(' Overall heat transfer coefficient: {:.6f}'.format(
+    print(' Overall heat transfer coefficient: {:.4f}'.format(
         pyo.value(hx.overall_heat_transfer_coefficient[0])))
-    print(' Delta temperature in/out (K): {:.6f}/{:.6f}'.format(
+    print(' Delta temperature in/out (K): {:.4f}/{:.4f}'.format(
         pyo.value(hx.delta_temperature_in[0]),
         pyo.value(hx.delta_temperature_out[0])))
-    print(' Salt cost ($/y): {:.6f}'.format(
+    print(' Salt cost ($/y): {:.4f}'.format(
         pyo.value(material_disj.salt_purchase_cost)))
-    print(' Tank cost ($/y): {:.6f}'.format(
+    print(' Tank cost ($/y): {:.4f}'.format(
         pyo.value(material_disj.costing.total_tank_cost / m.fs.charge.num_of_years)))
-    print(' Salt pump cost ($/y): {:.6f}'.format(
+    print(' Salt pump cost ($/y): {:.4f}'.format(
         pyo.value(material_disj.spump_purchase_cost)))
-    print(' Salt storage tank volume in m3: {:.6f}'.format(
+    print(' Salt storage tank volume in m3: {:.4f}'.format(
         pyo.value(material_disj.tank_volume)))
-    print(' Salt dens_mass: {:.6f}'.format(
+    print(' Salt dens_mass: {:.4f}'.format(
         pyo.value(hx.cold_side.properties_in[0].dens_mass['Liq'])))
 
     print('')
@@ -3487,7 +3384,7 @@ def print_reports(m):
         m.fs.fwh_mixer[j].display()
 
 
-def model_analysis(m, solver, heat_duty=None, lmp_signal=None):
+def model_analysis(m, solver, heat_duty=None):
     """Unfix variables for analysis. This section is deactived for the
     simulation of square model
     """
@@ -3548,8 +3445,10 @@ def model_analysis(m, solver, heat_duty=None, lmp_signal=None):
     print('>> Set scaling factor through iscale')
 
     # Calculate revenue
+    m.fs.lmp_signal = pyo.Param(initialize=22,
+                                doc="Electricity price in $/MWh")
     m.fs.revenue = Expression(
-        expr=(lmp_signal * m.fs.plant_power_out[0]),
+        expr=(m.fs.lmp_signal * m.fs.plant_power_out[0]),
         doc="Revenue function in $/h assuming 1 hr operation"
     )
 
@@ -3594,13 +3493,11 @@ if __name__ == "__main__":
 
     method = "with_efficiency"
     max_power = 436
-    lmp_signal = [22]
     heat_duty_data = [150]
-    for j in lmp_signal:
-        for k in heat_duty_data:
-            m_usc = usc.build_plant_model()
-            usc.initialize(m_usc)
-
-            m_chg, solver = main(m_usc, method=method, max_power=max_power)
-
-            m = model_analysis(m_chg, solver, heat_duty=k, lmp_signal=j)
+    for k in heat_duty_data:
+        m_usc = usc.build_plant_model()
+        usc.initialize(m_usc)
+        
+        m_chg, solver = main(m_usc, method=method, max_power=max_power)
+        
+        m = model_analysis(m_chg, solver, heat_duty=k)
