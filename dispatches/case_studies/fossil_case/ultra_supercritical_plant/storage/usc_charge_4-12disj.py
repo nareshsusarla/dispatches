@@ -2756,11 +2756,11 @@ def add_bounds(m):
         salt_hxc.overall_heat_transfer_coefficient.setlb(0)
         salt_hxc.overall_heat_transfer_coefficient.setub(10000)
         salt_hxc.area.setlb(0)
-        salt_hxc.area.setub(5000)  # TODO: Check this value
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(87)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(83)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(8)
-    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(8)
+        salt_hxc.area.setub(6000)  # TODO: Check this value
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setub(88)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setub(82)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_in.setlb(5)
+    m.fs.charge.solar_salt_disjunct.hxc.delta_temperature_out.setlb(5)
 
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_in.setub(88.2)
     m.fs.charge.hitec_salt_disjunct.hxc.delta_temperature_out.setub(88)
@@ -2769,9 +2769,9 @@ def add_bounds(m):
 
     for oil_hxc in [m.fs.charge.thermal_oil_disjunct.hxc]:
         oil_hxc.shell_inlet.flow_mol.setlb(0)
-        oil_hxc.shell_inlet.flow_mol.setub(0.2 * m.flow_max)
+        oil_hxc.shell_inlet.flow_mol.setub(m.storage_flow_max)
         oil_hxc.shell_outlet.flow_mol.setlb(0)
-        oil_hxc.shell_outlet.flow_mol.setub(0.2 * m.flow_max)
+        oil_hxc.shell_outlet.flow_mol.setub(m.storage_flow_max)
         oil_hxc.tube_inlet.flow_mass.setlb(0)
         oil_hxc.tube_inlet.flow_mass.setub(m.salt_flow_max)
         oil_hxc.tube_outlet.flow_mass.setlb(0)
@@ -2790,7 +2790,7 @@ def add_bounds(m):
         oil_hxc.overall_heat_transfer_coefficient.setub(1000)
         oil_hxc.area.setlb(0)
         oil_hxc.area.setub(8000)  # TODO: Check this value
-        oil_hxc.delta_temperature_in.setub(455.25)
+        oil_hxc.delta_temperature_in.setub(456)
         oil_hxc.delta_temperature_out.setub(222)
         oil_hxc.delta_temperature_in.setlb(10)
         oil_hxc.delta_temperature_out.setlb(9)
@@ -2861,8 +2861,8 @@ def add_bounds(m):
     m.fs.charge.hx_pump.control_volume.work[0].setlb(0)
     m.fs.charge.hx_pump.control_volume.work[0].setub(1e10)
 
-    m.fs.plant_power_out[0].setlb(300)
-    m.fs.plant_power_out[0].setub(436)
+    # m.fs.plant_power_out[0].setlb(300)
+    # m.fs.plant_power_out[0].setub(700)
 
     for unit_k in [m.fs.booster]:
         unit_k.inlet.flow_mol[:].setlb(0)  # mol/s
@@ -3068,7 +3068,8 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
         print('        Disjunction 1: Thermal oil is selected')
     else:
         print('No more options!')
-       
+
+    print('         No. of tanks: {:.0f}'.format(pyo.value(material_disj.no_of_tanks)))
     print('         Delta temperature at inlet (K): {:.4f}'.format(
         pyo.value(material_disj.hxc.delta_temperature_in[0])))
     print('         Delta temperature at outlet (K): {:.4f}'.format(
@@ -3194,6 +3195,7 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     #           format(k, pyo.value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
     print('         Boiler efficiency (%): {:.4f}'.format(pyo.value(nlp_model.fs.boiler_efficiency) * 100))
     print('         Cycle efficiency (%): {:.4f}'.format(pyo.value(nlp_model.fs.cycle_efficiency) * 100))
+    print('         Plant power (MW): {:.4f}'.format(pyo.value(nlp_model.fs.plant_power_out[0])))
     for k in nlp_model.set_turbine_splitter:
         print("         Turbine splitter {} split fraction 2: {:.4f}".
               format(k,
