@@ -192,11 +192,12 @@ def create_charge_model(m, method=None, max_power=None):
     #   1. cooler_disjunct ===> include a cooler in storage system
     #   2. no_cooler_disjunct ===> no cooler in storage system
     # Disjunction 4 for the selection of sink
-    #   1. recycle_mixer_sink_disjunct ===> returned condensed steam to recycle mixer
-    #   2. mixer1_sink_disjunct ===> returned condensed steam to mixer 1
-    #   3. mixer2_sink_disjunct ===> returned condensed steam to mixer 2
-    #   4. mixer3_sink_disjunct ===> returned condensed steam to mixer 3
-    #   5. mixer4_sink_disjunct ===> returned condensed steam to mixer 4
+    #   1. recycle_mixer1_sink_disjunct ===> returned condensed steam to recycle mixer 1
+    #   2. recycle_mixer2_sink_disjunct ===> returned condensed steam to recycle mixer 2
+    #   3. recycle_mixer3_sink_disjunct ===> returned condensed steam to recycle mixer 3
+    #   4. recycle_mixer4_sink_disjunct ===> returned condensed steam to recycle mixer 4
+    #   5. recycle_mixer5_sink_disjunct ===> returned condensed steam to recycle mixer 5
+
 
     m.fs.charge.solar_salt_disjunct = Disjunct(
         rule=solar_salt_disjunct_equations)
@@ -217,16 +218,16 @@ def create_charge_model(m, method=None, max_power=None):
         rule=no_cooler_disjunct_equations)
 
     # Disjunction 4
-    m.fs.charge.recycle_mixer_sink_disjunct = Disjunct(
-        rule=recycle_mixer_sink_disjunct_equations)
-    m.fs.charge.mixer1_sink_disjunct = Disjunct(
+    m.fs.charge.recycle_mixer1_sink_disjunct = Disjunct(
+        rule=recycle_mixer1_sink_disjunct_equations)
+    m.fs.charge.recycle_mixer2_sink_disjunct = Disjunct(
+        rule=recycle_mixer2_sink_disjunct_equations)
+    m.fs.charge.recycle_mixer3_sink_disjunct = Disjunct(
+        rule=recycle_mixer3_sink_disjunct_equations)
+    m.fs.charge.recycle_mixer4_sink_disjunct = Disjunct(
         rule=mixer1_sink_disjunct_equations)
-    m.fs.charge.mixer2_sink_disjunct = Disjunct(
+    m.fs.charge.recycle_mixer5_sink_disjunct = Disjunct(
         rule=mixer2_sink_disjunct_equations)
-    m.fs.charge.mixer3_sink_disjunct = Disjunct(
-        rule=mixer3_sink_disjunct_equations)
-    m.fs.charge.mixer4_sink_disjunct = Disjunct(
-        rule=mixer4_sink_disjunct_equations)
 
     ###########################################################################
     # Add constraints and create the stream Arcs and return the model
@@ -484,11 +485,11 @@ def add_disjunction(m):
 
     # Add disjunction 4 for the sink selection
     m.fs.sink_disjunction = Disjunction(
-        expr=[m.fs.charge.recycle_mixer_sink_disjunct,
-              m.fs.charge.mixer1_sink_disjunct,
-              m.fs.charge.mixer2_sink_disjunct,
-              m.fs.charge.mixer3_sink_disjunct,
-              m.fs.charge.mixer4_sink_disjunct])
+        expr=[m.fs.charge.recycle_mixer3_sink_disjunct,
+              m.fs.charge.recycle_mixer4_sink_disjunct,
+              m.fs.charge.recycle_mixer5_sink_disjunct,
+              m.fs.charge.recycle_mixer2_sink_disjunct,
+              m.fs.charge.recycle_mixer1_sink_disjunct])
 
 
     # Expand arcs within the disjuncts
@@ -1064,64 +1065,64 @@ def no_cooler_disjunct_equations(disj):
     )
 
 
-def recycle_mixer_sink_disjunct_equations(disj):
+def recycle_mixer3_sink_disjunct_equations(disj):
     """Disjunction 4: sink disjunction
     """
 
     m = disj.model()
 
     #  Add recycle mixer
-    m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer = HelmMixer(
+    m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer = HelmMixer(
         momentum_mixing_type=MomentumMixingType.none,
         inlet_list=["from_bfw_out", "from_hx_pump"],
         property_package=m.fs.prop_water,
     )
 
-    m.fs.charge.recycle_mixer_sink_disjunct.recyclemixer_pressure_cosntraint = Constraint(
+    m.fs.charge.recycle_mixer3_sink_disjunct.recyclemixer_pressure_cosntraint = Constraint(
         expr=(
-            m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out_state[0].pressure == 
-            m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.mixed_state[0].pressure
+            m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.from_bfw_out_state[0].pressure == 
+            m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.mixed_state[0].pressure
         ),
         doc="Recycle mixer outlet pressure equal to minimum pressure in inlets")
 
-    m.fs.charge.recycle_mixer_sink_disjunct.hxpump_to_recyclemix = Arc(
+    m.fs.charge.recycle_mixer3_sink_disjunct.hxpump_to_recyclemix = Arc(
         source=m.fs.charge.hx_pump.outlet,
-        destination=m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_hx_pump,
+        destination=m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.from_hx_pump,
         doc="Connection from HX pump to recycle mixer"
     )
-    m.fs.charge.recycle_mixer_sink_disjunct.bfp_to_recyclemix = Arc(
+    m.fs.charge.recycle_mixer3_sink_disjunct.bfp_to_recyclemix = Arc(
         source=m.fs.bfp.outlet,
-        destination=m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out,
+        destination=m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.from_bfw_out,
         doc="Connection from BFP outlet to recycle mixer"
     )
-    m.fs.charge.recycle_mixer_sink_disjunct.recyclemix_to_fwh8 = Arc(
-        source=m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.outlet,
+    m.fs.charge.recycle_mixer3_sink_disjunct.recyclemix_to_fwh8 = Arc(
+        source=m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.outlet,
         destination=m.fs.fwh[8].tube_inlet,
-        doc="Connection from Recycle Mixer to FWH8 tube side"
+        doc="Connection from Recycle Mixer 3 to FWH8 tube side"
     )
 
     # Reconnect FWH8 outlet 2 to FWH9 inlet 2
-    m.fs.charge.recycle_mixer_sink_disjunct.fwh8_to_fwh9 = Arc(
+    m.fs.charge.recycle_mixer3_sink_disjunct.fwh8_to_fwh9 = Arc(
         source=m.fs.fwh[8].tube_outlet,
         destination=m.fs.fwh[9].tube_inlet,
-        doc="Connection from Recycle Mixer to FWH8 tube side"
+        doc="Connection from Recycle Mixer 3 to FWH8 tube side"
     )
 
     # Reconnect FWH9 to boiler
-    m.fs.charge.recycle_mixer_sink_disjunct.fwh9_to_boiler = Arc(
+    m.fs.charge.recycle_mixer3_sink_disjunct.fwh9_to_boiler = Arc(
         source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet
     )
 
     # Reconnect FWH6 to FWH7
-    m.fs.charge.recycle_mixer_sink_disjunct.fwh6_to_fwh7 = Arc(
+    m.fs.charge.recycle_mixer3_sink_disjunct.fwh6_to_fwh7 = Arc(
         source=m.fs.fwh[6].tube_outlet,
         destination=m.fs.fwh[7].tube_inlet,
         doc="Connection from FWH6 outlet 2 to FWH7 inlet 2"
     )
 
     # Reconnect booster to FWH6
-    m.fs.charge.recycle_mixer_sink_disjunct.booster_to_fwh6 = Arc(
+    m.fs.charge.recycle_mixer3_sink_disjunct.booster_to_fwh6 = Arc(
         source=m.fs.booster.outlet,
         destination=m.fs.fwh[6].tube_inlet
     )
@@ -1133,56 +1134,56 @@ def mixer1_sink_disjunct_equations(disj):
 
     m = disj.model()
 
-    #  Add mixer 1
-    m.fs.charge.mixer1_sink_disjunct.mixer1 = HelmMixer(
+    # Add recycle mixer 4
+    m.fs.charge.recycle_mixer4_sink_disjunct.mixer1 = HelmMixer(
         momentum_mixing_type=MomentumMixingType.none,
         inlet_list=["from_fwh8", "from_hx_pump"],
         property_package=m.fs.prop_water,
     )
 
-    m.fs.charge.mixer1_sink_disjunct.mixer1_pressure_constraint = Constraint(
-        expr=m.fs.charge.mixer1_sink_disjunct.mixer1.from_fwh8_state[0].pressure == \
-        m.fs.charge.mixer1_sink_disjunct.mixer1.mixed_state[0].pressure,
-        doc="mixer 1 outlet pressure equal to minimum pressure in inlets")
+    m.fs.charge.recycle_mixer4_sink_disjunct.mixer1_pressure_constraint = Constraint(
+        expr=m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.from_fwh8_state[0].pressure == \
+        m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.mixed_state[0].pressure,
+        doc="Recycle mixer 4 outlet pressure equal to minimum pressure in inlets")
 
-    m.fs.charge.mixer1_sink_disjunct.hxpump_to_mix1 = Arc(
+    m.fs.charge.recycle_mixer4_sink_disjunct.hxpump_to_mix1 = Arc(
         source=m.fs.charge.hx_pump.outlet,
-        destination=m.fs.charge.mixer1_sink_disjunct.mixer1.from_hx_pump,
-        doc="Connection from HX pump to mixer 1"
+        destination=m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.from_hx_pump,
+        doc="Connection from HX pump to recycle mixer 4"
     )
-    m.fs.charge.mixer1_sink_disjunct.fwh8_to_mix1 = Arc(
+    m.fs.charge.recycle_mixer4_sink_disjunct.fwh8_to_mix1 = Arc(
         source=m.fs.fwh[8].tube_outlet,
-        destination=m.fs.charge.mixer1_sink_disjunct.mixer1.from_fwh8,
-        doc="Connection from FWH8 outlet 2 to mixer 1"
+        destination=m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.from_fwh8,
+        doc="Connection from FWH8 outlet 2 to recycle mixer 4"
     )
-    m.fs.charge.mixer1_sink_disjunct.mix1_to_fwh9 = Arc(
-        source=m.fs.charge.mixer1_sink_disjunct.mixer1.outlet,
+    m.fs.charge.recycle_mixer4_sink_disjunct.mix1_to_fwh9 = Arc(
+        source=m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.outlet,
         destination=m.fs.fwh[9].tube_inlet,
-        doc="Connection from Mixer 1 to FWH9 tube side"
+        doc="Connection from recycle mixer 4 to FWH9 tube side"
     )
 
     # Reconnect BFP to FWH8 inlet 2
-    m.fs.charge.mixer1_sink_disjunct.bfp_to_fwh8 = Arc(
+    m.fs.charge.recycle_mixer4_sink_disjunct.bfp_to_fwh8 = Arc(
         source=m.fs.bfp.outlet,
         destination=m.fs.fwh[8].tube_inlet,
-        doc="Connection from Recycle Mixer to FWH8 tube side"
+        doc="Connection from Recycle Mixer 3 to FWH8 tube side"
     )
 
     # Reconnect FWH9 to boiler
-    m.fs.charge.mixer1_sink_disjunct.fwh9_to_boiler = Arc(
+    m.fs.charge.recycle_mixer4_sink_disjunct.fwh9_to_boiler = Arc(
         source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet
     )
 
     # Reconnect FWH6 to FWH7
-    m.fs.charge.mixer1_sink_disjunct.fwh6_to_fwh7 = Arc(
+    m.fs.charge.recycle_mixer4_sink_disjunct.fwh6_to_fwh7 = Arc(
         source=m.fs.fwh[6].tube_outlet,
         destination=m.fs.fwh[7].tube_inlet,
         doc="Connection from FWH6 outlet 2 to FWH7 inlet 2"
     )
 
     # Reconnect booster to FWH6
-    m.fs.charge.mixer1_sink_disjunct.booster_to_fwh6 = Arc(
+    m.fs.charge.recycle_mixer4_sink_disjunct.booster_to_fwh6 = Arc(
         source=m.fs.booster.outlet,
         destination=m.fs.fwh[6].tube_inlet
     )
@@ -1195,178 +1196,178 @@ def mixer2_sink_disjunct_equations(disj):
     m = disj.model()
 
     #  Add mixer 2
-    m.fs.charge.mixer2_sink_disjunct.mixer2 = HelmMixer(
+    m.fs.charge.recycle_mixer5_sink_disjunct.mixer2 = HelmMixer(
         momentum_mixing_type=MomentumMixingType.none,
         inlet_list=["from_fwh9", "from_hx_pump"],
         property_package=m.fs.prop_water,
     )
 
-    m.fs.charge.mixer2_sink_disjunct.mixer2_pressure_constraint = Constraint(
-        expr=m.fs.charge.mixer2_sink_disjunct.mixer2.from_fwh9_state[0].pressure == \
-        m.fs.charge.mixer2_sink_disjunct.mixer2.mixed_state[0].pressure,
+    m.fs.charge.recycle_mixer5_sink_disjunct.mixer2_pressure_constraint = Constraint(
+        expr=m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.from_fwh9_state[0].pressure == \
+        m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.mixed_state[0].pressure,
         doc="mixer 2 outlet pressure equal to minimum pressure in inlets")
 
-    m.fs.charge.mixer2_sink_disjunct.hxpump_to_mix2 = Arc(
+    m.fs.charge.recycle_mixer5_sink_disjunct.hxpump_to_mix2 = Arc(
         source=m.fs.charge.hx_pump.outlet,
-        destination=m.fs.charge.mixer2_sink_disjunct.mixer2.from_hx_pump,
+        destination=m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.from_hx_pump,
         doc="Connection from HX pump to mixer 2"
     )
-    m.fs.charge.mixer2_sink_disjunct.fwh9_to_mix2 = Arc(
+    m.fs.charge.recycle_mixer5_sink_disjunct.fwh9_to_mix2 = Arc(
         source=m.fs.fwh[9].tube_outlet,
-        destination=m.fs.charge.mixer2_sink_disjunct.mixer2.from_fwh9,
+        destination=m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.from_fwh9,
         doc="Connection from FWH9 outlet 2 to mixer 2"
     )
-    m.fs.charge.mixer2_sink_disjunct.mix2_to_fwh9 = Arc(
-        source=m.fs.charge.mixer2_sink_disjunct.mixer2.outlet,
+    m.fs.charge.recycle_mixer5_sink_disjunct.mix2_to_fwh9 = Arc(
+        source=m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.outlet,
         destination=m.fs.boiler.inlet,
-        doc="Connection from Mixer 1 to boiler"
+        doc="Connection from recycle mixer 4 to boiler"
     )
 
     # Reconnect BFP to FWH8 inlet 2
-    m.fs.charge.mixer2_sink_disjunct.bfp_to_fwh8 = Arc(
+    m.fs.charge.recycle_mixer5_sink_disjunct.bfp_to_fwh8 = Arc(
         source=m.fs.bfp.outlet,
         destination=m.fs.fwh[8].tube_inlet,
-        doc="Connection from Recycle Mixer to FWH8 tube side"
+        doc="Connection from Recycle Mixer 3 to FWH8 tube side"
     )
 
     # Reconnect FWH8 outlet 2 to FWH9 inlet 2
-    m.fs.charge.mixer2_sink_disjunct.fwh8_to_fwh9 = Arc(
+    m.fs.charge.recycle_mixer5_sink_disjunct.fwh8_to_fwh9 = Arc(
         source=m.fs.fwh[8].tube_outlet,
         destination=m.fs.fwh[9].tube_inlet,
         doc="Connection from FWH8 tube side to FWH9 tube side"
     )
 
     # Reconnect FWH6 to FWH7
-    m.fs.charge.mixer2_sink_disjunct.fwh6_to_fwh7 = Arc(
+    m.fs.charge.recycle_mixer5_sink_disjunct.fwh6_to_fwh7 = Arc(
         source=m.fs.fwh[6].tube_outlet,
         destination=m.fs.fwh[7].tube_inlet,
         doc="Connection from FWH6 outlet 2 to FWH7 inlet 2"
     )
 
     # Reconnect booster to FWH6
-    m.fs.charge.mixer2_sink_disjunct.booster_to_fwh6 = Arc(
+    m.fs.charge.recycle_mixer5_sink_disjunct.booster_to_fwh6 = Arc(
         source=m.fs.booster.outlet,
         destination=m.fs.fwh[6].tube_inlet
     )
 
 
-def mixer3_sink_disjunct_equations(disj):
+def recycle_mixer2_sink_disjunct_equations(disj):
     """Disjunction 4: sink disjunction
     """
 
     m = disj.model()
 
-    #  Add mixer 3
-    m.fs.charge.mixer3_sink_disjunct.mixer3 = HelmMixer(
+    #  Add recycle mixer 2
+    m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2 = HelmMixer(
         momentum_mixing_type=MomentumMixingType.none,
         inlet_list=["from_fwh6", "from_hx_pump"],
         property_package=m.fs.prop_water,
     )
 
-    m.fs.charge.mixer3_sink_disjunct.mixer3_pressure_constraint = Constraint(
-        expr=m.fs.charge.mixer3_sink_disjunct.mixer3.from_fwh6_state[0].pressure == \
-        m.fs.charge.mixer3_sink_disjunct.mixer3.mixed_state[0].pressure,
-        doc="mixer 3 outlet pressure equal to minimum pressure in inlets")
+    m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2_pressure_constraint = Constraint(
+        expr=m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.from_fwh6_state[0].pressure == \
+        m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.mixed_state[0].pressure,
+        doc="recycle mixer 2 outlet pressure equal to minimum pressure in inlets")
 
-    m.fs.charge.mixer3_sink_disjunct.hxpump_to_mix3 = Arc(
+    m.fs.charge.recycle_mixer2_sink_disjunct.hxpump_to_mix3 = Arc(
         source=m.fs.charge.hx_pump.outlet,
-        destination=m.fs.charge.mixer3_sink_disjunct.mixer3.from_hx_pump,
-        doc="Connection from HX pump to mixer 3"
+        destination=m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.from_hx_pump,
+        doc="Connection from HX pump to recycle mixer 2"
     )
-    m.fs.charge.mixer3_sink_disjunct.fwh6_to_mix3 = Arc(
+    m.fs.charge.recycle_mixer2_sink_disjunct.fwh6_to_mix3 = Arc(
         source=m.fs.fwh[6].tube_outlet,
-        destination=m.fs.charge.mixer3_sink_disjunct.mixer3.from_fwh6,
-        doc="Connection from FWH6 outlet 2 to mixer 3"
+        destination=m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.from_fwh6,
+        doc="Connection from FWH6 outlet 2 to recycle mixer 2"
     )
-    m.fs.charge.mixer3_sink_disjunct.mix3_to_fwh7 = Arc(
-        source=m.fs.charge.mixer3_sink_disjunct.mixer3.outlet,
+    m.fs.charge.recycle_mixer2_sink_disjunct.mix3_to_fwh7 = Arc(
+        source=m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.outlet,
         destination=m.fs.fwh[7].tube_inlet,
-        doc="Connection from Mixer 3 to FWH7"
+        doc="Connection from recycle mixer 2 to FWH7"
     )
 
     # Reconnect BFP to FWH8 inlet 2
-    m.fs.charge.mixer3_sink_disjunct.bfp_to_fwh8 = Arc(
+    m.fs.charge.recycle_mixer2_sink_disjunct.bfp_to_fwh8 = Arc(
         source=m.fs.bfp.outlet,
         destination=m.fs.fwh[8].tube_inlet,
-        doc="Connection from Recycle Mixer to FWH8 tube side"
+        doc="Connection from Recycle recycle mixer 2 to FWH8 tube side"
     )
 
     # Reconnect FWH8 outlet 2 to FWH9 inlet 2
-    m.fs.charge.mixer3_sink_disjunct.fwh8_to_fwh9 = Arc(
+    m.fs.charge.recycle_mixer2_sink_disjunct.fwh8_to_fwh9 = Arc(
         source=m.fs.fwh[8].tube_outlet,
         destination=m.fs.fwh[9].tube_inlet,
         doc="Connection from FWH8 tube side to FWH9 tube side"
     )
 
     # Reconnect FWH9 to boiler
-    m.fs.charge.mixer3_sink_disjunct.fwh9_to_boiler = Arc(
+    m.fs.charge.recycle_mixer2_sink_disjunct.fwh9_to_boiler = Arc(
         source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet
     )
 
     # Reconnect booster to FWH6
-    m.fs.charge.mixer3_sink_disjunct.booster_to_fwh6 = Arc(
+    m.fs.charge.recycle_mixer2_sink_disjunct.booster_to_fwh6 = Arc(
         source=m.fs.booster.outlet,
         destination=m.fs.fwh[6].tube_inlet
     )
 
 
-def mixer4_sink_disjunct_equations(disj):
+def recycle_mixer1_sink_disjunct_equations(disj):
     """Disjunction 4: sink disjunction
     """
 
     m = disj.model()
 
-    #  Add mixer 4
-    m.fs.charge.mixer4_sink_disjunct.mixer4 = HelmMixer(
+    #  Add recycle mixer 1
+    m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1 = HelmMixer(
         momentum_mixing_type=MomentumMixingType.none,
         inlet_list=["from_booster", "from_hx_pump"],
         property_package=m.fs.prop_water,
     )
 
-    m.fs.charge.mixer4_sink_disjunct.mixer4_pressure_constraint = Constraint(
-        expr=m.fs.charge.mixer4_sink_disjunct.mixer4.from_booster_state[0].pressure == \
-        m.fs.charge.mixer4_sink_disjunct.mixer4.mixed_state[0].pressure,
-        doc="mixer 4 outlet pressure equal to minimum pressure in inlets")
+    m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1_pressure_constraint = Constraint(
+        expr=m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.from_booster_state[0].pressure == \
+        m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.mixed_state[0].pressure,
+        doc="recycle mixer 1 outlet pressure equal to minimum pressure in inlets")
 
-    m.fs.charge.mixer4_sink_disjunct.hxpump_to_mix4 = Arc(
+    m.fs.charge.recycle_mixer1_sink_disjunct.hxpump_to_mix4 = Arc(
         source=m.fs.charge.hx_pump.outlet,
-        destination=m.fs.charge.mixer4_sink_disjunct.mixer4.from_hx_pump,
-        doc="Connection from HX pump to mixer 4"
+        destination=m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.from_hx_pump,
+        doc="Connection from HX pump to recycle mixer 1"
     )
-    m.fs.charge.mixer4_sink_disjunct.booster_to_mix4 = Arc(
+    m.fs.charge.recycle_mixer1_sink_disjunct.booster_to_mix4 = Arc(
         source=m.fs.booster.outlet,
-        destination=m.fs.charge.mixer4_sink_disjunct.mixer4.from_booster,
-        doc="Connection from booster to mixer 4"
+        destination=m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.from_booster,
+        doc="Connection from booster to recycle mixer 1"
     )
-    m.fs.charge.mixer4_sink_disjunct.mix4_to_fwh6 = Arc(
-        source=m.fs.charge.mixer4_sink_disjunct.mixer4.outlet,
+    m.fs.charge.recycle_mixer1_sink_disjunct.mix4_to_fwh6 = Arc(
+        source=m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.outlet,
         destination=m.fs.fwh[6].tube_inlet,
-        doc="Connection from Mixer 4 to FWH6"
+        doc="Connection from recycle mixer 1 to FWH6"
     )
 
     # Reconnect BFP to FWH8 inlet 2
-    m.fs.charge.mixer4_sink_disjunct.bfp_to_fwh8 = Arc(
+    m.fs.charge.recycle_mixer1_sink_disjunct.bfp_to_fwh8 = Arc(
         source=m.fs.bfp.outlet,
         destination=m.fs.fwh[8].tube_inlet,
-        doc="Connection from Recycle Mixer to FWH8 tube side"
+        doc="Connection from BFP to FWH8 tube side"
     )
 
     # Reconnect FWH8 outlet 2 to FWH9 inlet 2
-    m.fs.charge.mixer4_sink_disjunct.fwh8_to_fwh9 = Arc(
+    m.fs.charge.recycle_mixer1_sink_disjunct.fwh8_to_fwh9 = Arc(
         source=m.fs.fwh[8].tube_outlet,
         destination=m.fs.fwh[9].tube_inlet,
         doc="Connection from FWH8 tube side to FWH9 tube side"
     )
 
     # Reconnect FWH9 to boiler
-    m.fs.charge.mixer4_sink_disjunct.fwh9_to_boiler = Arc(
+    m.fs.charge.recycle_mixer1_sink_disjunct.fwh9_to_boiler = Arc(
         source=m.fs.fwh[9].tube_outlet,
         destination=m.fs.boiler.inlet
     )
 
     # Reconnect FWH6 to FWH7
-    m.fs.charge.mixer4_sink_disjunct.fwh6_to_fwh7 = Arc(
+    m.fs.charge.recycle_mixer1_sink_disjunct.fwh6_to_fwh7 = Arc(
         source=m.fs.fwh[6].tube_outlet,
         destination=m.fs.fwh[7].tube_inlet,
         doc="Connection from FWH6 outlet 2 to FWH7 inlet 2"
@@ -1538,29 +1539,29 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
                                    optarg=solver.options)
 
     #  Recycle mixer initialization
-    propagate_state(m.fs.charge.recycle_mixer_sink_disjunct.bfp_to_recyclemix)
-    propagate_state(m.fs.charge.recycle_mixer_sink_disjunct.hxpump_to_recyclemix)
-    m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.initialize(outlvl=outlvl)
+    propagate_state(m.fs.charge.recycle_mixer3_sink_disjunct.bfp_to_recyclemix)
+    propagate_state(m.fs.charge.recycle_mixer3_sink_disjunct.hxpump_to_recyclemix)
+    m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.initialize(outlvl=outlvl)
 
-    #  Mixer 1 initialization
-    propagate_state(m.fs.charge.mixer1_sink_disjunct.fwh8_to_mix1)
-    propagate_state(m.fs.charge.mixer1_sink_disjunct.hxpump_to_mix1)
-    m.fs.charge.mixer1_sink_disjunct.mixer1.initialize(outlvl=outlvl)
+    #  recycle mixer 4 initialization
+    propagate_state(m.fs.charge.recycle_mixer4_sink_disjunct.fwh8_to_mix1)
+    propagate_state(m.fs.charge.recycle_mixer4_sink_disjunct.hxpump_to_mix1)
+    m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.initialize(outlvl=outlvl)
 
-    #  Mixer 2 initialization
-    propagate_state(m.fs.charge.mixer2_sink_disjunct.fwh9_to_mix2)
-    propagate_state(m.fs.charge.mixer2_sink_disjunct.hxpump_to_mix2)
-    m.fs.charge.mixer2_sink_disjunct.mixer2.initialize(outlvl=outlvl)
+    # Recycle mixer 5 initialization
+    propagate_state(m.fs.charge.recycle_mixer5_sink_disjunct.fwh9_to_mix2)
+    propagate_state(m.fs.charge.recycle_mixer5_sink_disjunct.hxpump_to_mix2)
+    m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.initialize(outlvl=outlvl)
 
-    #  Mixer 3 initialization
-    propagate_state(m.fs.charge.mixer3_sink_disjunct.fwh6_to_mix3)
-    propagate_state(m.fs.charge.mixer3_sink_disjunct.hxpump_to_mix3)
-    m.fs.charge.mixer3_sink_disjunct.mixer3.initialize(outlvl=outlvl)
+    #  recycle mixer 2 initialization
+    propagate_state(m.fs.charge.recycle_mixer2_sink_disjunct.fwh6_to_mix3)
+    propagate_state(m.fs.charge.recycle_mixer2_sink_disjunct.hxpump_to_mix3)
+    m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.initialize(outlvl=outlvl)
 
-    #  Mixer 4 initialization
-    propagate_state(m.fs.charge.mixer4_sink_disjunct.booster_to_mix4)
-    propagate_state(m.fs.charge.mixer4_sink_disjunct.hxpump_to_mix4)
-    m.fs.charge.mixer4_sink_disjunct.mixer4.initialize(outlvl=outlvl)
+    #  recycle mixer 1 initialization
+    propagate_state(m.fs.charge.recycle_mixer1_sink_disjunct.booster_to_mix4)
+    propagate_state(m.fs.charge.recycle_mixer1_sink_disjunct.hxpump_to_mix4)
+    m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.initialize(outlvl=outlvl)
 
     # Fix disjuncts for initialization
     m.fs.charge.solar_salt_disjunct.indicator_var.fix(True)
@@ -1573,11 +1574,11 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     m.fs.charge.cooler_disjunct.indicator_var.fix(False)
     m.fs.charge.no_cooler_disjunct.indicator_var.fix(True)
 
-    m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
-    m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
-    m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(True)
-    m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
-    m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
+    m.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.fix(False)
+    m.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.fix(False)
+    m.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.fix(True)
+    m.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.fix(False)
+    m.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.fix(False)
 
     # Clone the model to transform and initialize
     # then copy the initialized variable values
@@ -2626,11 +2627,11 @@ def unfix_disjuncts_post_initialization(m):
     m.fs.charge.hp_source_disjunct.indicator_var.unfix()
     m.fs.charge.cooler_disjunct.indicator_var.unfix()
     m.fs.charge.no_cooler_disjunct.indicator_var.unfix()
-    m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.unfix()
-    m.fs.charge.mixer1_sink_disjunct.indicator_var.unfix()
-    m.fs.charge.mixer2_sink_disjunct.indicator_var.unfix()
-    m.fs.charge.mixer3_sink_disjunct.indicator_var.unfix()
-    m.fs.charge.mixer4_sink_disjunct.indicator_var.unfix()
+    m.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.unfix()
+    m.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.unfix()
+    m.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.unfix()
+    m.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.unfix()
+    m.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.unfix()
 
     print("******************** Disjuncts Unfixed *************************")
     print()
@@ -2835,25 +2836,25 @@ def add_bounds(m):
         split.inlet.flow_mol[:].setlb(0)
         split.inlet.flow_mol[:].setub(m.flow_max)
 
-    for mix in [m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer,
-                m.fs.charge.mixer1_sink_disjunct.mixer1,
-                m.fs.charge.mixer2_sink_disjunct.mixer2,
-                m.fs.charge.mixer3_sink_disjunct.mixer3,
-                m.fs.charge.mixer4_sink_disjunct.mixer4]:
+    for mix in [m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer,
+                m.fs.charge.recycle_mixer4_sink_disjunct.mixer1,
+                m.fs.charge.recycle_mixer5_sink_disjunct.mixer2,
+                m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2,
+                m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1]:
         mix.from_hx_pump.flow_mol.setlb(0)
         mix.from_hx_pump.flow_mol.setub(m.storage_flow_max)
         mix.outlet.flow_mol.setlb(0)
         mix.outlet.flow_mol.setub(m.flow_max)
-    m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol.setlb(0)
-    m.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol.setub(m.flow_max)
-    m.fs.charge.mixer1_sink_disjunct.mixer1.from_fwh8.flow_mol.setlb(0)
-    m.fs.charge.mixer1_sink_disjunct.mixer1.from_fwh8.flow_mol.setub(m.flow_max)
-    m.fs.charge.mixer2_sink_disjunct.mixer2.from_fwh9.flow_mol.setlb(0)
-    m.fs.charge.mixer2_sink_disjunct.mixer2.from_fwh9.flow_mol.setub(m.flow_max)
-    m.fs.charge.mixer3_sink_disjunct.mixer3.from_fwh6.flow_mol.setlb(0)
-    m.fs.charge.mixer3_sink_disjunct.mixer3.from_fwh6.flow_mol.setub(m.flow_max)
-    m.fs.charge.mixer4_sink_disjunct.mixer4.from_booster.flow_mol.setlb(0)
-    m.fs.charge.mixer4_sink_disjunct.mixer4.from_booster.flow_mol.setub(m.flow_max)
+    m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol.setlb(0)
+    m.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol.setub(m.flow_max)
+    m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.from_fwh8.flow_mol.setlb(0)
+    m.fs.charge.recycle_mixer4_sink_disjunct.mixer1.from_fwh8.flow_mol.setub(m.flow_max)
+    m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.from_fwh9.flow_mol.setlb(0)
+    m.fs.charge.recycle_mixer5_sink_disjunct.mixer2.from_fwh9.flow_mol.setub(m.flow_max)
+    m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.from_fwh6.flow_mol.setlb(0)
+    m.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.from_fwh6.flow_mol.setub(m.flow_max)
+    m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.from_booster.flow_mol.setlb(0)
+    m.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.from_booster.flow_mol.setub(m.flow_max)
 
     for k in m.set_turbine:
         m.fs.turbine[k].work.setlb(-1e10)
@@ -2990,35 +2991,35 @@ def run_nlps(m,
 
     # Disjunction 3 for the sink selection
     if sink == "recycle_mix":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(True)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.fix(False)
     elif sink == "mixer1":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(True)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.fix(False)
     elif sink == "mixer2":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(True)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
-    elif sink == "mixer3":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(True)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
-    elif sink == "mixer4":
-        m.fs.charge.recycle_mixer_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer1_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer2_sink_disjunct.indicator_var.fix(True)
-        m.fs.charge.mixer3_sink_disjunct.indicator_var.fix(False)
-        m.fs.charge.mixer4_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.fix(False)
+    elif sink == "recycle_mixer2":
+        m.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.fix(False)
+    elif sink == "recycle_mixer1":
+        m.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.fix(True)
+        m.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.fix(False)
+        m.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.fix(False)
     else:
         print('Unrecognized sink name!')
 
@@ -3053,138 +3054,174 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     nlp_model.disjunction2_selection = {}
     nlp_model.disjunction3_selection = {}
     nlp_model.disjunction4_selection = {}
+    nlp_model.area = {}
+    nlp_model.hot_salt_temp = {}
+    nlp_model.storage_material_amount = {}
+    nlp_model.storage_material_flow = {}
+    nlp_model.steam_flow_to_storage = {}
+    nlp_model.boiler_eff = {}
+    nlp_model.cycle_eff = {}
     print('       ___________________________________________')
     if nlp_model.fs.charge.solar_salt_disjunct.indicator_var.value == 1:
         material_disj = nlp_model.fs.charge.solar_salt_disjunct
         nlp_model.disjunction1_selection[m_iter] = 'Solar salt is selected'
+        nlp_model.storage_material_amount[m_iter] = pyo.value(material_disj.salt_amount)/1e3 #in metric ton
         print('        Disjunction 1: Solar salt is selected')
+        print('          Salt amount (metric ton): {:.4f}'.format(
+            pyo.value(material_disj.salt_amount)/1e3))
     elif nlp_model.fs.charge.hitec_salt_disjunct.indicator_var.value == 1:
         material_disj = nlp_model.fs.charge.hitec_salt_disjunct
         nlp_model.disjunction1_selection[m_iter] = 'Hitec salt is selected'
+        nlp_model.storage_material_amount[m_iter] = pyo.value(material_disj.salt_amount)/1e3 #in metric ton
         print('        Disjunction 1: Hitec salt is selected')
+        print('          Salt amount (metric ton): {:.4f}'.format(
+            pyo.value(material_disj.salt_amount)/1e3))
     elif nlp_model.fs.charge.thermal_oil_disjunct.indicator_var.value == 1:
         material_disj = nlp_model.fs.charge.thermal_oil_disjunct
         nlp_model.disjunction1_selection[m_iter] = 'Thermal oil is selected'
+        nlp_model.storage_material_amount[m_iter] = pyo.value(material_disj.oil_amount)/1e3 #in metric ton
         print('        Disjunction 1: Thermal oil is selected')
+        print('          Salt amount (metric ton): {:.4f}'.format(
+        pyo.value(material_disj.oil_amount)/1e3))    
     else:
         print('No more options!')
-
-    print('         No. of tanks: {:.0f}'.format(pyo.value(material_disj.no_of_tanks)))
-    print('         Delta temperature at inlet (K): {:.4f}'.format(
+        
+    nlp_model.area[m_iter] = pyo.value(material_disj.hxc.area)
+    nlp_model.hot_salt_temp[m_iter] = pyo.value(material_disj.hxc.tube_outlet.temperature[0])
+    print('          No. of tanks: {:.0f}'.format(pyo.value(material_disj.no_of_tanks)))
+    print('          Delta temperature at inlet (K): {:.4f}'.format(
         pyo.value(material_disj.hxc.delta_temperature_in[0])))
-    print('         Delta temperature at outlet (K): {:.4f}'.format(
+    print('          Delta temperature at outlet (K): {:.4f}'.format(
         pyo.value(material_disj.hxc.delta_temperature_out[0])))
-    print('         Area (m2): {:.4f}'.format(
+    print('          Area (m2): {:.4f}'.format(
         pyo.value(material_disj.hxc.area)))
-    print('         Heat duty (MW): {:.4f}'.format(
+    print('          Heat duty (MW): {:.4f}'.format(
         pyo.value(material_disj.hxc.heat_duty[0]) * 1e-6))
-    print('         Cost ($/y): {:.4f}'.format(
+    print('          Cost ($/y): {:.4f}'.format(
         pyo.value(material_disj.hxc.costing.capital_cost / nlp_model.fs.charge.num_of_years)))
-    print('         Steam flow to storage (mol/s): {:.4f}'.format(
+    nlp_model.steam_flow_to_storage[m_iter] = pyo.value(material_disj.hxc.shell_inlet.flow_mol[0])
+    print('          Steam flow to storage (mol/s): {:.4f}'.format(
         pyo.value(material_disj.hxc.shell_inlet.flow_mol[0])))
-    print('         Salt flow (kg/s): {:.4f}'.format(
+    nlp_model.storage_material_flow[m_iter] = pyo.value(material_disj.hxc.tube_inlet.flow_mass[0])
+    print('          Salt flow (kg/s): {:.4f}'.format(
         pyo.value(material_disj.hxc.tube_inlet.flow_mass[0])))
-    print('         Water temperature in/out (K): {:.4f}/{:.4f}'.format(
+    print('          Water temperature in/out (K): {:.4f}/{:.4f}'.format(
         pyo.value(material_disj.hxc.hot_side.properties_in[0].temperature),
         pyo.value(material_disj.hxc.hot_side.properties_out[0].temperature)))
-    print('         Salt temperature in/out (K): {:.4f}/{:.4f}'.format(
+    print('          Salt temperature in/out (K): {:.4f}/{:.4f}'.format(
         pyo.value(material_disj.hxc.tube_inlet.temperature[0]),
         pyo.value(material_disj.hxc.tube_outlet.temperature[0])))
-    print('         Heat exchanger OHTC: {:.4f}'.format(
+    print('          Heat exchanger OHTC: {:.4f}'.format(
         pyo.value(material_disj.hxc.overall_heat_transfer_coefficient[0])))
 
     if nlp_model.fs.charge.vhp_source_disjunct.indicator_var.value == 1:
         nlp_model.disjunction2_selection[m_iter] = 'VHP source is selected'
         print('        Disjunction 2: VHP source is selected')
-        print('         ESS VHP split fraction to hxc:',
+        print('          ESS VHP split fraction to hxc:',
               pyo.value(nlp_model.fs.charge.vhp_source_disjunct.ess_vhp_split.split_fraction[0, "to_hxc"]))
     else:
         nlp_model.disjunction2_selection[m_iter] = 'HP is selected'
         print('        Disjunction 2: HP source is selected')
-        print('         ESS HP split fraction to hxc:',
+        print('          ESS HP split fraction to hxc:',
               pyo.value(nlp_model.fs.charge.hp_source_disjunct.ess_hp_split.split_fraction[0, "to_hxc"]))
 
     if nlp_model.fs.charge.cooler_disjunct.indicator_var.value == 1:
         nlp_model.disjunction3_selection[m_iter] = 'Cooler is selected'
         print('        Disjunction 3: Cooler is selected')
-        print('         Cooler capital cost ($/yr):',
+        print('          Cooler capital cost ($/yr):',
               pyo.value(nlp_model.fs.charge.cooler_capital_cost))
-        print('         Cooler heat duty (MW):',
+        print('          Cooler heat duty (MW):',
               nlp_model.fs.charge.cooler_disjunct.cooler.heat_duty[0].value * 1e-6)
-        print('         Cooler Tout: ',
+        print('          Cooler Tout: ',
               pyo.value(nlp_model.fs.charge.cooler_disjunct.cooler.control_volume.properties_out[0].temperature))
-        print('         Cooler Tsat: ',
+        print('          Cooler Tsat: ',
               pyo.value(nlp_model.fs.charge.cooler_disjunct.cooler.control_volume.properties_out[0].temperature_sat))
     if nlp_model.fs.charge.no_cooler_disjunct.indicator_var.value == 1:
         nlp_model.disjunction3_selection[m_iter] = 'No cooler is selected'
         print('        Disjunction 3: No cooler is selected')
-        print('         Cooler heat duty (MW):',
+        print('          Cooler heat duty (MW):',
               nlp_model.fs.charge.cooler_heat_duty[0].value * 1e-6)
 
-    if nlp_model.fs.charge.recycle_mixer_sink_disjunct.indicator_var.value == 1:
-        nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer is selected'
-        print('        Disjunction 4: Recycle mixer is selected')
-        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
-        print('         HX pump outlet flow:',
+    if nlp_model.fs.charge.recycle_mixer1_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer 1 is selected'
+        print('        Disjunction 4: Recycle mixer 1 is selected')
+        print('          HX pump outlet flow:',
               pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
-        print('         Recycle mixer inlet from BFW:',
-              pyo.value(nlp_model.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol[0]))
-        print('         Recycle mixer inlet from hx pump:',
-              pyo.value(nlp_model.fs.charge.recycle_mixer_sink_disjunct.recycle_mixer.from_hx_pump.flow_mol[0]))
-    elif nlp_model.fs.charge.mixer1_sink_disjunct.indicator_var.value == 1:
-        nlp_model.disjunction4_selection[m_iter] = 'Mixer 1 is selected'
-        print('        Disjunction 4: Mixer 1 is selected')
-        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
-        print('         HX pump outlet flow:',
-              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
-        print('         Mixer 1 inlet from FWH8:',
-              pyo.value(nlp_model.fs.charge.mixer1_sink_disjunct.mixer1.from_fwh8.flow_mol[0]))
-        print('         Mixer 1 inlet from HX pump:',
-              pyo.value(nlp_model.fs.charge.mixer1_sink_disjunct.mixer1.from_hx_pump.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
-    elif nlp_model.fs.charge.mixer2_sink_disjunct.indicator_var.value == 1:
-        nlp_model.disjunction4_selection[m_iter] = 'Mixer 2 is selected'
-        print('        Disjunction 4: Mixer 2 is selected')
-        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
-        print('         HX pump outlet flow:',
-              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
-        print('         Mixer 2 inlet from FWH9:',
-              pyo.value(nlp_model.fs.charge.mixer2_sink_disjunct.mixer2.from_fwh9.flow_mol[0]))
-        print('         Mixer 2 inlet from HX pump:',
-              pyo.value(nlp_model.fs.charge.mixer2_sink_disjunct.mixer2.from_hx_pump.flow_mol[0]))
-        print('         Boiler inlet flow:', pyo.value(nlp_model.fs.boiler.inlet.flow_mol[0]))
-    elif nlp_model.fs.charge.mixer3_sink_disjunct.indicator_var.value == 1:
-        nlp_model.disjunction4_selection[m_iter] = 'Mixer 3 is selected'
-        print('        Disjunction 4: Mixer 3 is selected')
-        print('         BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
-        print('         FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
-        print('         FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
-        print('         HX pump outlet flow:',
-              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
-        print('         FWH6 outlet 2 flow:',
-              pyo.value(nlp_model.fs.fwh[6].tube_outlet.flow_mol[0]))
-        print('         Mixer 3 inlet from FWH6:',
-              pyo.value(nlp_model.fs.charge.mixer3_sink_disjunct.mixer3.from_fwh6.flow_mol[0]))
-        print('         Mixer 3 inlet from HX pump:',
-              pyo.value(nlp_model.fs.charge.mixer3_sink_disjunct.mixer3.from_hx_pump.flow_mol[0]))
-        print('         Boiler inlet flow:', pyo.value(nlp_model.fs.boiler.inlet.flow_mol[0]))
-        print('         FWH9 inlet 1 flow:', pyo.value(nlp_model.fs.fwh[9].shell_inlet.flow_mol[0]))
-    elif nlp_model.fs.charge.mixer4_sink_disjunct.indicator_var.value == 1:
-        nlp_model.disjunction4_selection[m_iter] = 'Mixer 4 is selected'
-        print('        Disjunction 4: Mixer 4 is selected')
-        print('         HX pump outlet flow:',
-              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
-        print('         Booster outlet flow:',
+        print('          Booster outlet flow:',
               pyo.value(nlp_model.fs.booster.outlet.flow_mol[0]))
-        print('         Mixer 4 inlet from Booster:',
-              pyo.value(nlp_model.fs.charge.mixer4_sink_disjunct.mixer4.from_booster.flow_mol[0]))
-        print('         Mixer 4 inlet from HX pump:',
-              pyo.value(nlp_model.fs.charge.mixer4_sink_disjunct.mixer4.from_hx_pump.flow_mol[0]))
+        print('          Recycle mixer 1 inlet from Booster:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.from_booster.flow_mol[0]))
+        print('          Recycle mixer 1 inlet from HX pump:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer1_sink_disjunct.recycle_mixer1.from_hx_pump.flow_mol[0]))
+    elif nlp_model.fs.charge.recycle_mixer2_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer 2 is selected'
+        print('        Disjunction 4: Recycle mixer 2 is selected')
+        print('          BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('          FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('          FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+        print('          HX pump outlet flow:',
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+        print('          FWH6 outlet 2 flow:',
+              pyo.value(nlp_model.fs.fwh[6].tube_outlet.flow_mol[0]))
+        print('          Recycle mixer 2 inlet from FWH6:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.from_fwh6.flow_mol[0]))
+        print('          Recycle mixer 2 inlet from HX pump:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer2_sink_disjunct.recycle_mixer2.from_hx_pump.flow_mol[0]))
+        print('          Boiler inlet flow:', pyo.value(nlp_model.fs.boiler.inlet.flow_mol[0]))
+        print('          FWH9 inlet 1 flow:', pyo.value(nlp_model.fs.fwh[9].shell_inlet.flow_mol[0]))
+        print('          FWH6 outlet 2 flow(mol/s)/temp(K)/press(MPa): {:.4f}/{:.4f}/{:.4f}'.format(
+            pyo.value(nlp_model.fs.fwh[6].tube.properties_out[0].flow_mol),
+            pyo.value(nlp_model.fs.fwh[6].tube.properties_out[0].temperature),
+            pyo.value(nlp_model.fs.fwh[6].tube.properties_out[0].pressure)/1e6))
+    elif nlp_model.fs.charge.recycle_mixer3_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer 3 is selected'
+        print('        Disjunction 4: Recycle mixer 3 is selected')
+        print('          BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('          FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('          FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+        print('          HX pump outlet flow:',
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+        print('          Recycle mixer 3 inlet from BFW:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.from_bfw_out.flow_mol[0]))
+        print('          Recycle mixer 3 inlet from hx pump:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer3_sink_disjunct.recycle_mixer.from_hx_pump.flow_mol[0]))
+        print('          BFP outlet flow(mol/s)/temp(K)/press(MPa): {:.4f}/{:.4f}/{:.4f}'.format(
+            pyo.value(nlp_model.fs.bfp.control_volume.properties_out[0].flow_mol),
+            pyo.value(nlp_model.fs.bfp.control_volume.properties_out[0].temperature),
+            pyo.value(nlp_model.fs.bfp.control_volume.properties_out[0].pressure)/1e6))
+    elif nlp_model.fs.charge.recycle_mixer4_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer 4 is selected'
+        print('        Disjunction 4: Recycle mixer 4 is selected')
+        print('          BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('          FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('          HX pump outlet flow:',
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+        print('          Recycle mixer 4 inlet from FWH8:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer4_sink_disjunct.mixer1.from_fwh8.flow_mol[0]))
+        print('          Recycle mixer 4 inlet from HX pump:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer4_sink_disjunct.mixer1.from_hx_pump.flow_mol[0]))
+        print('          FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+        print('          FWH8 outlet 2 flow(mol/s)/temp(K)/press(MPa): {:.4f}/{:.4f}/{:.4f}'.format(
+            pyo.value(nlp_model.fs.fwh[8].tube.properties_out[0].flow_mol),
+            pyo.value(nlp_model.fs.fwh[8].tube.properties_out[0].temperature),
+            pyo.value(nlp_model.fs.fwh[8].tube.properties_out[0].pressure)/1e6))
+    elif nlp_model.fs.charge.recycle_mixer5_sink_disjunct.indicator_var.value == 1:
+        nlp_model.disjunction4_selection[m_iter] = 'Recycle mixer 5 is selected'
+        print('        Disjunction 4: Recycle Mixer 5 is selected')
+        print('          BFW outlet flow:', pyo.value(nlp_model.fs.bfp.outlet.flow_mol[0]))
+        print('          FWH8 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[8].tube_inlet.flow_mol[0]))
+        print('          FWH9 inlet 2 flow:', pyo.value(nlp_model.fs.fwh[9].tube_inlet.flow_mol[0]))
+        print('          HX pump outlet flow:',
+              pyo.value(nlp_model.fs.charge.hx_pump.outlet.flow_mol[0]))
+        print('          Recycle Mixer 5 inlet from FWH9:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer5_sink_disjunct.mixer2.from_fwh9.flow_mol[0]))
+        print('          Recycle Mixer 5 inlet from HX pump:',
+              pyo.value(nlp_model.fs.charge.recycle_mixer5_sink_disjunct.mixer2.from_hx_pump.flow_mol[0]))
+        print('          Boiler inlet flow:', pyo.value(nlp_model.fs.boiler.inlet.flow_mol[0]))
+        print('          FWH9 outlet 2 flow(mol/s)/temp(K)/press(MPa): {:.4f}/{:.4f}/{:.4f}'.format(
+            pyo.value(nlp_model.fs.fwh[9].tube.properties_out[0].flow_mol),
+            pyo.value(nlp_model.fs.fwh[9].tube.properties_out[0].temperature),
+            pyo.value(nlp_model.fs.fwh[9].tube.properties_out[0].pressure)/1e6))
     else:
         print('         No other sink alternatives!')
 
@@ -3193,9 +3230,25 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     #     # nlp_model.fs.turbine[k].display()
     #     print('        Turbine {} work (MW): {:.4f}'.
     #           format(k, pyo.value(nlp_model.fs.turbine[k].work_mechanical[0]) * 1e-6))
-    print('         Boiler efficiency (%): {:.4f}'.format(pyo.value(nlp_model.fs.boiler_efficiency) * 100))
-    print('         Cycle efficiency (%): {:.4f}'.format(pyo.value(nlp_model.fs.cycle_efficiency) * 100))
-    print('         Plant power (MW): {:.4f}'.format(pyo.value(nlp_model.fs.plant_power_out[0])))
+    print('         Boiler flow inlet (mol/s): {:.4f}'.format(
+        pyo.value(nlp_model.fs.boiler.inlet.flow_mol[0])))    
+    nlp_model.boiler_eff[m_iter] = pyo.value(nlp_model.fs.boiler_efficiency) * 100
+    print('         Boiler efficiency (%): {:.4f}'.format(
+        pyo.value(nlp_model.fs.boiler_efficiency) * 100))
+    nlp_model.cycle_eff[m_iter] = pyo.value(nlp_model.fs.cycle_efficiency) * 100
+    print('         Cycle efficiency (%): {:.4f}'.format(
+        pyo.value(nlp_model.fs.cycle_efficiency) * 100))
+    print('         Plant power (MW): {:.4f}'.format(
+        pyo.value(nlp_model.fs.plant_power_out[0])))
+    print('         Boiler outlet conditions: Temp(K)/Press(MPa) {:.4f}/{:.4f}'.format(
+        pyo.value(nlp_model.fs.boiler.control_volume.properties_out[0].temperature),
+        pyo.value(nlp_model.fs.boiler.control_volume.properties_out[0].pressure)/1e6))
+    print('         Reheater 1 outlet conditions: Temp(K)/Press(MPa) {:.4f}/{:.4f}'.format(
+        pyo.value(nlp_model.fs.reheater[1].control_volume.properties_out[0].temperature),
+        pyo.value(nlp_model.fs.reheater[1].control_volume.properties_out[0].pressure)/1e6))
+    print('         HX pump outlet conditions: Temp(K)/Press(MPa) {:.4f}/{:.4f}'.format(
+        pyo.value(nlp_model.fs.charge.hx_pump.control_volume.properties_out[0].temperature),
+        pyo.value(nlp_model.fs.charge.hx_pump.control_volume.properties_out[0].pressure)/1e6))
     for k in nlp_model.set_turbine_splitter:
         print("         Turbine splitter {} split fraction 2: {:.4f}".
               format(k,
@@ -3213,13 +3266,22 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     if True:
         writer = csv.writer(csvfile)
         writer.writerow(
-            (m_iter,
-             nlp_model.disjunction1_selection[m_iter],
-             nlp_model.disjunction2_selection[m_iter],
-             nlp_model.disjunction3_selection[m_iter],
-             nlp_model.disjunction4_selection[m_iter],
-             nlp_model.cooler_heat_duty[m_iter],
-             nlp_model.objective_value[m_iter])
+            (
+                m_iter,
+                nlp_model.disjunction1_selection[m_iter],
+                nlp_model.disjunction2_selection[m_iter],
+                nlp_model.disjunction3_selection[m_iter],
+                nlp_model.disjunction4_selection[m_iter],
+                nlp_model.cooler_heat_duty[m_iter],
+                nlp_model.objective_value[m_iter],
+                nlp_model.area[m_iter],
+                nlp_model.hot_salt_temp[m_iter],
+                nlp_model.storage_material_amount[m_iter],
+                nlp_model.storage_material_flow[m_iter],
+                nlp_model.steam_flow_to_storage[m_iter],
+                nlp_model.boiler_eff[m_iter],
+                nlp_model.cycle_eff[m_iter]
+            ),
         )
         csvfile.flush()
 
@@ -3231,7 +3293,9 @@ def create_csv_header():
     writer.writerow(
         ('Iteration', 'Disjunction 1 (Salt selection)', 'Disjunction 2 (Source)',
          'Disjunction 3 (Cooler selection)', 'Disjunction 4 (Return selection)',
-         'Cooler Heat Duty (MW)', 'Obj (MW)')
+         'Cooler Heat Duty (MW)', 'Obj (MW)', 'HXArea(m2)', 'HotSaltTemp(K)',
+         'StorageMaterialAmount(metric_ton)', 'StorageMaterialFlow(kg/s)',
+         'SteamFlowToStorage(mol/s)', 'BoilerEff(%)', 'CycleEff(%)')
     )
     return csvfile
 
