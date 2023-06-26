@@ -35,7 +35,8 @@ import pandas as pd
 # Import Pyomo objects
 import pyomo.environ as pyo
 from pyomo.environ import units as pyunits
-from pyomo.environ import (Objective, Expression, value, maximize, RangeSet, Constraint)
+from pyomo.environ import (Objective, Expression, value, maximize,
+                           TransformationFactory, RangeSet, Constraint)
 from pyomo.repn.plugins.nl_writer import _activate_nl_writer_version
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
@@ -454,7 +455,6 @@ def run_pricetaker_analysis(nweeks=None,
         sense=maximize
     )
 
-
     # Declare the solver and a set of lists to save the results
     opt = pyo.SolverFactory('ipopt')
     print()
@@ -708,7 +708,7 @@ def plot_results(m,
     ax1.set_ylabel('Salt Amount (metric ton)', color=c[3])
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
-    ax1.set_ylim((0, 3000))
+    ax1.set_ylim((0, 3200))
     ax1.grid(linestyle=':', which='both', color=c[4], alpha=0.40)
     # plt.axhline(pyo.value(m.total_inventory), ls=':', lw=1.5, color=c[4])
     ax1.step(hours_list, hot_tank_list, marker='o', ms=marker_size, lw=1.5, color=c[0], alpha=0.85,
@@ -846,7 +846,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-2
+        scaling_obj = 1e0
     print()
     print('scaling_obj:', scaling_obj)
 

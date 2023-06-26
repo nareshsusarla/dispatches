@@ -55,8 +55,8 @@ from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
 use_surrogate = False
-constant_salt = False
-fix_design = False
+constant_salt = True
+fix_design = True
 
 # Import integrated ultrasupercritical power plant model. Also,
 # include the data path for the model
@@ -144,6 +144,7 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     m.fs.charge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxc_duty <= m.max_storage_duty)
     m.fs.discharge_storage_lb_eq = pyo.Constraint(expr=m.fs.hxd_duty >= m.min_storage_duty)
     m.fs.discharge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxd_duty <= m.max_storage_duty*0.99)
+    # m.fs.discharge_deltaT_lb_eq = pyo.Constraint(expr=m.fs.hxd.delta_temperature_in[0] >= 1)
 
     # Add coupling variables
     m.fs.previous_power = pyo.Var(domain=NonNegativeReals,
@@ -257,10 +258,10 @@ def usc_unfix_dof(m):
     m.fs.hxd.shell_outlet.temperature[0].fix(cold_salt_temperature)
 
     if fix_design:
-        m.fs.hxc.area.fix(1837)
-        m.fs.hxd.area.fix(2058)
-        m.fs.hxc.tube_outlet.temperature[0].fix(829)
-        m.fs.hxd.shell_inlet.temperature[0].fix(829)
+        m.fs.hxc.area.fix(1890.12)
+        m.fs.hxd.area.fix(1718)
+        m.fs.hxc.tube_outlet.temperature[0].fix(827)
+        m.fs.hxd.shell_inlet.temperature[0].fix(827)
         
 
 def usc_custom_init(m):
