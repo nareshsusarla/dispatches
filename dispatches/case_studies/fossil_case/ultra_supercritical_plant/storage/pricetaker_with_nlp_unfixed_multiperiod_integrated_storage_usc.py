@@ -107,10 +107,10 @@ def _get_lmp(n_time_points=None):
                 20.526543373626396, 26.187743260989023, 33.64193449450563, 34.581440082417686,
                 33.32562242857146, 29.430152887362656, 26.159412942307675, 23.720650788461544
             ]
-        elif n_time_points == 2:
+        elif n_time_points == 3:
             # RTS average 24 hrs
             price = [
-                21.734392123626375, 20.991034120879117
+                21.734392123626375, 20.991034120879117, 19.896812835164834
             ]
         elif n_time_points == 168:
             # RTS average for 1 week
@@ -199,6 +199,22 @@ def add_storage_hx_capital_cost(m):
         )/(b.period[1].fs.num_of_years*365*24)
     m.eq_storage_hx_capital_cost = pyo.Constraint(rule=rule_storage_hx_capital_cost)
 
+    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.base_cost_per_unit,
+                                       m.period[1].fs.hxc.costing.base_cost_per_unit_eq)
+    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.base_cost_per_unit,
+                                       m.period[1].fs.hxd.costing.base_cost_per_unit_eq)
+    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.material_factor,
+                                       m.period[1].fs.hxc.costing.hx_material_eqn)
+    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.material_factor,
+                                       m.period[1].fs.hxd.costing.hx_material_eqn)
+    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.pressure_factor,
+                                       m.period[1].fs.hxc.costing.p_factor_eq)
+    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.pressure_factor,
+                                       m.period[1].fs.hxd.costing.p_factor_eq)
+    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.capital_cost,
+                                       m.period[1].fs.hxc.costing.capital_cost_constraint)
+    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.capital_cost,
+                                       m.period[1].fs.hxd.costing.capital_cost_constraint)
     calculate_variable_from_constraint(m.storage_hx_capital_cost,
                                        m.eq_storage_hx_capital_cost)
 
@@ -387,11 +403,11 @@ def run_pricetaker_analysis(nweeks=None,
     #         return b.period[h].fs.hxd.shell_inlet.temperature[0] == (
     #             b.period[h].fs.hxc.tube_outlet.temperature[0]
     #         )
-    #     # Add constraint to ensure a hot salt temperature close to the
-    #     # upper bound
-    #     @m.Constraint(m.hours_set)
-    #     def rule_fix_hot_salt(b, h):
-    #         return b.period[h].fs.hxc.tube_outlet.temperature[0] == 853.15*pyunits.K
+    # # Add constraint to ensure a hot salt temperature close to the
+    # # upper bound
+    # @m.Constraint(m.hours_set)
+    # def rule_fix_hot_salt(b, h):
+    #     return b.period[h].fs.hxc.tube_outlet.temperature[0] == 826.56*pyunits.K
 
     ##################################################################
     # Add storage material capital costs and inventory balances      #
@@ -411,16 +427,18 @@ def run_pricetaker_analysis(nweeks=None,
     #     def rule_salt_inventory_per_time(b, h):
     #         return b.period[h].fs.salt_amount <= m.total_inventory
 
+    m.tank_amount = pyo.units.convert(6840520.68*pyunits.kg,
+                                    to_units=pyunits.metric_ton)
     # m.total_inventory_mass = pyo.units.convert(m.total_inventory, to_units=pyunits.kg)
     m.solar_salt_price = pyo.Param(initialize=490, doc="Solar salt price in $/metric_ton")
     @m.Expression()
     def salt_purchase_cost(b):
-        return (m.period[1].fs.salt_amount*b.solar_salt_price)/(b.period[1].fs.num_of_years*365*24)
+        return (m.tank_amount*b.solar_salt_price)/(b.period[1].fs.num_of_years*365*24)
 
     # Add storage capital costs including salt and storage heat
     # exchangers units for both, charge and discharge operation
     add_storage_salt_tank_cost(m)
-    # add_storage_hx_capital_cost(m)
+    add_storage_hx_capital_cost(m)
 
     ##################################################################
     # Add initial state for salt inventory                           #
@@ -436,9 +454,12 @@ def run_pricetaker_analysis(nweeks=None,
     # @m.Constraint()
     # def power_init(b):
     #     return m.period[1].fs.previous_power == 447.66
-    m.period[1].fs.previous_power.fix(431)
-    m.period[1].fs.previous_salt_inventory_hot.fix(m.tank_init)
-    m.period[1].fs.previous_salt_inventory_cold.fix(m.period[1].fs.salt_amount - m.tank_init)
+    # m.period[1].fs.previous_power.fix(425.8765)
+    # m.period[1].fs.previous_salt_inventory_hot.fix(m.tank_init)
+    # m.period[1].fs.previous_salt_inventory_cold.fix(m.tank_amount - m.tank_init)
+    m.period[1].fs.previous_power.fix()
+    m.period[1].fs.previous_salt_inventory_hot.fix()
+    m.period[1].fs.previous_salt_inventory_cold.fix()
     # if tank_status == "hot_empty":
     #     # @m.Constraint()
     #     # def tank_init_amount(b):
@@ -467,12 +488,12 @@ def run_pricetaker_analysis(nweeks=None,
                 (
                     blk.fs.fuel_cost +
                     blk.fs.plant_operating_cost
-                ) #- # plant operating costs
-                # (
-                #     m.salt_purchase_cost +
-                #     m.no_of_tanks*m.salt_tank_capital_cost #+
-                #     # m.storage_hx_capital_cost
-                # ) # storage capital costs
+                ) - # plant operating costs
+                (
+                    m.salt_purchase_cost +
+                    m.no_of_tanks*m.salt_tank_capital_cost +
+                    m.storage_hx_capital_cost
+                ) # storage capital costs
             )
         )
         count += 1
@@ -492,8 +513,12 @@ def run_pricetaker_analysis(nweeks=None,
     for i in lrs:
         print(i.name)
 
-    print("  ")
-    print("  ")
+    # print("  ")
+    # print("  ")
+    # lst_c = list_unscaled_constraints(m)
+    # for i in lst_c:
+    #     print(i.name)
+
     print("Print constraint variables for residuals")
     m.link_constraints[1].link_constraints[0].pprint()
     print("Period 1 Hot salt level", value(m.period[1].fs.salt_inventory_hot))
@@ -523,41 +548,41 @@ def run_pricetaker_analysis(nweeks=None,
                         tee=True,
                         symbolic_solver_labels=True,
                         options={
-                            "max_iter": 200,
+                            "max_iter": 0,
                             "linear_solver": "ma57",
                             # "halt_on_ampl_error": "yes"
                         })
-    # print("  ")
-    # print("  ")
-    # print("Print out all constraints with residuals larger than 0.1")
-    # lrs = large_residuals_set(m)
-    # for i in lrs:
-    #     print(i.name)
+    print("  ")
+    print("  ")
+    print("Print out all constraints with residuals larger than 0.1")
+    lrs = large_residuals_set(m)
+    for i in lrs:
+        print(i.name)
     # assert False
-    # milp_solver =  pyo.SolverFactory('gurobi')
-    # dh = DegeneracyHunter(m, solver=milp_solver)
+    milp_solver =  pyo.SolverFactory('gurobi')
+    dh = DegeneracyHunter(m, solver=milp_solver)
 
-    # print("  ")
-    # print("  ")
-    # print("Print out all constraints with residuals larger than 0.1")
-    # dh.check_residuals(tol=0.1)
+    print("  ")
+    print("  ")
+    print("Print out all constraints with residuals larger than 0.1")
+    dh.check_residuals(tol=0.1)
 
     # print("  ")
     # print("  ")
     # print("Which variables are within their bounds by a given tolerance?")
     # dh.check_variable_bounds(tol=1.0)
 
-    # print("  ")
-    # print("  ")
-    # print("Solve with 50 Iterations")
-    # results = opt.solve(m,
-    #                     tee=True,
-    #                     symbolic_solver_labels=True,
-    #                     options={
-    #                         "max_iter": 50,
-    #                         "linear_solver": "ma57",
-    #                         # "halt_on_ampl_error": "yes"
-    #                     })
+    print("  ")
+    print("  ")
+    print("Solve with 50 Iterations")
+    results = opt.solve(m,
+                        tee=True,
+                        symbolic_solver_labels=True,
+                        options={
+                            "max_iter": 200,
+                            "linear_solver": "ma57",
+                            "halt_on_ampl_error": "yes"
+                        })
     # print("  ")
     # print("  ")
     # print("Check the rank of the Jacobian of the equality constraints")
@@ -949,7 +974,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e0
+        scaling_obj = 1e-2
     print()
     print('scaling_obj:', scaling_obj)
 
@@ -967,7 +992,7 @@ if __name__ == '__main__':
         pmin = design_data_dict["plant_min_power"]*pyunits.MW
         pmax = design_data_dict["plant_max_power"]*pyunits.MW + pmax_storage
 
-    hours_per_day = 24
+    hours_per_day = 3
     ndays = 1
     nhours = hours_per_day*ndays
     nweeks = 1

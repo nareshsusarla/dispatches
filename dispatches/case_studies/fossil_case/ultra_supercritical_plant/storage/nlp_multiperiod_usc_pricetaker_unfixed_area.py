@@ -43,6 +43,12 @@ from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
+from idaes.core.util.model_diagnostics import DegeneracyHunter
+from idaes.core.util.scaling import (list_unscaled_constraints,
+                                     list_unscaled_variables,
+                                     extreme_jacobian_rows,
+                                     extreme_jacobian_columns)
+from idaes.core.util.model_statistics import large_residuals_set
 
 # Import IDAES libraries
 from idaes.apps.grid_integration.multiperiod.multiperiod import MultiPeriodModel
@@ -135,8 +141,9 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     # Set bounds for power produced by the plant without storage
     m.fs.plant_min_power_eq = pyo.Constraint(expr=m.fs.plant_power_out[0] >= pmin)
     m.fs.plant_max_power_eq = pyo.Constraint(expr=m.fs.plant_power_out[0] <= m.pmax_plant)
-    m.fs.net_plant_min_power_eq = pyo.Constraint(expr=m.fs.net_power[0] >= pmin)
+    # m.fs.net_plant_min_power_eq = pyo.Constraint(expr=m.fs.net_power[0] >= pmin)
     m.fs.net_plant_max_power_eq = pyo.Constraint(expr=m.fs.net_power[0] <= m.pmax_plant + m.pmax_storage)
+    # m.fs.HX_T_equality_eq = pyo.Constraint(expr=m.fs.hxc.tube_outlet.temperature[0] == m.fs.hxd.shell_inlet.temperature[0])
 
     # Set lower and upper bounds to charge and discharge heat
     # exchangers
@@ -146,6 +153,7 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     m.fs.charge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxc_duty <= m.max_storage_duty)
     m.fs.discharge_storage_lb_eq = pyo.Constraint(expr=m.fs.hxd_duty >= m.min_storage_duty)
     m.fs.discharge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxd_duty <= m.max_storage_duty)
+    # m.fs.charge_tube_outlet_T_lb_eq = pyo.Constraint(expr=m.fs.hxc.tube_outlet.temperature[0] >= 826)
 
     # Add coupling variables
     m.fs.previous_power = pyo.Var(domain=NonNegativeReals,
@@ -251,13 +259,13 @@ def usc_unfix_dof(m):
     for charge_hxc in [m.fs.hxc]:
         charge_hxc.shell_inlet.unfix()
         charge_hxc.tube_inlet.flow_mass.unfix()
-        # charge_hxc.area.unfix()
-        # charge_hxc.tube_outlet.temperature[0].unfix()
+        charge_hxc.area.unfix()
+        charge_hxc.tube_outlet.temperature[0].unfix()
 
     for discharge_hxd in [m.fs.hxd]:
         discharge_hxd.tube_inlet.unfix()
         discharge_hxd.shell_inlet.flow_mass.unfix()
-        # discharge_hxd.area.unfix()
+        discharge_hxd.area.unfix()
         # discharge_hxd.shell_inlet.temperature[0].unfix()
 
     # Unfix hx pump pressure
@@ -266,16 +274,17 @@ def usc_unfix_dof(m):
     m.fs.previous_salt_inventory_cold.unfix()
     m.fs.previous_salt_inventory_hot.unfix()
     m.fs.salt_inventory_hot.unfix()
+    # m.fs.linking_power_eq.deactivate()
     # # Fix storage heat exchangers area and salt temperatures
     # cold_salt_temperature = design_data_dict["cold_salt_temperature"]*pyunits.K
     # m.fs.hxd.shell_outlet.temperature[0].fix(cold_salt_temperature)
 
     # if fix_design:
-    #     m.fs.hxc.area.fix(m.hxc_area)
-    #     m.fs.hxd.area.fix(m.hxd_area)
-    #     # # 828.596282
-    #     m.fs.hxc.tube_outlet.temperature[0].fix(828.59)
-    #     m.fs.hxd.shell_inlet.temperature[0].fix(828.59)
+    m.fs.hxc.area.fix(m.hxc_area)
+    m.fs.hxd.area.fix(m.hxd_area)
+    # # 828.596282
+    # m.fs.hxc.tube_outlet.temperature[0].fix(826.56)
+    # m.fs.hxd.shell_inlet.temperature[0].fix(826.56)
     #     # m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
     #     #     expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
     #     # )
@@ -331,7 +340,7 @@ def usc_custom_init(m):
     blk.pmax = design_data_dict["plant_min_power"]*pyunits.MW
     blk.fs.plant_min_power_eq = pyo.Constraint(expr=blk.fs.plant_power_out[0] >= blk.pmin)
     blk.fs.plant_max_power_eq = pyo.Constraint(expr=blk.fs.plant_power_out[0] <= blk.pmax_plant)
-    blk.fs.net_plant_min_power_eq = pyo.Constraint(expr=blk.fs.net_power[0] >= blk.pmin)
+    # blk.fs.net_plant_min_power_eq = pyo.Constraint(expr=blk.fs.net_power[0] >= blk.pmin)
     blk.fs.net_plant_max_power_eq = pyo.Constraint(expr=blk.fs.net_power[0] <= blk.pmax_plant + blk.pmax_storage)
 
     # Set lower and upper bounds to charge and discharge heat
@@ -342,16 +351,19 @@ def usc_custom_init(m):
     blk.fs.charge_storage_ub_eq = pyo.Constraint(expr=blk.fs.hxc_duty <= blk.max_storage_duty)
     blk.fs.discharge_storage_lb_eq = pyo.Constraint(expr=blk.fs.hxd_duty >= blk.min_storage_duty)
     blk.fs.discharge_storage_ub_eq = pyo.Constraint(expr=blk.fs.hxd_duty <= blk.max_storage_duty)
+    # blk.fs.charge_tube_outlet_T_lb_eq = pyo.Constraint(expr=blk.fs.hxc.tube_outlet.temperature[0] >= 826)
 
     # Declare the plant power and salt inventory variables and
     # constraints
     blk.pmax = blk.pmax_plant + blk.pmax_storage
     blk.fs.previous_power = pyo.Var(domain=NonNegativeReals,
-                                    initialize=431,
+                                    initialize=425.8765,
                                     # bounds=(blk.pmin, blk.pmax),
                                     units=pyunits.MW,
                                     doc="Previous period power")
-    blk.fs.previous_power.fix(431*pyunits.MW)
+    # blk.fs.previous_power.fix(425.8765*pyunits.MW)
+    blk.fs.linking_power_eq = pyo.Constraint(expr=blk.fs.previous_power == blk.fs.plant_power_out[0.0])
+
     @blk.fs.Constraint(doc="Plant ramping down constraint")
     def constraint_ramp_down(b):
         return (b.previous_power - blk.ramp_rate) <= b.plant_power_out[0]
@@ -387,8 +399,8 @@ def usc_custom_init(m):
                                              to_units=pyunits.metric_ton/pyunits.hour)
     blk.fs.previous_salt_inventory_cold.fix()
     blk.fs.previous_salt_inventory_hot.fix()
-    blk.fs.hxd.shell_inlet.flow_mass.unfix()
-    blk.fs.salt_inventory_hot.fix()
+    # blk.fs.hxd.shell_inlet.flow_mass.unfix()
+    # blk.fs.salt_inventory_hot.fix()
     @blk.fs.Constraint(doc="Inventory balance at the end of time period")
     def constraint_salt_inventory_hot(b):
         return (
@@ -451,6 +463,14 @@ def usc_custom_init(m):
     print("Previous Hot salt level", value(blk.fs.previous_salt_inventory_hot))
     print("Cold salt level", value(blk.fs.salt_inventory_cold))
     print("Previous Cold salt level", value(blk.fs.previous_salt_inventory_cold))
+    print("Plant Power", value(blk.fs.plant_power_out[0.0]))
+    print("Previous plant Power", value(blk.fs.previous_power))
+    print("  ")
+    print("  ")
+    print("Print out all constraints with residuals larger than 0.1")
+    lrs = large_residuals_set(blk)
+    for i in lrs:
+        print(i.name)
     print("  ")
     print("  ")
     # assert False
