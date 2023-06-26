@@ -42,6 +42,7 @@ from pyomo.environ import (Block, Param, Constraint, Objective, Reals,
                            maximize, RangeSet, value, log, exp, Var, ConcreteModel)
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
+from pyomo.util.calc_var_value import calculate_variable_from_constraint
 
 # Import IDAES libraries
 from idaes.apps.grid_integration.multiperiod.multiperiod import MultiPeriodModel
@@ -67,7 +68,7 @@ if use_surrogate:
     import usc_storage_nlp_mp_unfixed_area_new_storage_design_surrogate as usc_with_tes
 else:
     print('>>>>> Solving for new storage design using rigorous model for USCPP')
-    import usc_storage_nlp_mp_unfixed_area_new_storage_design as usc_with_tes
+    import usc_storage_nlp_mp_unfixed_area_new_storage_design_txt as usc_with_tes
 
 with open(data_path) as design_data:
     design_data_dict = json.load(design_data)
@@ -81,9 +82,11 @@ def add_data(m):
     m.min_storage_duty = design_data_dict["min_storage_duty"]*pyunits.MW
     m.max_storage_duty = design_data_dict["max_storage_duty"]*pyunits.MW
     m.ramp_rate = design_data_dict["ramp_rate"]*pyunits.MW
+    # m.max_inventory = pyo.units.convert(1e4*pyunits.tonne)
     m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
                                         to_units=pyunits.metric_ton)
-    m.min_inventory = pyo.units.convert(1*pyunits.kg,
+    # m.min_inventory = pyo.units.convert(1119.6*pyunits.tonne)
+    m.min_inventory = pyo.units.convert(200000*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,
                                    to_units=pyunits.metric_ton)
@@ -114,24 +117,26 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     # (2) Set required inputs to the model to have a square problem
     # for initialization, (3) add scaling factors, (4) add cost
     # correlations, and (5) add bounds
-    if use_surrogate:
-        m = usc_with_tes.create_integrated_model(m, method=method)
-        add_data(m)
-    else:
-        # Add ultra-supercritical model
-        m = usc.build_plant_model(m)
+    # if use_surrogate:
+    #     m = usc_with_tes.create_integrated_model(m, method=method)
+    #     add_data(m)
+    # else:
+    # Add ultra-supercritical model
+    m = usc.build_plant_model(m)
 
-        add_data(m)
-        m = usc_with_tes.create_integrated_model(m, method=method)
+    add_data(m)
+    m = usc_with_tes.create_integrated_model(m, method=method)
 
     usc_with_tes.set_model_input(m)
     usc_with_tes.set_scaling_factors(m)
     m = usc_with_tes.build_costing(m, optarg={"max_iter": 300})
-    usc_with_tes.add_bounds(m)
+    # usc_with_tes.add_bounds(m)
 
     # Set bounds for power produced by the plant without storage
     m.fs.plant_min_power_eq = pyo.Constraint(expr=m.fs.plant_power_out[0] >= pmin)
     m.fs.plant_max_power_eq = pyo.Constraint(expr=m.fs.plant_power_out[0] <= m.pmax_plant)
+    m.fs.net_plant_min_power_eq = pyo.Constraint(expr=m.fs.net_power[0] >= pmin)
+    m.fs.net_plant_max_power_eq = pyo.Constraint(expr=m.fs.net_power[0] <= m.pmax_plant + m.pmax_storage)
 
     # Set lower and upper bounds to charge and discharge heat
     # exchangers
@@ -140,12 +145,12 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     m.fs.charge_storage_lb_eq = pyo.Constraint(expr=m.fs.hxc_duty >= m.min_storage_duty)
     m.fs.charge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxc_duty <= m.max_storage_duty)
     m.fs.discharge_storage_lb_eq = pyo.Constraint(expr=m.fs.hxd_duty >= m.min_storage_duty)
-    m.fs.discharge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxd_duty <= m.max_storage_duty*0.99)
+    m.fs.discharge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxd_duty <= m.max_storage_duty)
 
     # Add coupling variables
     m.fs.previous_power = pyo.Var(domain=NonNegativeReals,
                                   initialize=436,
-                                  bounds=(pmin, pmax),
+                                #   bounds=(pmin, pmax),
                                   units=pyunits.MW,
                                   doc="Previous period power")
     @m.fs.Constraint(doc="Plant ramping down constraint")
@@ -158,22 +163,22 @@ def create_usc_model(m=None, pmin=None, pmax=None):
 
     m.fs.previous_salt_inventory_hot = pyo.Var(domain=NonNegativeReals,
                                                initialize=m.min_inventory,
-                                               bounds=(m.tank_min, m.max_inventory),
+                                            #    bounds=(m.tank_min, m.max_inventory),
                                                units=pyunits.metric_ton,
                                                doc="Hot salt at the beginning of time period")
     m.fs.salt_inventory_hot = pyo.Var(domain=NonNegativeReals,
                                       initialize=m.min_inventory,
-                                      bounds=(m.tank_min, m.max_inventory),
+                                    #   bounds=(m.tank_min, m.max_inventory),
                                       units=pyunits.metric_ton,
                                       doc="Hot salt inventory at the end of time period")
     m.fs.previous_salt_inventory_cold = pyo.Var(domain=NonNegativeReals,
-                                                initialize=m.tank_max - m.min_inventory,
-                                                bounds=(m.tank_min, m.max_inventory),
+                                                initialize=m.fs.salt_amount - m.min_inventory,
+                                                # bounds=(m.tank_min, m.max_inventory),
                                                 units=pyunits.metric_ton,
                                                 doc="Cold salt at the beginning of time period")
     m.fs.salt_inventory_cold = pyo.Var(domain=NonNegativeReals,
-                                       initialize=m.tank_max - m.min_inventory,
-                                       bounds=(m.tank_min, m.max_inventory),
+                                       initialize=m.fs.salt_amount - m.min_inventory,
+                                    #    bounds=(m.tank_min, m.max_inventory),
                                        units=pyunits.metric_ton,
                                        doc="Cold salt inventory at the end of time period")
 
@@ -189,15 +194,15 @@ def create_usc_model(m=None, pmin=None, pmax=None):
                 (b.hxc_flow_mass - b.hxd_flow_mass) # in metric_ton/h
             )*scaling_const
         )
-    if not constant_salt:
-        @m.fs.Constraint(doc="Hot salt inventory balance at the end of time period")
-        def constraint_salt_inventory_cold(b):
-            return (
-                scaling_const*b.salt_inventory_cold == (
-                    b.previous_salt_inventory_cold +
-                    (b.hxd_flow_mass - b.hxc_flow_mass) # in metric_ton/h
-                )*scaling_const
-            )
+    # if not constant_salt:
+    #     @m.fs.Constraint(doc="Hot salt inventory balance at the end of time period")
+    #     def constraint_salt_inventory_cold(b):
+    #         return (
+    #             scaling_const*b.salt_inventory_cold == (
+    #                 b.previous_salt_inventory_cold +
+    #                 (b.hxd_flow_mass - b.hxc_flow_mass) # in metric_ton/h
+    #             )*scaling_const
+    #         )
 
     @m.fs.Constraint(doc="Maximum salt inventory at any time")
     def constraint_salt_inventory(b):
@@ -207,6 +212,15 @@ def create_usc_model(m=None, pmin=None, pmax=None):
                 b.salt_inventory_cold
             )*scaling_const
         )
+
+    # @m.fs.Constraint(doc="Maximum salt inventory at any time")
+    # def constraint_previous_salt_inventory(b):
+    #     return (
+    #         scaling_const*b.salt_amount == (
+    #             b.previous_salt_inventory_hot +
+    #             b.previous_salt_inventory_cold
+    #         )*scaling_const
+    #     )
 
     @m.fs.Constraint(doc="Max salt flow to hxd based on available hot salt")
     def constraint_salt_maxflow_hot(b):
@@ -222,52 +236,55 @@ def create_usc_model(m=None, pmin=None, pmax=None):
 def usc_unfix_dof(m):
 
     # Unfix data fixed during during initialization
-    if use_surrogate:
-        m.fs.boiler_flow.unfix()
-        m.fs.steam_to_storage.unfix()
-        m.fs.steam_to_discharge.unfix()
-    else:
-        m.fs.boiler.inlet.flow_mol.unfix()
-        m.fs.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
-        m.fs.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
+    # if use_surrogate:
+    #     m.fs.boiler_flow.unfix()
+    #     m.fs.steam_to_storage.unfix()
+    #     m.fs.steam_to_discharge.unfix()
+    # else:
+    m.fs.boiler.inlet.flow_mol.unfix()
+    # m.fs.ess_charge_split.split_fraction[0, "to_hxc"].unfix()
+    # m.fs.ess_discharge_split.split_fraction[0, "to_hxd"].unfix()
 
-    if not constant_salt:
-        m.fs.salt_amount.unfix()
+    # if not constant_salt:
+    #     m.fs.salt_amount.unfix()
 
     for charge_hxc in [m.fs.hxc]:
         charge_hxc.shell_inlet.unfix()
         charge_hxc.tube_inlet.flow_mass.unfix()
-        charge_hxc.area.unfix()
-        charge_hxc.tube_outlet.temperature[0].unfix()
+        # charge_hxc.area.unfix()
+        # charge_hxc.tube_outlet.temperature[0].unfix()
 
     for discharge_hxd in [m.fs.hxd]:
         discharge_hxd.tube_inlet.unfix()
         discharge_hxd.shell_inlet.flow_mass.unfix()
-        discharge_hxd.area.unfix()
-        discharge_hxd.shell_inlet.temperature[0].unfix()
+        # discharge_hxd.area.unfix()
+        # discharge_hxd.shell_inlet.temperature[0].unfix()
 
     # Unfix hx pump pressure
     m.fs.hx_pump.outlet.pressure[0].unfix()
+    m.fs.previous_power.unfix()
+    m.fs.previous_salt_inventory_cold.unfix()
+    m.fs.previous_salt_inventory_hot.unfix()
+    m.fs.salt_inventory_hot.unfix()
+    # # Fix storage heat exchangers area and salt temperatures
+    # cold_salt_temperature = design_data_dict["cold_salt_temperature"]*pyunits.K
+    # m.fs.hxd.shell_outlet.temperature[0].fix(cold_salt_temperature)
 
-    # Fix storage heat exchangers area and salt temperatures
-    cold_salt_temperature = design_data_dict["cold_salt_temperature"]*pyunits.K
-    m.fs.hxd.shell_outlet.temperature[0].fix(cold_salt_temperature)
-
-    if fix_design:
-        m.fs.hxc.area.fix(m.hxc_area)
-        m.fs.hxd.area.fix(m.hxd_area)
-        # # 828.596282
-        m.fs.hxc.tube_outlet.temperature[0].fix(828.59)
-        m.fs.hxd.shell_inlet.temperature[0].fix(828.59)
-        # m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
-        #     expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
-        # )
-        # m.fs.charge_hot_salt_storage_ub_eq = pyo.Constraint(
-        #     expr=m.fs.hxc.tube_outlet.temperature[0] <= 828.59
-        # )
-        # m.fs.discharge_hot_salt_storage_ub_eq = pyo.Constraint(
-        #     expr=m.fs.hxd.shell_inlet.temperature[0] == m.fs.hxc.tube_outlet.temperature[0]
-        # )
+    # if fix_design:
+    #     m.fs.hxc.area.fix(m.hxc_area)
+    #     m.fs.hxd.area.fix(m.hxd_area)
+    #     # # 828.596282
+    #     m.fs.hxc.tube_outlet.temperature[0].fix(828.59)
+    #     m.fs.hxd.shell_inlet.temperature[0].fix(828.59)
+    #     # m.fs.charge_hot_salt_storage_lb_eq = pyo.Constraint(
+    #     #     expr=m.fs.hxc.tube_outlet.temperature[0] >= 828
+    #     # )
+    #     # m.fs.charge_hot_salt_storage_ub_eq = pyo.Constraint(
+    #     #     expr=m.fs.hxc.tube_outlet.temperature[0] <= 828.59
+    #     # )
+    #     # m.fs.discharge_hot_salt_storage_ub_eq = pyo.Constraint(
+    #     #     expr=m.fs.hxd.shell_inlet.temperature[0] == m.fs.hxc.tube_outlet.temperature[0]
+    #     # )
 
 
 def usc_custom_init(m):
@@ -289,30 +306,33 @@ def usc_custom_init(m):
     # integrated model with a sequential initialization and custom
     # routines, (5) add cost correlations, and (6) initialize cost
     # equations.
-    if use_surrogate:
-        blk = usc_with_tes.create_integrated_model(method=method)
-        add_data(blk)
-    else:
-        blk = usc.build_plant_model()
-        usc.initialize(blk)
+    # if use_surrogate:
+    #     blk = usc_with_tes.create_integrated_model(method=method)
+    #     add_data(blk)
+    # else:
+    blk = usc.build_plant_model()
+    usc.initialize(blk)
 
-        # Add data from .json file
-        add_data(blk)
+    # Add data from .json file
+    add_data(blk)
 
-        blk = usc_with_tes.create_integrated_model(blk, method=method)
+    blk = usc_with_tes.create_integrated_model(blk, method=method)
 
     usc_with_tes.set_model_input(blk)
     usc_with_tes.set_scaling_factors(blk)
     usc_with_tes.initialize(blk)
     blk = usc_with_tes.build_costing(blk, optarg={"max_iter": 300})
     usc_with_tes.initialize_with_costing(blk, solver=solver)
-    usc_with_tes.add_bounds(blk)
+    # usc_with_tes.add_bounds(blk)
 
     # Set lower and upper bounds to power produced by power plant and
     # charge and discharge storage heat duty
     blk.pmin = design_data_dict["plant_min_power"]*pyunits.MW
+    blk.pmax = design_data_dict["plant_min_power"]*pyunits.MW
     blk.fs.plant_min_power_eq = pyo.Constraint(expr=blk.fs.plant_power_out[0] >= blk.pmin)
     blk.fs.plant_max_power_eq = pyo.Constraint(expr=blk.fs.plant_power_out[0] <= blk.pmax_plant)
+    blk.fs.net_plant_min_power_eq = pyo.Constraint(expr=blk.fs.net_power[0] >= blk.pmin)
+    blk.fs.net_plant_max_power_eq = pyo.Constraint(expr=blk.fs.net_power[0] <= blk.pmax_plant + blk.pmax_storage)
 
     # Set lower and upper bounds to charge and discharge heat
     # exchangers
@@ -321,16 +341,17 @@ def usc_custom_init(m):
     blk.fs.charge_storage_lb_eq = pyo.Constraint(expr=blk.fs.hxc_duty >= blk.min_storage_duty)
     blk.fs.charge_storage_ub_eq = pyo.Constraint(expr=blk.fs.hxc_duty <= blk.max_storage_duty)
     blk.fs.discharge_storage_lb_eq = pyo.Constraint(expr=blk.fs.hxd_duty >= blk.min_storage_duty)
-    blk.fs.discharge_storage_ub_eq = pyo.Constraint(expr=blk.fs.hxd_duty <= blk.max_storage_duty*0.99)
+    blk.fs.discharge_storage_ub_eq = pyo.Constraint(expr=blk.fs.hxd_duty <= blk.max_storage_duty)
 
     # Declare the plant power and salt inventory variables and
     # constraints
     blk.pmax = blk.pmax_plant + blk.pmax_storage
     blk.fs.previous_power = pyo.Var(domain=NonNegativeReals,
-                                    initialize=436,
-                                    bounds=(blk.pmin, blk.pmax),
+                                    initialize=431,
+                                    # bounds=(blk.pmin, blk.pmax),
                                     units=pyunits.MW,
                                     doc="Previous period power")
+    blk.fs.previous_power.fix(431*pyunits.MW)
     @blk.fs.Constraint(doc="Plant ramping down constraint")
     def constraint_ramp_down(b):
         return (b.previous_power - blk.ramp_rate) <= b.plant_power_out[0]
@@ -341,22 +362,22 @@ def usc_custom_init(m):
 
     blk.fs.previous_salt_inventory_hot = pyo.Var(domain=NonNegativeReals,
                                                  initialize=blk.min_inventory,
-                                                 bounds=(blk.tank_min, blk.max_inventory),
+                                                #  bounds=(blk.tank_min, blk.max_inventory),
                                                  units=pyunits.metric_ton,
                                                  doc="Hot salt at the beginning of time period")
     blk.fs.salt_inventory_hot = pyo.Var(domain=NonNegativeReals,
                                         initialize=blk.min_inventory,
-                                        bounds=(blk.tank_min, blk.max_inventory),
+                                        # bounds=(blk.tank_min, blk.max_inventory),
                                         units=pyunits.metric_ton,
                                         doc="Hot salt inventory at the end of time period")
     blk.fs.previous_salt_inventory_cold = pyo.Var(domain=NonNegativeReals,
-                                                  initialize=blk.tank_max - blk.min_inventory,
-                                                  bounds=(blk.tank_min, blk.max_inventory),
+                                                  initialize=blk.fs.salt_amount - blk.min_inventory,
+                                                #   bounds=(blk.tank_min, blk.max_inventory),
                                                   units=pyunits.metric_ton,
                                                   doc="Cold salt at the beginning of time period")
     blk.fs.salt_inventory_cold = pyo.Var(domain=NonNegativeReals,
-                                         initialize=blk.tank_max - blk.min_inventory,
-                                         bounds=(blk.tank_min, blk.max_inventory),
+                                         initialize=blk.fs.salt_amount - blk.min_inventory,
+                                        #  bounds=(blk.tank_min, blk.max_inventory),
                                          units=pyunits.metric_ton,
                                          doc="Cold salt inventory at the end of time period")
 
@@ -364,6 +385,10 @@ def usc_custom_init(m):
                                              to_units=pyunits.metric_ton/pyunits.hour)
     blk.fs.hxd_flow_mass = pyo.units.convert(blk.fs.hxd.shell_inlet.flow_mass[0],
                                              to_units=pyunits.metric_ton/pyunits.hour)
+    blk.fs.previous_salt_inventory_cold.fix()
+    blk.fs.previous_salt_inventory_hot.fix()
+    blk.fs.hxd.shell_inlet.flow_mass.unfix()
+    blk.fs.salt_inventory_hot.fix()
     @blk.fs.Constraint(doc="Inventory balance at the end of time period")
     def constraint_salt_inventory_hot(b):
         return (
@@ -372,15 +397,18 @@ def usc_custom_init(m):
                 (b.hxc_flow_mass - b.hxd_flow_mass) # in metric_ton/hour
             )*scaling_const
         )
-    if not constant_salt:
-        @blk.fs.Constraint(doc="Inventory balance at the end of time period")
-        def constraint_salt_inventory_cold(b):
-            return (
-                scaling_const*b.salt_inventory_cold == (
-                    b.previous_salt_inventory_cold +
-                    (b.hxd_flow_mass - b.hxc_flow_mass) # in metric_ton/hour
-                )*scaling_const
-            )
+    # calculate_variable_from_constraint(blk.fs.salt_inventory_hot,
+    #                                    blk.fs.constraint_salt_inventory_hot)
+
+    # if not constant_salt:
+    #     @blk.fs.Constraint(doc="Inventory balance at the end of time period")
+    #     def constraint_salt_inventory_cold(b):
+    #         return (
+    #             scaling_const*b.salt_inventory_cold == (
+    #                 b.previous_salt_inventory_cold +
+    #                 (b.hxd_flow_mass - b.hxc_flow_mass) # in metric_ton/hour
+    #             )*scaling_const
+    #         )
 
     @blk.fs.Constraint(doc="Maximum salt inventory at any time")
     def constraint_salt_inventory(b):
@@ -390,6 +418,22 @@ def usc_custom_init(m):
                 b.salt_inventory_cold
             )*scaling_const
         )
+    calculate_variable_from_constraint(blk.fs.salt_inventory_cold,
+                                       blk.fs.constraint_salt_inventory)
+
+    # @blk.fs.Constraint(doc="Maximum salt inventory at any time")
+    # def constraint_previous_salt_inventory(b):
+    #     return (
+    #         scaling_const*b.salt_amount == (
+    #             b.previous_salt_inventory_hot +
+    #             b.previous_salt_inventory_cold
+    #         )*scaling_const
+    #     )
+
+    # @blk.Constraint()
+    # def rule_periodic_variable_pair(b):
+    #     return (b.fs.salt_inventory_hot ==
+    #             b.fs.previous_salt_inventory_hot)
 
     @blk.fs.Constraint(doc="Max salt flow to hxd based on available hot salt")
     def constraint_salt_maxflow_hot(b):
@@ -403,8 +447,13 @@ def usc_custom_init(m):
     print("  ")
     print("  ")
     print("I WAS HERE")
+    print("Hot salt level", value(blk.fs.salt_inventory_hot))
+    print("Previous Hot salt level", value(blk.fs.previous_salt_inventory_hot))
+    print("Cold salt level", value(blk.fs.salt_inventory_cold))
+    print("Previous Cold salt level", value(blk.fs.previous_salt_inventory_cold))
     print("  ")
     print("  ")
+    # assert False
     init_model = to_json(blk, return_dict=True)
     from_json(m, sd=init_model)
     return
@@ -418,7 +467,7 @@ def get_usc_link_variable_pairs(b1, b2):
     """
     return [
         (b1.fs.salt_inventory_hot, b2.fs.previous_salt_inventory_hot),
-        (b1.fs.salt_inventory_cold, b2.fs.previous_salt_inventory_cold),
+        # (b1.fs.salt_inventory_cold, b2.fs.previous_salt_inventory_cold),
         (b1.fs.plant_power_out[0], b2.fs.previous_power)
     ]
 
