@@ -608,7 +608,7 @@ def set_model_input(m):
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
     # optimization
-    m.fs.hxc.tube_inlet.flow_mass.fix(50) # 315
+    m.fs.hxc.tube_inlet.flow_mass.fix(48) # 315
     # m.fs.hxc.tube_inlet.flow_mass.fix(315) # 315
     m.fs.hxc.tube_inlet.temperature.fix(513.15)
     m.fs.hxc.tube_inlet.pressure.fix(101325)

@@ -550,6 +550,7 @@ def run_pricetaker_analysis(nweeks=None,
                         options={
                             "max_iter": 0,
                             "linear_solver": "ma57",
+                            "bound_push": 1e-6,
                             # "halt_on_ampl_error": "yes"
                         })
     print("  ")
@@ -559,13 +560,13 @@ def run_pricetaker_analysis(nweeks=None,
     for i in lrs:
         print(i.name)
     # assert False
-    milp_solver =  pyo.SolverFactory('gurobi')
-    dh = DegeneracyHunter(m, solver=milp_solver)
+    # milp_solver =  pyo.SolverFactory('gurobi')
+    # dh = DegeneracyHunter(m, solver=milp_solver)
 
-    print("  ")
-    print("  ")
-    print("Print out all constraints with residuals larger than 0.1")
-    dh.check_residuals(tol=0.1)
+    # print("  ")
+    # print("  ")
+    # print("Print out all constraints with residuals larger than 0.1")
+    # dh.check_residuals(tol=0.1)
 
     # print("  ")
     # print("  ")
@@ -974,7 +975,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-2
+        scaling_obj = 1e-1
     print()
     print('scaling_obj:', scaling_obj)
 
