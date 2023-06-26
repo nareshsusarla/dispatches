@@ -55,8 +55,8 @@ from dispatches.case_studies.fossil_case.ultra_supercritical_plant import (
     ultra_supercritical_powerplant as usc)
 
 use_surrogate = False
-constant_salt = True
-fix_design = True
+constant_salt = False
+fix_design = False
 
 # Import integrated ultrasupercritical power plant model. Also,
 # include the data path for the model
@@ -144,7 +144,6 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     m.fs.charge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxc_duty <= m.max_storage_duty)
     m.fs.discharge_storage_lb_eq = pyo.Constraint(expr=m.fs.hxd_duty >= m.min_storage_duty)
     m.fs.discharge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxd_duty <= m.max_storage_duty*0.99)
-    # m.fs.discharge_deltaT_lb_eq = pyo.Constraint(expr=m.fs.hxd.delta_temperature_in[0] >= 1)
 
     # Add coupling variables
     m.fs.previous_power = pyo.Var(domain=NonNegativeReals,
