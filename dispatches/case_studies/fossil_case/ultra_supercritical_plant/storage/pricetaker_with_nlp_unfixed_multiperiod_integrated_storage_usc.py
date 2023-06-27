@@ -40,7 +40,7 @@ from pyomo.repn.plugins.nl_writer import _activate_nl_writer_version
 from pyomo.util.calc_var_value import calculate_variable_from_constraint
 from pyomo.util.infeasible import (log_infeasible_constraints,
                                    log_close_to_bounds)
-
+import idaes.core.util.scaling as iscale
 # Import multiperiod model
 from nlp_multiperiod_usc_pricetaker_unfixed_area import create_nlp_multiperiod_usc_model
 
@@ -188,35 +188,49 @@ def add_storage_hx_capital_cost(m):
             flowsheet_costing_block=m.costing,
             costing_method=SSLWCostingData.cost_heat_exchanger
         )
-
-    m.storage_hx_capital_cost = pyo.Var(initialize=1e3,
-                                        bounds=(0, 1e6),
+    # m.storage_hx_capital_cost = pyo.Param(initialize=6.7978,
+    #                                     # bounds=(0, 1e2),
+    #                                     doc="Storage heat exchangers capital cost in $/h")
+    m.storage_hx_capital_cost = pyo.Var(initialize=6.7978,
+                                        # bounds=(0, 1e2),
                                         doc="Storage heat exchangers capital cost in $/h")
     def rule_storage_hx_capital_cost(b):
-        return b.storage_hx_capital_cost == (
+        return (b.storage_hx_capital_cost == (
             (b.period[1].fs.hxc.costing.capital_cost +
-             b.period[1].fs.hxd.costing.capital_cost) # heat exchangers cost
-        )/(b.period[1].fs.num_of_years*365*24)
+             b.period[1].fs.hxd.costing.capital_cost)/(b.period[1].fs.num_of_years*365*24) # heat exchangers cost
+        ))
     m.eq_storage_hx_capital_cost = pyo.Constraint(rule=rule_storage_hx_capital_cost)
 
-    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.base_cost_per_unit,
-                                       m.period[1].fs.hxc.costing.base_cost_per_unit_eq)
-    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.base_cost_per_unit,
-                                       m.period[1].fs.hxd.costing.base_cost_per_unit_eq)
-    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.material_factor,
-                                       m.period[1].fs.hxc.costing.hx_material_eqn)
-    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.material_factor,
-                                       m.period[1].fs.hxd.costing.hx_material_eqn)
-    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.pressure_factor,
-                                       m.period[1].fs.hxc.costing.p_factor_eq)
-    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.pressure_factor,
-                                       m.period[1].fs.hxd.costing.p_factor_eq)
-    calculate_variable_from_constraint(m.period[1].fs.hxc.costing.capital_cost,
-                                       m.period[1].fs.hxc.costing.capital_cost_constraint)
-    calculate_variable_from_constraint(m.period[1].fs.hxd.costing.capital_cost,
-                                       m.period[1].fs.hxd.costing.capital_cost_constraint)
     calculate_variable_from_constraint(m.storage_hx_capital_cost,
                                        m.eq_storage_hx_capital_cost)
+    iscale.constraint_scaling_transform(m.eq_storage_hx_capital_cost, 1e-4)
+    m.eq_storage_hx_capital_cost.pprint()
+    print("cost before initializing", value(m.storage_hx_capital_cost))
+    # assert False
+    for unit_i in [m.period[1].fs.hxc, m.period[1].fs.hxd]:
+        calculate_variable_from_constraint(unit_i.costing.base_cost_per_unit,
+                                           unit_i.costing.base_cost_per_unit_eq)
+        calculate_variable_from_constraint(unit_i.costing.material_factor,
+                                           unit_i.costing.hx_material_eqn)
+        calculate_variable_from_constraint(unit_i.costing.pressure_factor,
+                                           unit_i.costing.p_factor_eq)
+        calculate_variable_from_constraint(unit_i.costing.capital_cost,
+                                           unit_i.costing.capital_cost_constraint)
+        iscale.constraint_scaling_transform(unit_i.costing.base_cost_per_unit_eq, 1e0)
+        iscale.constraint_scaling_transform(unit_i.costing.hx_material_eqn, 1e1)
+        iscale.constraint_scaling_transform(unit_i.costing.p_factor_eq, 1e1)
+        iscale.constraint_scaling_transform(unit_i.costing.capital_cost_constraint, 1e-4)
+
+    calculate_variable_from_constraint(m.storage_hx_capital_cost,
+                                       m.eq_storage_hx_capital_cost)
+    iscale.constraint_scaling_transform(m.eq_storage_hx_capital_cost, 1e-4)
+    m.storage_hx_capital_cost.fix(value(m.storage_hx_capital_cost))
+    m.period[1].fs.hxc.costing.deactivate()
+    m.period[1].fs.hxd.costing.deactivate()
+    m.eq_storage_hx_capital_cost.deactivate()
+    # m.eq_storage_hx_capital_cost.pprint()
+    # print("cost after initializing", value(m.storage_hx_capital_cost))
+    # assert False
 
 
 def add_storage_salt_tank_cost(m):
@@ -250,11 +264,11 @@ def add_storage_salt_tank_cost(m):
     m.no_of_tanks = pyo.Param(initialize=2,
                               doc='Number of tank for storage material')
     m.tank_volume = pyo.Var(initialize=3500,
-                            bounds=(1, 5000),
+                            # bounds=(1, 5000),
                             units=pyunits.m**3,
                             doc="Volume of the Salt Tank with 10% excess capacity")
     m.tank_diameter = pyo.Var(initialize=1.0,
-                              bounds=(0.5, 40),
+                            #   bounds=(0.5, 40),
                               units=pyunits.m,
                               doc="Diameter of the salt tank")
     m.tank_height = pyo.Var(initialize=1.0,
@@ -262,15 +276,19 @@ def add_storage_salt_tank_cost(m):
                             units=pyunits.m,
                             doc="Length of the salt tank in m")
     m.tank_surf_area = pyo.Var(initialize=1000,
-                               bounds=(1, 5000),
+                            #    bounds=(1, 5000),
                                units=pyunits.m**2,
                                doc="Surface area of salt tank")
     m.tank_material_cost = pyo.Var(initialize=1e3,
-                                   bounds=(0, 1e4))
+                                #    bounds=(0, 1e4)
+                                   )
     m.tank_insulation_cost = pyo.Var(initialize=1e3,
-                                     bounds=(0, 1e4))
+                                    #  bounds=(0, 1e4)
+                                     )
     m.tank_foundation_cost = pyo.Var(initialize=1e3,
-                                     bounds=(0, 1e4))
+                                    #  bounds=(0, 1e4)
+                                     )
+                                     
 
     def rule_salt_tank_volume(b):
         return b.tank_volume == (
@@ -301,30 +319,27 @@ def add_storage_salt_tank_cost(m):
     calculate_variable_from_constraint(m.tank_surf_area,
                                        m.eq_tank_surf_area)
     def rule_tank_material_cost(b):
-        return m.tank_material_cost == (
+        return (m.tank_material_cost*(b.period[1].fs.num_of_years*365*24) == (
             (b.data_tank_material_cost*b.tank_material_density*
-             b.tank_surf_area*b.tank_thickness)/
-            (b.period[1].fs.num_of_years*365*24)
+             b.tank_surf_area*b.tank_thickness))
         )
     m.eq_tank_material_cost = pyo.Constraint(rule=rule_tank_material_cost,
                                              doc="Cost of tank material")
     calculate_variable_from_constraint(m.tank_material_cost,
                                        m.eq_tank_material_cost)
     def rule_tank_foundation_cost(b):
-        return m.tank_foundation_cost == (
+        return (m.tank_foundation_cost*(b.period[1].fs.num_of_years*365*24) == (
             (b.data_tank_foundation_cost*
-             np.pi*b.tank_diameter**2/4)/
-            (b.period[1].fs.num_of_years*365*24)
+             np.pi*b.tank_diameter**2/4))
         )
     m.eq_tank_foundation_cost = pyo.Constraint(rule=rule_tank_foundation_cost)
 
     calculate_variable_from_constraint(m.tank_foundation_cost,
                                        m.eq_tank_foundation_cost)
     def rule_tank_insulation_cost(b):
-        return m.tank_insulation_cost == (
-            b.data_tank_insulation_cost*m.tank_surf_area/
-            (b.period[1].fs.num_of_years*365*24)
-        )
+        return (m.tank_insulation_cost*(b.period[1].fs.num_of_years*365*24) == (
+            b.data_tank_insulation_cost*m.tank_surf_area)
+            )
     m.eq_tank_insulation_cost = pyo.Constraint(rule=rule_tank_insulation_cost)
     calculate_variable_from_constraint(m.tank_insulation_cost,
                                        m.eq_tank_insulation_cost)
@@ -338,6 +353,14 @@ def add_storage_salt_tank_cost(m):
         )
     m.salt_tank_capital_cost = pyo.Expression(rule=rule_salt_tank_capital_cost,
                                               doc="Capital cost for Solar salt tank")
+
+    iscale.constraint_scaling_transform(m.eq_tank_volume, 1e-1)
+    iscale.constraint_scaling_transform(m.eq_tank_diameter, 1e1)
+    iscale.constraint_scaling_transform(m.eq_tank_height, 1e0)
+    iscale.constraint_scaling_transform(m.eq_tank_surf_area, 1e0)
+    iscale.constraint_scaling_transform(m.eq_tank_material_cost, 1e-4)
+    iscale.constraint_scaling_transform(m.eq_tank_foundation_cost, 1e-4)
+    iscale.constraint_scaling_transform(m.eq_tank_insulation_cost, 1e-4)
 
 
 def run_pricetaker_analysis(nweeks=None,
@@ -366,17 +389,24 @@ def run_pricetaker_analysis(nweeks=None,
 
     @m.Constraint()
     def rule_periodic_variable_pair(b):
-        return (b.period[n_time_points].fs.salt_inventory_hot ==
-                b.period[1].fs.previous_salt_inventory_hot)
+        return (b.period[1].fs.previous_salt_inventory_hot ==
+                b.period[n_time_points].fs.salt_inventory_hot)
+        # return (b.period[n_time_points].fs.salt_inventory_hot ==
+        #         b.period[1].fs.previous_salt_inventory_hot)
 
-    # calculate_variable_from_constraint(m.period[n_time_points].fs.salt_inventory_hot,
-    #                                    m.rule_periodic_variable_pair)
+    iscale.constraint_scaling_transform(m.rule_periodic_variable_pair, 1e-1)
+    calculate_variable_from_constraint(m.period[n_time_points].fs.salt_inventory_hot,
+                                       m.rule_periodic_variable_pair)
+
     ##################################################################
     # Add nonanticipativity constraints
     ##################################################################
     m.hours_set = RangeSet(1, n_time_points)
     m.hours_set2 = RangeSet(1, n_time_points - 1)
 
+    for h in m.hours_set2:
+        iscale.constraint_scaling_transform(m.link_constraints[h].link_constraints[0], 1e-1)
+        iscale.constraint_scaling_transform(m.link_constraints[h].link_constraints[1], 1e-1)
     # if not fix_design:
     #     # Add nonanticipativaty constraints for charge and
     #     # discharge areas
@@ -460,6 +490,23 @@ def run_pricetaker_analysis(nweeks=None,
     m.period[1].fs.previous_power.fix()
     m.period[1].fs.previous_salt_inventory_hot.fix()
     m.period[1].fs.previous_salt_inventory_cold.fix()
+    print("Previous Power", value(m.period[1].fs.previous_power))
+    for blk in blks:
+        iscale.constraint_scaling_transform(blk.fs.eq_turbine_temperature_in, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.plant_min_power_eq, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.plant_max_power_eq, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.net_plant_max_power_eq, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.charge_storage_lb_eq, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.charge_storage_ub_eq, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.discharge_storage_lb_eq, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.discharge_storage_ub_eq, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.constraint_ramp_down, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.constraint_ramp_up, 1e-1)
+        iscale.constraint_scaling_transform(blk.fs.constraint_salt_inventory_hot, 1e-2)
+        iscale.constraint_scaling_transform(blk.fs.constraint_salt_inventory, 1e2)
+        iscale.constraint_scaling_transform(blk.fs.constraint_salt_maxflow_hot, 1e-2)
+        iscale.constraint_scaling_transform(blk.fs.constraint_salt_maxflow_cold, 1e-2)
+
     # if tank_status == "hot_empty":
     #     # @m.Constraint()
     #     # def tank_init_amount(b):
@@ -513,11 +560,11 @@ def run_pricetaker_analysis(nweeks=None,
     for i in lrs:
         print(i.name)
 
-    # print("  ")
-    # print("  ")
-    # lst_c = list_unscaled_constraints(m)
-    # for i in lst_c:
-    #     print(i.name)
+    print("  ")
+    print("  ")
+    lst_c = list_unscaled_constraints(m)
+    for i in lst_c:
+        print(i.name)
 
     print("Print constraint variables for residuals")
     m.link_constraints[1].link_constraints[0].pprint()
@@ -560,14 +607,30 @@ def run_pricetaker_analysis(nweeks=None,
     for i in lrs:
         print(i.name)
     # assert False
-    # milp_solver =  pyo.SolverFactory('gurobi')
-    # dh = DegeneracyHunter(m, solver=milp_solver)
+    milp_solver =  pyo.SolverFactory('gurobi')
+    dh = DegeneracyHunter(m, solver=milp_solver)
 
-    # print("  ")
-    # print("  ")
-    # print("Print out all constraints with residuals larger than 0.1")
-    # dh.check_residuals(tol=0.1)
+    print("  ")
+    print("  ")
+    print("Print out all constraints with residuals larger than 0.1")
+    dh.check_residuals(tol=1e-5)
 
+    print("  ")
+    print("  ")
+    print("Listing Extreme jacobian Rows")
+    print("  ")
+    print("  ")
+    lst_r = extreme_jacobian_rows(m, scaled=True)
+    for i in lst_r:
+        print(i[0], i[1].name)
+    print("  ")
+    print("  ")
+    # print("Listing Extreme jacobian Columns")
+    # lst_cv = extreme_jacobian_columns(m, scaled=True)
+    # for i in lst_cv:
+    #     print(i[0], i[1].name)
+    print("  ")
+    print("  ")
     # print("  ")
     # print("  ")
     # print("Which variables are within their bounds by a given tolerance?")
@@ -580,7 +643,7 @@ def run_pricetaker_analysis(nweeks=None,
                         tee=True,
                         symbolic_solver_labels=True,
                         options={
-                            "max_iter": 200,
+                            "max_iter": 300,
                             "linear_solver": "ma57",
                             "halt_on_ampl_error": "yes"
                         })
@@ -625,8 +688,8 @@ def run_pricetaker_analysis(nweeks=None,
         fuel_cost.append(pyo.value(blk.fs.fuel_cost))
         plant_operating_cost.append(pyo.value(blk.fs.plant_operating_cost))
         salt_cost.append(pyo.value(m.salt_purchase_cost))
-        # tank_cost.append(pyo.value(m.no_of_tanks*m.salt_tank_capital_cost))
-        # hx_cost.append(pyo.value(m.storage_hx_capital_cost))
+        tank_cost.append(pyo.value(m.no_of_tanks*m.salt_tank_capital_cost))
+        hx_cost.append(pyo.value(m.storage_hx_capital_cost))
         total_inventory.append(pyo.value(m.period[1].fs.salt_amount))
 
         if use_surrogate:
@@ -649,8 +712,8 @@ def run_pricetaker_analysis(nweeks=None,
         "fuel_cost": fuel_cost,
         "plant_operating_cost": plant_operating_cost,
         "salt_cost": salt_cost,
-        # "tank_cost": tank_cost,
-        # "hx_cost": hx_cost,
+        "tank_cost": tank_cost,
+        "hx_cost": hx_cost,
         "lmp": lmp
     }
     )
@@ -698,19 +761,23 @@ def print_results(m, blks, results):
         print('  Fuel cost ($/h): {:.4f}'.format(pyo.value(blk.fs.fuel_cost)))
         # print(' Plant capital cost ($/h): {:.4f}'.format(pyo.value(blk.fs.plant_capital_cost)))
         print('  Plant operating cost ($/h): {:.4f}'.format(pyo.value(blk.fs.plant_operating_cost)))
-        # print('  Storage HX capital cost ($/h): {:.4f}'.format(
-        #     pyo.value(m.storage_hx_capital_cost)))
+        print('  Storage HXC capital cost ($/h): {:.4f}'.format(
+            pyo.value(m.period[1].fs.hxc.costing.capital_cost)))
+        print('  Storage HXD capital cost ($/h): {:.4f}'.format(
+            pyo.value(m.period[1].fs.hxd.costing.capital_cost)))
+        print('  Storage HX capital cost ($/h): {:.4f}'.format(
+            pyo.value(m.storage_hx_capital_cost)))
         print('  Storage purchase salt capital cost ($/h): {:.4f}'.format(
             pyo.value(m.salt_purchase_cost)))
-        # print('  Storage tank salt capital cost ($/h): {:.4f}'.format(
-        #     pyo.value(m.salt_tank_capital_cost)))
-        # print(' Salt tank')
-        # print('  Volume: {:.4f}'.format(pyo.value(m.tank_volume)))
-        # print('  Diameter: {:.4f}'.format(pyo.value(m.tank_diameter)))
-        # print('  Surf area: {:.4f}'.format(pyo.value(m.tank_surf_area)))
-        # print('  Insulation cost: {:.4f}'.format(pyo.value(m.tank_insulation_cost)))
-        # print('  Material cost: {:.4f}'.format(pyo.value(m.tank_material_cost)))
-        # print('  Foundation cost: {:.4f}'.format(pyo.value(m.tank_foundation_cost)))
+        print('  Storage tank salt capital cost ($/h): {:.4f}'.format(
+            pyo.value(m.salt_tank_capital_cost)))
+        print(' Salt tank')
+        print('  Volume: {:.4f}'.format(pyo.value(m.tank_volume)))
+        print('  Diameter: {:.4f}'.format(pyo.value(m.tank_diameter)))
+        print('  Surf area: {:.4f}'.format(pyo.value(m.tank_surf_area)))
+        print('  Insulation cost: {:.4f}'.format(pyo.value(m.tank_insulation_cost)))
+        print('  Material cost: {:.4f}'.format(pyo.value(m.tank_material_cost)))
+        print('  Foundation cost: {:.4f}'.format(pyo.value(m.tank_foundation_cost)))
         if use_surrogate:
             print(' Boiler flow mol (mol/s): {:.4f}'.format(pyo.value(blk.fs.boiler_flow[0])))
         else:
@@ -993,7 +1060,7 @@ if __name__ == '__main__':
         pmin = design_data_dict["plant_min_power"]*pyunits.MW
         pmax = design_data_dict["plant_max_power"]*pyunits.MW + pmax_storage
 
-    hours_per_day = 3
+    hours_per_day = 24
     ndays = 1
     nhours = hours_per_day*ndays
     nweeks = 1

@@ -260,7 +260,7 @@ def usc_unfix_dof(m):
         charge_hxc.shell_inlet.unfix()
         charge_hxc.tube_inlet.flow_mass.unfix()
         charge_hxc.area.unfix()
-        charge_hxc.tube_outlet.temperature[0].unfix()
+        # charge_hxc.tube_outlet.temperature[0].unfix()
 
     for discharge_hxd in [m.fs.hxd]:
         discharge_hxd.tube_inlet.unfix()
@@ -361,8 +361,8 @@ def usc_custom_init(m):
                                     # bounds=(blk.pmin, blk.pmax),
                                     units=pyunits.MW,
                                     doc="Previous period power")
-    # blk.fs.previous_power.fix(425.8765*pyunits.MW)
-    blk.fs.linking_power_eq = pyo.Constraint(expr=blk.fs.previous_power == blk.fs.plant_power_out[0.0])
+    blk.fs.previous_power.fix(426.30042950738044*pyunits.MW)
+    # blk.fs.linking_power_eq = pyo.Constraint(expr=blk.fs.previous_power == blk.fs.plant_power_out[0.0])
 
     @blk.fs.Constraint(doc="Plant ramping down constraint")
     def constraint_ramp_down(b):

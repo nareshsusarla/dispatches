@@ -232,7 +232,7 @@ def create_integrated_model(m, method=None):
             (2*m.fs.k_steel*b.h_steam +
              m.fs.tube_outer_dia*m.fs.log_tube_dia_ratio*b.h_salt*b.h_steam +
              m.fs.tube_dia_ratio*b.h_salt*2*m.fs.k_steel)
-        )*1e-5 == 2*m.fs.k_steel*b.h_salt*b.h_steam*1e-5)
+        ) == 2*m.fs.k_steel*b.h_salt*b.h_steam)
 
     # @m.fs.hxc.Constraint(m.fs.time,
     #                      doc="Overall heat transfer coefficient for hxc")
@@ -307,7 +307,7 @@ def create_integrated_model(m, method=None):
             (2*m.fs.k_steel*b.h_steam +
              m.fs.tube_outer_dia*m.fs.log_tube_dia_ratio*b.h_salt*b.h_steam +
              m.fs.tube_dia_ratio*b.h_salt*2*m.fs.k_steel)
-        )*1e-5 == 2*m.fs.k_steel*b.h_salt*b.h_steam*1e-5)
+        ) == 2*m.fs.k_steel*b.h_salt*b.h_steam)
 
     # @m.fs.hxd.Constraint(m.fs.time,
     #                      doc="Overall heat transfer coefficient for hxd")
@@ -514,7 +514,7 @@ def _make_constraints(m, method=None):
                                     bounds=(0, 1),
                                     doc="Cycle efficiency")
     def rule_cycle_efficiency(b):
-        return b.cycle_efficiency == (b.net_power[0]/b.coal_heat_duty)
+        return b.cycle_efficiency*b.coal_heat_duty == b.net_power[0]
     m.fs.eq_cycle_efficiency = pyo.Constraint(rule=rule_cycle_efficiency,
                                               doc="Cycle efficiency")
 
@@ -654,6 +654,7 @@ def set_scaling_factors(m):
     iscale.set_scaling_factor(m.fs.hxd.hot_side.properties_in[0.0].temperature, 1e-3)
     iscale.set_scaling_factor(m.fs.condenser.control_volume.properties_out[0.0].enth_mol, 1e-3)
     iscale.set_scaling_factor(m.fs.condenser.control_volume.properties_out[0.0].pressure, 1e-5)
+
     for i in RangeSet(9):
         iscale.set_scaling_factor(m.fs.fwh[1].hot_side.properties_out[0.0].enth_mol, 1e-3)
         iscale.set_scaling_factor(m.fs.fwh[1].hot_side.properties_out[0.0].pressure, 1e-5)
@@ -668,33 +669,93 @@ def set_scaling_factors(m):
     iscale.constraint_scaling_transform(m.fs.hxd.heat_transfer_equation[0.0], 1e-5)
     iscale.constraint_scaling_transform(m.fs.hxc.heat_transfer_equation[0.0], 1e-5)
 
-    iscale.constraint_scaling_transform(m.fs.constraint_out_pressure[0.0], 1e-5)
+    iscale.constraint_scaling_transform(m.fs.constraint_out_pressure[0.0], 1e-3)
     iscale.constraint_scaling_transform(m.fs.constraint_bfp_power[0.0], 1e-3)
     iscale.constraint_scaling_transform(m.fs.heatduty_cons[0.0], 1e-8)
     iscale.constraint_scaling_transform(m.fs.eq_turbine_temperature_out, 1e0)
     # iscale.constraint_scaling_transform(m.fs.eq_turbine_temperature_in, 1e0)
-    iscale.constraint_scaling_transform(m.fs.constraint_hxpump_presout[0.0], 1e-5)
+    iscale.constraint_scaling_transform(m.fs.constraint_hxpump_presout[0.0], 1e0)
     iscale.constraint_scaling_transform(m.fs.production_cons_with_storage[0.0], 1e0)
     iscale.constraint_scaling_transform(m.fs.eq_boiler_efficiency, 1e1)
     iscale.constraint_scaling_transform(m.fs.coal_heat_duty_eq, 1e-5)
-    iscale.constraint_scaling_transform(m.fs.eq_cycle_efficiency, 1e2)
+    iscale.constraint_scaling_transform(m.fs.eq_cycle_efficiency, 1e-5)
+
     for i in RangeSet(10):
         iscale.constraint_scaling_transform(m.fs.turbine_splitter[i].sum_split[0.0], 1e2)
+
     iscale.constraint_scaling_transform(m.fs.boiler.temperature_constraint[0.0], 1e0)
     iscale.constraint_scaling_transform(m.fs.reheater[1].temperature_constraint[0.0], 1e0)
     iscale.constraint_scaling_transform(m.fs.reheater[2].temperature_constraint[0.0], 1e0)
     iscale.constraint_scaling_transform(m.fs.condenser.cond_vaporfrac_constraint[0.0], 1e-5)
+
     for i in RangeSet(9):
-        iscale.constraint_scaling_transform(m.fs.fwh[i].fwh_vfrac_constraint[0.0], 1e-5)
+        iscale.constraint_scaling_transform(m.fs.fwh[i].heat_transfer_equation[0.0], 1e-4)
+        iscale.constraint_scaling_transform(m.fs.fwh[i].fwh_vfrac_constraint[0.0], 1e1)
         iscale.constraint_scaling_transform(m.fs.fwh[i].fwh_s2_delp_constraint[0.0], 1e-3)
         iscale.constraint_scaling_transform(m.fs.fwh[i].s1_delp_constraint[0.0], 1e-3)
+
+    iscale.constraint_scaling_transform(m.fs.fwh[1].fwh_vfrac_constraint[0.0], 1e-3)
+    iscale.constraint_scaling_transform(m.fs.ess_charge_split.flow_eqn[0.0, "to_hxc"], 1e-3)
+    iscale.constraint_scaling_transform(m.fs.ess_discharge_split.flow_eqn[0.0, "to_hxd"], 1e-3)
+    iscale.constraint_scaling_transform(m.fs.ess_charge_split.flow_eqn[0.0, "to_turbine"], 1e-3)
+    iscale.constraint_scaling_transform(m.fs.ess_discharge_split.flow_eqn[0.0, "to_fwh1"], 1e-3)
+    iscale.constraint_scaling_transform(m.fs.bfp.eq_pressure_ratio[0.0], 1e-5)
+    iscale.constraint_scaling_transform(m.fs.booster.eq_pressure_ratio[0.0], 1e-5)
     iscale.constraint_scaling_transform(m.fs.ess_charge_split.sum_split[0.0], 1e2)
     iscale.constraint_scaling_transform(m.fs.ess_discharge_split.sum_split[0.0], 1e2)
-    iscale.constraint_scaling_transform(m.fs.recycle_mixer.recyclemixer_pressure_constraint[0.0], 1e-5)
-    iscale.constraint_scaling_transform(m.fs.hxc.constraint_hxc_ohtc[0.0], 1e-5)
-    iscale.constraint_scaling_transform(m.fs.hxc.cold_side.properties_in[0.0].enthalpy_eq["Liq"], 1e-5)
-    iscale.constraint_scaling_transform(m.fs.hxc.cold_side.properties_out[0.0].enthalpy_eq["Liq"], 1e-5)
-    iscale.constraint_scaling_transform(m.fs.hxd.constraint_hxd_ohtc[0.0], 1e-5)
+    iscale.constraint_scaling_transform(m.fs.recycle_mixer.recyclemixer_pressure_constraint[0.0], 1e0)
+    iscale.constraint_scaling_transform(m.fs.recycle_mixer.energy_balance[0.0], 1e-3)
+    iscale.constraint_scaling_transform(m.fs.hxc.cold_side.properties_in[0.0].enthalpy_eq["Liq"], 1e0)
+    iscale.constraint_scaling_transform(m.fs.hxc.cold_side.properties_out[0.0].enthalpy_eq["Liq"], 1e0)
+    iscale.constraint_scaling_transform(m.fs.turbine_splitter[6].flow_eqn[0.0, "outlet_3"], 1e-3)
+
+    for i in RangeSet(8):
+        iscale.constraint_scaling_transform(m.fs.turbine_splitter[i].flow_eqn[0.0, "outlet_1"], 1e-3)
+        iscale.constraint_scaling_transform(m.fs.turbine_splitter[i].flow_eqn[0.0, "outlet_2"], 1e-3)
+
+    for unit_i in [m.fs.hxc, m.fs.hxd]:
+        iscale.constraint_scaling_transform(unit_i.cold_side.enthalpy_balances[0.0], 1e-4)
+        iscale.constraint_scaling_transform(unit_i.hot_side.enthalpy_balances[0.0], 1e-5)
+        iscale.constraint_scaling_transform(unit_i.cold_side.pressure_balance[0.0], 1e0)
+        iscale.constraint_scaling_transform(unit_i.hot_side.pressure_balance[0.0], 1e0)
+        iscale.constraint_scaling_transform(unit_i.unit_heat_balance[0.0], 1e-5)
+    # iscale.constraint_scaling_transform(unit_i.costing.base_cost_per_unit_eq, 1e-4)
+        # iscale.constraint_scaling_transform(unit_i.costing.hx_material_eqn, 1e1)
+        # iscale.constraint_scaling_transform(unit_i.costing.p_factor_eq, 1e1)
+        # iscale.constraint_scaling_transform(unit_i.costing.capital_cost_constraint, 1e-4)
+
+    iscale.constraint_scaling_transform(m.fs.hxc.constraint_hxc_ohtc[0.0], 1e-7)
+    iscale.constraint_scaling_transform(m.fs.hxd.constraint_hxd_ohtc[0.0], 1e-7)
+    iscale.constraint_scaling_transform(m.fs.hxc.hot_side.material_balances[0.0,"H2O"], 1e-2)
+    iscale.constraint_scaling_transform(m.fs.hxc.cold_side.material_balances[0.0,"Solar_Salt"], 1e-2)
+    iscale.constraint_scaling_transform(m.fs.hxd.hot_side.material_balances[0.0,"Solar_Salt"], 1e-2)
+    iscale.constraint_scaling_transform(m.fs.hxd.cold_side.material_balances[0.0,"H2O"], 1e-2)
+
+
+    for unit_j in [m.fs.hx_pump]:
+        iscale.constraint_scaling_transform(unit_j.ratioP_calculation[0.0], 1e-5)
+        iscale.constraint_scaling_transform(unit_j.fluid_work_calculation[0.0], 1e-5)
+        iscale.constraint_scaling_transform(unit_j.actual_work[0.0], 1e-5)
+        iscale.constraint_scaling_transform(unit_j.control_volume.material_balances[0.0,"H2O"], 1e-2)
+        iscale.constraint_scaling_transform(unit_j.control_volume.enthalpy_balances[0.0], 1e-4)
+        iscale.constraint_scaling_transform(unit_j.control_volume.pressure_balance[0.0], 1e-4)
+
+    for unit_j in [m.fs.es_turbine]:
+        iscale.set_scaling_factor(unit_j.control_volume.work, 1e-5)
+        iscale.constraint_scaling_transform(unit_j.eq_work[0.0], 1e-4)
+        iscale.constraint_scaling_transform(unit_j.eq_pressure_ratio[0.0], 1e-8)
+        iscale.constraint_scaling_transform(unit_j.control_volume.material_balances[0.0,"H2O"], 1e-2)
+        iscale.constraint_scaling_transform(unit_j.control_volume.enthalpy_balances[0.0], 1e-4)
+        iscale.constraint_scaling_transform(unit_j.control_volume.pressure_balance[0.0], 1e-4)
+
+    for arc_i in [m.fs.rh1_to_esscharge_expanded, m.fs.esscharge_to_turb3_expanded, m.fs.esscharge_to_hxc_expanded,
+                  m.fs.hxc_to_hxpump_expanded, m.fs.hxpump_to_recyclemix_expanded, m.fs.fwh9_to_recyclemix_expanded,
+                  m.fs.recyclemix_to_boiler_expanded, m.fs.condpump_to_essdisch_expanded, m.fs.essdisch_to_fwh1_expanded,
+                  m.fs.essdisch_to_hxd_expanded, m.fs.hxd_to_esturbine_expanded]:
+        iscale.constraint_scaling_transform(arc_i.enth_mol_equality[0.0], 1e-4)
+        iscale.constraint_scaling_transform(arc_i.flow_mol_equality[0.0], 1e-2)
+        iscale.constraint_scaling_transform(arc_i.pressure_equality[0.0], 1e-4)
+    
 
 
 def initialize(m,
@@ -844,7 +905,7 @@ def build_costing(m,
     #     )*(m.CE_index/575.4)
     # m.fs.eq_plant_cap_cost = pyo.Constraint(rule=rule_plant_cap_cost)
 
-    m.fs.plant_operating_cost = pyo.Var(initialize=1e4,
+    m.fs.plant_operating_cost = pyo.Var(initialize=1e3,
                                         bounds=(0, 1e6),
                                         doc="Plant variable and fixed operating cost [$/hour]")
     def rule_plant_op_cost(b):
@@ -853,6 +914,8 @@ def build_costing(m,
             (31754.7*b.plant_power_out[0]) # variable cost
         )*(m.CE_index/575.4)
     m.fs.eq_plant_op_cost = pyo.Constraint(rule=rule_plant_op_cost)
+    iscale.constraint_scaling_transform(m.fs.eq_fuel_cost, 1e-6)
+    iscale.constraint_scaling_transform(m.fs.eq_plant_op_cost, 1e-6)
 
     return m
 
@@ -862,15 +925,13 @@ def initialize_with_costing(m, solver=None):
 
     """
 
-    iscale.set_scaling_factor(m.fs.fuel_cost, 1e-5)
-    iscale.set_scaling_factor(m.fs.plant_operating_cost, 1e-5)
-    iscale.constraint_scaling_transform(m.fs.eq_fuel_cost, 1e-7)
-    iscale.constraint_scaling_transform(m.fs.eq_plant_op_cost, 1e-5)
-
     calculate_variable_from_constraint(m.fs.fuel_cost,
                                        m.fs.eq_fuel_cost)
     calculate_variable_from_constraint(m.fs.plant_operating_cost,
                                        m.fs.eq_plant_op_cost)
+
+    iscale.set_scaling_factor(m.fs.fuel_cost, 1e-2)
+    iscale.set_scaling_factor(m.fs.plant_operating_cost, 1e-2)
 
     res = solver.solve(m, tee=True, symbolic_solver_labels=True)
     print("Cost Initialization = ", res.solver.termination_condition)
@@ -1338,14 +1399,14 @@ def model_analysis(m,
                                            to_units=pyunits.metric_ton/pyunits.hour)
     m.fs.hxd_flow_mass = pyo.units.convert(m.fs.hxd.shell_inlet.flow_mass[0],
                                            to_units=pyunits.metric_ton/pyunits.hour)
-    scaling_const = 1e-3
+    # scaling_const = 1e-3
     @m.fs.Constraint(doc="Inventory balance at the end of the time period")
     def constraint_salt_inventory_hot(b):
         return (
-            scaling_const*b.salt_inventory_hot[0] == (
+            b.salt_inventory_hot[0] == (
                 b.previous_salt_inventory_hot[0] +
                 (b.hxc_flow_mass - b.hxd_flow_mass) # in mton/h
-            )*scaling_const
+            )
         )
 
     calculate_variable_from_constraint(m.fs.salt_inventory_hot[0],
@@ -1355,16 +1416,16 @@ def model_analysis(m,
         @m.fs.Constraint(doc="Inventory balance at the end of the time period")
         def constraint_salt_inventory_cold(b):
             return (
-                scaling_const*b.salt_inventory_cold[0] == (
+                b.salt_inventory_cold[0] == (
                     b.previous_salt_inventory_cold[0] +
                     (b.hxd_flow_mass - b.hxc_flow_mass) # in mton/h
-                )*scaling_const
+                )
             )
 
     @m.fs.Constraint(doc="Maximum salt inventory at any time")
     def constraint_salt_inventory(b):
-        return scaling_const*b.salt_amount == (b.salt_inventory_hot[0] +
-                                               b.salt_inventory_cold[0])*scaling_const
+        return b.salt_amount == (b.salt_inventory_hot[0] +
+                                               b.salt_inventory_cold[0])
 
     calculate_variable_from_constraint(m.fs.salt_inventory_cold[0],
                                        m.fs.constraint_salt_inventory)
@@ -1407,8 +1468,8 @@ def model_analysis(m,
     iscale.constraint_scaling_transform(m.fs.discharge_storage_ub_eq, 1e0)
     iscale.constraint_scaling_transform(m.fs.constraint_ramp_down, 1e0)
     iscale.constraint_scaling_transform(m.fs.constraint_ramp_up, 1e0)
-    iscale.constraint_scaling_transform(m.fs.constraint_salt_inventory_hot, 1e-2)
-    iscale.constraint_scaling_transform(m.fs.constraint_salt_inventory, 1e-2)
+    iscale.constraint_scaling_transform(m.fs.constraint_salt_inventory_hot, 1e1)
+    iscale.constraint_scaling_transform(m.fs.constraint_salt_inventory, 1e2)
     iscale.constraint_scaling_transform(m.fs.constraint_salt_maxflow_hot, 1e-1)
     iscale.constraint_scaling_transform(m.fs.constraint_salt_maxflow_cold, 1e-1)
     iscale.constraint_scaling_transform(m.fs.constraint_discharge_temperature, 1e0)
