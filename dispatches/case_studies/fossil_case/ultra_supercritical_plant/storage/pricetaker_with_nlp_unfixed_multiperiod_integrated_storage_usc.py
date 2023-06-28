@@ -478,7 +478,7 @@ def run_pricetaker_analysis(nweeks=None,
     # variables. Different tank scenarios are included for the Solar
     # salt tank levels and the previous tank level of the tank is
     # based on that.
-    # m.tank_init = pyo.units.convert(1103053.48*pyunits.kg,
+    # m.tank_init = pyo.units.convert(75100*pyunits.kg,
     m.tank_init = pyo.units.convert(200000*pyunits.kg,
                                     to_units=pyunits.metric_ton)
     # @m.Constraint()
@@ -934,7 +934,7 @@ def plot_results(m,
     ax3.spines["top"].set_visible(False)
     ax3.spines["right"].set_visible(False)
     ax3.grid(linestyle=':', which='both', color='gray', alpha=0.40)
-    ax3.set_ylim((0, 200))
+    ax3.set_ylim((0, 250))
     # plt.axhline(pyo.value(max_storage_duty), ls=':', lw=1.5, color=c[4])
     plt.axhline(pyo.value(min_storage_duty), ls=':', lw=1.5, color=c[4])
     # plt.axhline(max(hxc_duty_list)*1.1, ls=':', lw=1.5, color=c[4])
@@ -1042,7 +1042,7 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-1
+        scaling_obj = 1e-2
     print()
     print('scaling_obj:', scaling_obj)
 

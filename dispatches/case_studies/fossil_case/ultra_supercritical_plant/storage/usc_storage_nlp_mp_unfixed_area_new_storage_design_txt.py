@@ -603,7 +603,7 @@ def set_model_input(m):
     # Add heat exchanger area from supercritical plant model_input. For
     # conceptual design optimization, area is unfixed and optimized
     m.fs.hxc.area.fix(1890.12)  # m2  2000
-    m.fs.hxd.area.fix(1719)  # m2  1500
+    m.fs.hxd.area.fix(436.44)  # m2  1500
 
     # Define storage fluid conditions. The fluid inlet flow is fixed
     # during initialization, but is unfixed and determined during
@@ -1057,10 +1057,10 @@ def add_bounds(m):
     m.fs.hxd.overall_heat_transfer_coefficient.setub(10000)
     m.fs.hxd.area.setlb(m.min_area)
     m.fs.hxd.area.setub(m.max_area)
-    m.fs.hxd.delta_temperature_in.setlb(1e-3)
-    m.fs.hxd.delta_temperature_out.setlb(1e-3)
-    # m.fs.hxd.delta_temperature_in.setlb(5)
-    # m.fs.hxd.delta_temperature_out.setlb(5)
+    # m.fs.hxd.delta_temperature_in.setlb(1e-3)
+    # m.fs.hxd.delta_temperature_out.setlb(1e-3)
+    m.fs.hxd.delta_temperature_in.setlb(5)
+    m.fs.hxd.delta_temperature_out.setlb(5)
     m.fs.hxd.delta_temperature_in.setub(500)
     m.fs.hxd.delta_temperature_out.setub(350)
 
@@ -1316,6 +1316,7 @@ def model_analysis(m,
     m.min_temp = design_data_dict["min_solar_salt_temperature"]*pyunits.K
     m.max_temp = design_data_dict["max_solar_salt_temperature"]*pyunits.K
     m.min_inventory = pyo.units.convert(200000*pyunits.kg,
+    # m.min_inventory = pyo.units.convert(75100*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = m.max_salt_amount # in mton
     m.tank_min = 1e-3*pyunits.metric_ton

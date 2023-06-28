@@ -83,6 +83,7 @@ scaling_const = 1e-3
 
 def add_data(m):
     # Add data from .json file
+    m.pmin_plant = design_data_dict["plant_min_power"]*pyunits.MW
     m.pmax_plant = design_data_dict["plant_max_power"]*pyunits.MW
     m.pmax_storage = design_data_dict["max_discharge_turbine_power"]*pyunits.MW
     m.min_storage_duty = design_data_dict["min_storage_duty"]*pyunits.MW
@@ -91,7 +92,7 @@ def add_data(m):
     # m.max_inventory = pyo.units.convert(1e4*pyunits.tonne)
     m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
                                         to_units=pyunits.metric_ton)
-    # m.min_inventory = pyo.units.convert(1119.6*pyunits.tonne)
+    # m.min_inventory = pyo.units.convert(75100*pyunits.kg,
     m.min_inventory = pyo.units.convert(200000*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,
@@ -139,7 +140,14 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     # usc_with_tes.add_bounds(m)
 
     # Set bounds for power produced by the plant without storage
-    m.fs.plant_min_power_eq = pyo.Constraint(expr=m.fs.plant_power_out[0] >= pmin)
+    # m.fs.eq_turbine_temperature_out.deactivate()
+    # m.fs.turbine_temperature_out_eq = pyo.Constraint(
+    #     expr=(
+    #         m.fs.es_turbine.control_volume.properties_out[0].temperature >=
+    #         m.fs.es_turbine.control_volume.properties_out[0].temperature_sat + 1*pyunits.K
+    #     )
+    # )
+    m.fs.plant_min_power_eq = pyo.Constraint(expr=m.fs.plant_power_out[0] >= m.pmin_plant)
     m.fs.plant_max_power_eq = pyo.Constraint(expr=m.fs.plant_power_out[0] <= m.pmax_plant)
     # m.fs.net_plant_min_power_eq = pyo.Constraint(expr=m.fs.net_power[0] >= pmin)
     m.fs.net_plant_max_power_eq = pyo.Constraint(expr=m.fs.net_power[0] <= m.pmax_plant + m.pmax_storage)
@@ -154,6 +162,8 @@ def create_usc_model(m=None, pmin=None, pmax=None):
     m.fs.discharge_storage_lb_eq = pyo.Constraint(expr=m.fs.hxd_duty >= m.min_storage_duty)
     m.fs.discharge_storage_ub_eq = pyo.Constraint(expr=m.fs.hxd_duty <= m.max_storage_duty)
     # m.fs.charge_tube_outlet_T_lb_eq = pyo.Constraint(expr=m.fs.hxc.tube_outlet.temperature[0] >= 826)
+    # m.fs.charge_delta_T_in_eq = pyo.Constraint(expr=m.fs.hxc.delta_temperature_in[0] >= 5)
+    m.fs.discharge_delta_T_in_eq = pyo.Constraint(expr=m.fs.hxd.delta_temperature_in[0] >= 5)
 
     # Add coupling variables
     m.fs.previous_power = pyo.Var(domain=NonNegativeReals,
@@ -342,6 +352,13 @@ def usc_custom_init(m):
     blk.fs.plant_max_power_eq = pyo.Constraint(expr=blk.fs.plant_power_out[0] <= blk.pmax_plant)
     # blk.fs.net_plant_min_power_eq = pyo.Constraint(expr=blk.fs.net_power[0] >= blk.pmin)
     blk.fs.net_plant_max_power_eq = pyo.Constraint(expr=blk.fs.net_power[0] <= blk.pmax_plant + blk.pmax_storage)
+    # blk.fs.eq_turbine_temperature_out.deactivate()
+    # blk.fs.turbine_temperature_out_eq = pyo.Constraint(
+    #     expr=(
+    #         blk.fs.es_turbine.control_volume.properties_out[0].temperature >=
+    #         blk.fs.es_turbine.control_volume.properties_out[0].temperature_sat + 1*pyunits.K
+    #     )
+    # )
 
     # Set lower and upper bounds to charge and discharge heat
     # exchangers
@@ -352,6 +369,8 @@ def usc_custom_init(m):
     blk.fs.discharge_storage_lb_eq = pyo.Constraint(expr=blk.fs.hxd_duty >= blk.min_storage_duty)
     blk.fs.discharge_storage_ub_eq = pyo.Constraint(expr=blk.fs.hxd_duty <= blk.max_storage_duty)
     # blk.fs.charge_tube_outlet_T_lb_eq = pyo.Constraint(expr=blk.fs.hxc.tube_outlet.temperature[0] >= 826)
+    # blk.fs.charge_delta_T_in_eq = pyo.Constraint(expr=blk.fs.hxc.delta_temperature_in[0] >= 5)
+    blk.fs.discharge_delta_T_in_eq = pyo.Constraint(expr=blk.fs.hxd.delta_temperature_in[0] >= 5)
 
     # Declare the plant power and salt inventory variables and
     # constraints
@@ -361,7 +380,7 @@ def usc_custom_init(m):
                                     # bounds=(blk.pmin, blk.pmax),
                                     units=pyunits.MW,
                                     doc="Previous period power")
-    blk.fs.previous_power.fix(426.30042950738044*pyunits.MW)
+    blk.fs.previous_power.fix(426.29979551243326*pyunits.MW)
     # blk.fs.linking_power_eq = pyo.Constraint(expr=blk.fs.previous_power == blk.fs.plant_power_out[0.0])
 
     @blk.fs.Constraint(doc="Plant ramping down constraint")
