@@ -25,6 +25,7 @@ import logging
 # Import Python libraries
 from math import pi
 from IPython import embed
+import csv
 
 # Import Pyomo libraries
 import pyomo.environ as pyo
@@ -69,7 +70,10 @@ from dispatches.properties import solarsalt_properties
 logging.basicConfig(level=logging.INFO)
 
 
-scaling_obj = 1e0
+scaling_obj = 1e-1
+save_csv = True
+
+print("Using scaling_obj={}".format(scaling_obj))
 
 def create_discharge_model(m, add_efficiency=None, power_max=None):
     """Create flowsheet and add unit models.
@@ -240,6 +244,11 @@ def _add_data(m):
     m.fs.discharge.solar_salt_price = pyo.Param(
         initialize=m.data_cost['solar_salt_price'],
         doc='Solar salt price in $/kg')
+
+    m.fs.discharge.salt_amount = pyo.Param(
+        initialize=6840497.79092901,
+        doc='Salt amount fixed from charge model'
+    )
     # Add parameters to calculate the Solar salt pump costing. Since
     # the unit is not explicitly modeled, the IDAES cost method is not
     # used for this equipment.  The primary purpose of the salt pump
@@ -277,12 +286,17 @@ def _make_constraints(m, add_efficiency=None, power_max=None):
 
     # Add a constraint to storage turbine to ensure that the outlet
     # temperature is at the saturation temperature
+    # m.fs.storage_power_cons = Constraint(
+    #     expr=((m.fs.discharge.es_turbine.control_volume.work[0] * (-1e-6)) == 50),
+    #     doc="Fixing the storage power"
+    # )
+
     @m.fs.discharge.es_turbine.Constraint(
         m.fs.time,
         doc="Turbine outlet should be a saturated steam")
     def constraint_esturbine_temperature_out(b, t):
         return (
-            b.control_volume.properties_out[t].temperature ==
+            b.control_volume.properties_out[t].temperature >=
             b.control_volume.properties_out[t].temperature_sat + 1
         )
 
@@ -1437,6 +1451,9 @@ def set_model_input(m):
     m.fs.discharge.es_split.inlet.flow_mol.fix(19203.6)
     m.fs.discharge.es_split.inlet.enth_mol.fix(52232)
     m.fs.discharge.es_split.inlet.pressure.fix(3.4958e7)
+    # m.fs.discharge.es_split.inlet.flow_mol.fix(13341.1)
+    # m.fs.discharge.es_split.inlet.enth_mol.fix(2974.4)
+    # m.fs.discharge.es_split.inlet.pressure.fix(2.3208e+06)
 
     ###########################################################################
     # Fix data in condensate source splitter
@@ -1485,19 +1502,23 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     m.fs.discharge.hxd.initialize(outlvl=outlvl,
                                   optarg=optarg)
 
-    m.fs.discharge.es_turbine.constraint_esturbine_temperature_out.deactivate()
+    # m.fs.discharge.es_turbine.constraint_esturbine_temperature_out.deactivate()
     propagate_state(m.fs.discharge.hxd_to_esturbine)
     m.fs.discharge.es_turbine.initialize(outlvl=outlvl,
                                          optarg=optarg)
     m.fs.discharge.es_split.inlet.unfix()
-    m.fs.discharge.es_turbine.constraint_esturbine_temperature_out.activate()
+    m.fs.discharge.es_turbine.control_volume.work[0].fix(-40e-6)
+    m.fs.discharge.hxd.shell_inlet.temperature.fix(826.56)
+    # m.fs.discharge.hxd.shell_outlet.temperature.setub(513.2)
+    # m.fs.discharge.hxd.tube_inlet.flow_mol[0].setlb(100)
+    # m.fs.discharge.es_turbine.constraint_esturbine_temperature_out.activate()
 
     # Fix disjuncts for initialization
-    m.fs.discharge.condpump_source_disjunct.indicator_var.fix(False)
+    m.fs.discharge.condpump_source_disjunct.indicator_var.fix(True)
     m.fs.discharge.fwh1_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.fwh2_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.fwh3_source_disjunct.indicator_var.fix(False)
-    m.fs.discharge.fwh4_source_disjunct.indicator_var.fix(True)
+    m.fs.discharge.fwh4_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.fwh5_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.booster_source_disjunct.indicator_var.fix(False)
     m.fs.discharge.fwh6_source_disjunct.indicator_var.fix(False)
@@ -1513,13 +1534,13 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     TransformationFactory("gdp.fix_disjuncts").apply_to(m_init)
 
     # Check and raise an error if the degrees of freedom are not 0
-    if not degrees_of_freedom(m_init) == 0:
-        raise ConfigurationError(
-            "The degrees of freedom after building the model are not 0. "
-            "You have {} degrees of freedom. "
-            "Please check your inputs to ensure a square problem "
-            "before initializing the model.".format(degrees_of_freedom(m_init))
-            )
+    # if not degrees_of_freedom(m_init) == 0:
+    #     raise ConfigurationError(
+    #         "The degrees of freedom after building the model are not 0. "
+    #         "You have {} degrees of freedom. "
+    #         "Please check your inputs to ensure a square problem "
+    #         "before initializing the model.".format(degrees_of_freedom(m_init))
+    #         )
 
     init_results = solver.solve(m_init, options=optarg)
     print("Discharge model initialization solver termination = ",
@@ -1528,20 +1549,30 @@ def initialize(m, solver=None, optarg=None, outlvl=idaeslog.NOTSET):
     for v1, v2 in zip(m_init_var_names, m_orig_var_names):
         v2.value == v1.value
 
-    print("list of unscaled variables: ")
-    list_unscaled_variables(m_init)
-    print(" ")
-    print(" ")
-    print("list of unscaled constraints: ")
-    list_unscaled_constraints(m_init)
-    print(" ")
-    print(" ")
-    print("list of badly scaled variables: ")
-    list_badly_scaled_variables(m_init)
+    # print("list of unscaled variables: ")
+    # lst = list_unscaled_variables(m)
+    # for i in lst:
+    #     print(i)
+    # print(" ")
+    # print(" ")
+    # print("list of unscaled constraints: ")
+    # lst = list_unscaled_constraints(m)
+    # for i in lst:
+    #     print(i)
+    # print(" ")
+    # print(" ")
+    # print("list of badly scaled variables: ")
+    # lst = list_badly_scaled_variables(m)
+    # for i in lst:
+    #     print(i)
+    #     print(i.name)
     print(" ")
     print(" ")
     print("***************  Discharge Model Initialized  ********************")
-
+    print("Split Fraction to HXD", value(m.fs.discharge.es_split.split_fraction[0, "to_hxd"]))
+    print(" ")
+    print(" ")
+    # assert False
 
 def build_costing(m, solver=None, optarg=None):
     """Add cost correlations for the storage design analysis
@@ -1579,6 +1610,11 @@ def build_costing(m, solver=None, optarg=None):
         flowsheet_costing_block=m.fs.costing,
         costing_method=SSLWCostingData.cost_heat_exchanger,
     )
+
+    # m.fs.discharge.salt_purchase_cost = pyo.Expression(
+    #     expr=(m.fs.discharge.salt_amount * m.fs.discharge.solar_salt_price),
+    #     doc="Total amount of Solar salt in kg"
+    # )
 
     m.fs.discharge.salt_purchase_cost = pyo.Expression(
         expr=(m.fs.discharge.hxd.shell_inlet.flow_mass[0] *
@@ -1919,7 +1955,7 @@ def add_bounds(m, power_max=None):
         split.split_fraction[0.0, "to_fwh"].setlb(0)
         split.split_fraction[0.0, "to_fwh"].setub(1)
 
-    m.fs.plant_power_out[0].setlb(300)
+    m.fs.plant_power_out[0].setlb(283)
     m.fs.plant_power_out[0].setub(m.power_max)
 
     m.fs.deaerator.steam.flow_mol[:].setlb(0)
@@ -1938,7 +1974,7 @@ def add_bounds(m, power_max=None):
         unit_k.outlet.flow_mol[:].setub(m.flow_max)
 
     for k in m.set_turbine:
-        m.fs.turbine[k].work.setlb(-1e10)
+        m.fs.turbine[k].work.setlb(-1e12)
         m.fs.turbine[k].work.setub(0)
 
 
@@ -1980,47 +2016,146 @@ def main(m_usc, solver=None, optarg=None):
     return m
 
 
-def print_model(_, nlp_model, nlp_data):
+def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     """Print the disjunction selected during the solution of the NLP
     subproblem
 
     """
 
+    m_iter = solver_obj.iteration
+    nlp_model.disjunction1_selection = {}
+    nlp_model.objective_value = {}
+    nlp_model.area = {}
+    nlp_model.ohtc = {}
+    nlp_model.hot_salt_temp = {}
+    nlp_model.cold_salt_temp = {}
+    nlp_model.hot_steam_temp = {}
+    nlp_model.cold_steam_temp = {}
+    nlp_model.turbine_inlet_temp = {}
+    nlp_model.turbine_inlet_temp_sat = {}
+    nlp_model.storage_material_amount = {}
+    nlp_model.storage_material_flow = {}
+    nlp_model.steam_flow_to_storage = {}
+    nlp_model.storage_power = {}
+    nlp_model.plant_power = {}
+    nlp_model.boiler_eff = {}
+    nlp_model.cycle_eff = {}
+
     nlp = nlp_model.fs.discharge
+
     print('    ___________________________________________')
     print('     Disjunction 1:')
     if nlp.condpump_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'Condenser Pump'
         print('      Condensate from condenser pump is selected')
     elif nlp.booster_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'Booster Pump'
         print('      Condensate from booster pump is selected')
     elif nlp.bfp_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'BFP'
         print('      Condensate from boiler feed pump is selected')
     elif nlp.fwh9_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH9'
         print('      Condensate from FWH9 is selected')
     elif nlp.fwh1_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH1'
         print('      Condensate from FWH1 is selected')
     elif nlp.fwh2_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH2'
         print('      Condensate from FWH2 is selected')
     elif nlp.fwh3_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH3'
         print('      Condensate from FWH3 is selected')
     elif nlp.fwh6_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH6'
         print('      Condensate from FWH6 is selected')
     elif nlp.fwh8_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH8'
         print('      Condensate from FWH8 is selected')
     elif nlp.fwh4_source_disjunct.binary_indicator_var.value == 1:
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH4'
         print('      Condensate from FWH4 is selected')
     elif nlp.fwh5_source_disjunct.binary_indicator_var.value == 1:
-        # nlp_model.disjunction1_selection[m_iter] = 'FWH5 is selected'
+        source_disj = nlp.condpump_source_disjunct
+        nlp_model.disjunction1_selection[m_iter] = 'FWH5'
         print('        Disjunction 1: Condensate from FWH5 is selected')
     else:
         print('      Error: There are no more alternatives')
     print('    ___________________________________________')
     print()
+    nlp_model.objective_value[m_iter] = pyo.value(nlp_model.obj) / scaling_obj
+    nlp_model.storage_material_amount[m_iter] = pyo.value(nlp_model.fs.discharge.salt_purchase_cost) / (3600 * 0.49)
+    nlp_model.area[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.area)
+    nlp_model.ohtc[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.overall_heat_transfer_coefficient[0])
+    nlp_model.hot_salt_temp[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.shell_inlet.temperature[0])
+    nlp_model.cold_salt_temp[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.shell_outlet.temperature[0])
+    nlp_model.cold_steam_temp[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.cold_side.properties_in[0].temperature)
+    nlp_model.hot_steam_temp[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.cold_side.properties_out[0].temperature)
+    nlp_model.turbine_inlet_temp[m_iter] = pyo.value(nlp_model.fs.discharge.es_turbine.control_volume.properties_in[0].temperature)
+    nlp_model.turbine_inlet_temp_sat[m_iter] = pyo.value(nlp_model.fs.discharge.es_turbine.control_volume.properties_in[0].temperature_sat)
+    nlp_model.storage_material_flow[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.shell_outlet.flow_mass[0])
+    nlp_model.steam_flow_to_storage[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.tube_outlet.flow_mol[0])
+    nlp_model.storage_power[m_iter] = pyo.value(nlp_model.fs.discharge.es_turbine.control_volume.work[0]) * (-1e-6)
+    nlp_model.plant_power[m_iter] = pyo.value(nlp_model.fs.plant_power_out[0])
+    nlp_model.boiler_eff[m_iter] = pyo.value(nlp_model.fs.boiler_efficiency) * 100
+    nlp_model.cycle_eff[m_iter] = pyo.value(nlp_model.fs.cycle_efficiency) * 100
+
+    if True:
+        writer = csv.writer(csvfile)
+        writer.writerow(
+            (
+                m_iter,
+                nlp_model.disjunction1_selection[m_iter],
+                nlp_model.objective_value[m_iter],
+                nlp_model.storage_material_amount[m_iter],
+                nlp_model.area[m_iter],
+                nlp_model.ohtc[m_iter],
+                nlp_model.hot_salt_temp[m_iter],
+                nlp_model.cold_salt_temp[m_iter],
+                nlp_model.cold_steam_temp[m_iter],
+                nlp_model.hot_steam_temp[m_iter],
+                nlp_model.turbine_inlet_temp[m_iter],
+                nlp_model.turbine_inlet_temp_sat[m_iter],
+                nlp_model.storage_material_flow[m_iter],
+                nlp_model.steam_flow_to_storage[m_iter],
+                nlp_model.storage_power[m_iter],
+                nlp_model.plant_power[m_iter],
+                nlp_model.boiler_eff[m_iter],
+                nlp_model.cycle_eff[m_iter]
+            ),
+        )
+        csvfile.flush()
+
+
+def create_csv_header():
+    csvfile = open('results/subnlp_master_iterations_discharge_1-11disj_results.csv',
+                   'w', newline='')
+    writer = csv.writer(csvfile)
+    writer.writerow(
+        ('Iteration', 'Disjunction 1 (Source selection)', 'Obj ($/h)',
+         'StorageMaterialAmount(metric_ton)', 'HXArea(m2)', 'Overall HTC(W/m2/K)',
+         'HotSaltTemp(K)', 'ColdSaltTemp(K)', 'ColdSsteamTemp(K)', 'HotSteamTemp(K)',
+          'TurbineInletTemp (K)', 'TurbineInletTempSat (K)', 'Hxd Salt Flow (kg/s)', 'Hxd Steam Flow (mol/s)', 
+          'Storage Power (MW)', 'Plant Power (MW)', 'BoilerEff(%)', 'CycleEff(%)')
+    )
+    return csvfile
 
 
 def run_gdp(m):
     """Declare solver GDPopt and its options
     """
+
+    csvfile = create_csv_header()
 
     # Add options to GDPopt
     opt = SolverFactory('gdpopt')
@@ -2032,18 +2167,28 @@ def run_gdp(m):
         tee=True,
         algorithm='RIC',
         init_algorithm="no_init",
-        mip_solver='cbc',
+        mip_solver='gurobi',
         nlp_solver='ipopt',
-        call_after_subproblem_solve=print_model,
+        call_after_subproblem_solve=(lambda c, a, b: print_model(c, a, b, csvfile)),
+        # call_after_subproblem_solve=print_model,
         subproblem_presolve = False,
         nlp_solver_args=dict(
             tee=True,
+            symbolic_solver_labels=True,
             options={
-                "max_iter": 150,
-                }
+                "linear_solver": "ma57",
+                # "tol": 1e-6,
+                "max_iter": 200
+            }
         )
+        # nlp_solver_args=dict(
+        #     tee=True,
+        #     options={
+        #         "max_iter": 150,
+        #         }
+        # )
     )
-
+    csvfile.close()
     return results
 
 
@@ -2105,6 +2250,7 @@ def model_analysis(m, heat_duty=None):
     # m.fs.net_power.fix(470)
     m.fs.boiler.outlet.pressure.fix(m.main_steam_pressure)
     m.fs.discharge.hxd.heat_duty.fix(heat_duty * 1e6)
+    # m.fs.discharge.hxd.shell_outlet.temperature.fix(513.15)
 
     # Unfix variables that were fixed iduring initialization
     m.fs.boiler.inlet.flow_mol.unfix()
@@ -2114,42 +2260,44 @@ def model_analysis(m, heat_duty=None):
     m.fs.discharge.hxd.area.unfix()
 
     m.fs.net_power_cons = Constraint(
-        expr=(m.fs.net_power == 436),
+        expr=(m.fs.plant_power_out[0] == 436),
         doc="Fixing the net power"
     )
 
     # Calculate revenue
     m.fs.revenue = Expression(
-        expr=(22 * m.fs.net_power),
+        expr=(40 * m.fs.net_power),
         doc="Revenue function in $/h assuming 1 hr operation"
     )
 
     # Add total cost as the objective function
-    m.obj = Objective(
-        expr=(
-             (m.fs.discharge.capital_cost +
-            m.fs.discharge.operating_cost)
-            ) * scaling_obj
-    )
     # m.obj = Objective(
     #     expr=(
-    #         m.fs.revenue -
-    #         (m.fs.discharge.operating_cost +
-    #          m.fs.discharge.plant_fixed_operating_cost +
-    #          m.fs.discharge.plant_variable_operating_cost) / (365 * 24) -
-    #         (m.fs.discharge.capital_cost +
-    #         m.fs.discharge.operating_cost) / (365 * 24)
-    #         ) * scaling_obj,
-    #         sense=maximize
+    #          (m.fs.discharge.capital_cost +
+    #         m.fs.discharge.operating_cost)
+    #         ) * scaling_obj
     # )
+    m.obj = Objective(
+        expr=(
+            m.fs.revenue -
+            (m.fs.discharge.operating_cost +
+             m.fs.discharge.plant_fixed_operating_cost +
+             m.fs.discharge.plant_variable_operating_cost) / (365 * 24) -
+            (m.fs.discharge.capital_cost +
+            m.fs.discharge.operating_cost) / (365 * 24)
+            ) * scaling_obj,
+            sense=maximize
+    )
 
 
 if __name__ == "__main__":
 
     # optarg = {"max_iter": 300}
-    optarg = {"tol": 1e-8,
-              "max_iter": 300,
-              "halt_on_ampl_error": "yes"}
+    optarg = {
+        # "tol": 1e-8,
+        "max_iter": 300,
+        "halt_on_ampl_error": "yes"
+        }
     solver = get_solver('ipopt', optarg)
 
     # Build ultra-supercritical plant base model
@@ -2172,16 +2320,27 @@ if __name__ == "__main__":
     print()
     results = run_gdp(m)
 
+    print(" ")
+    print(" ")
+    print_results(m, results)
+    print(" ")
+    print(" ")
     print("list of unscaled variables: ")
-    list_unscaled_variables(m)
+    lst = list_unscaled_variables(m)
+    for i in lst:
+        print(i)
     print(" ")
     print(" ")
     print("list of unscaled constraints: ")
-    list_unscaled_constraints(m)
+    lst = list_unscaled_constraints(m)
+    for i in lst:
+        print(i)
     print(" ")
     print(" ")
     print("list of badly scaled variables: ")
-    list_badly_scaled_variables(m)
+    lst = list_badly_scaled_variables(m)
+    for i in lst:
+        print(i[0].name, i[1])
     print(" ")
     print(" ")
     # print("Extreme Jacobian Entries: ")
@@ -2189,4 +2348,3 @@ if __name__ == "__main__":
     # print(" ")
     # print(" ")
     # Print results
-    print_results(m, results)
