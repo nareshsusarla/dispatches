@@ -2033,7 +2033,6 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     nlp_model.cold_steam_temp = {}
     nlp_model.turbine_inlet_temp = {}
     nlp_model.turbine_inlet_temp_sat = {}
-    nlp_model.storage_material_amount = {}
     nlp_model.storage_material_flow = {}
     nlp_model.steam_flow_to_storage = {}
     nlp_model.storage_power = {}
@@ -2094,7 +2093,6 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
     print('    ___________________________________________')
     print()
     nlp_model.objective_value[m_iter] = pyo.value(nlp_model.obj) / scaling_obj
-    nlp_model.storage_material_amount[m_iter] = pyo.value(nlp_model.fs.discharge.salt_purchase_cost) / (3600 * 0.49)
     nlp_model.area[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.area)
     nlp_model.ohtc[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.overall_heat_transfer_coefficient[0])
     nlp_model.hot_salt_temp[m_iter] = pyo.value(nlp_model.fs.discharge.hxd.shell_inlet.temperature[0])
@@ -2117,7 +2115,6 @@ def print_model(solver_obj, nlp_model, nlp_data, csvfile):
                 m_iter,
                 nlp_model.disjunction1_selection[m_iter],
                 nlp_model.objective_value[m_iter],
-                nlp_model.storage_material_amount[m_iter],
                 nlp_model.area[m_iter],
                 nlp_model.ohtc[m_iter],
                 nlp_model.hot_salt_temp[m_iter],
