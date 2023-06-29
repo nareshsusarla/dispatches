@@ -92,7 +92,7 @@ def add_data(m):
     # m.max_inventory = pyo.units.convert(1e4*pyunits.tonne)
     m.max_inventory = pyo.units.convert(1e7*pyunits.kg,
                                         to_units=pyunits.metric_ton)
-    # m.min_inventory = pyo.units.convert(75100*pyunits.kg,
+    # m.min_inventory = pyo.units.convert(100000*pyunits.kg,
     m.min_inventory = pyo.units.convert(200000*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = pyo.units.convert(design_data_dict["max_salt_amount"]*pyunits.kg,

@@ -1316,7 +1316,7 @@ def model_analysis(m,
     m.min_temp = design_data_dict["min_solar_salt_temperature"]*pyunits.K
     m.max_temp = design_data_dict["max_solar_salt_temperature"]*pyunits.K
     m.min_inventory = pyo.units.convert(200000*pyunits.kg,
-    # m.min_inventory = pyo.units.convert(75100*pyunits.kg,
+    # m.min_inventory = pyo.units.convert(100000*pyunits.kg,
                                         to_units=pyunits.metric_ton)
     m.tank_max = m.max_salt_amount # in mton
     m.tank_min = 1e-3*pyunits.metric_ton
