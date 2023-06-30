@@ -508,8 +508,8 @@ def run_pricetaker_analysis(nweeks=None,
             steam_to_storage.append(pyo.value(blk.fs.hxc.shell_inlet.flow_mol[0]))
             boiler_flow.append(pyo.value(blk.fs.boiler.inlet.flow_mol[0]))
 
-    log_close_to_bounds(m)
-    log_infeasible_constraints(m)
+    # log_close_to_bounds(m)
+    # log_infeasible_constraints(m)
     df_results = pd.DataFrame.from_dict({
         "hot_tank_level": hot_tank_level,
         "cold_tank_level": cold_tank_level,
@@ -676,7 +676,7 @@ def plot_results(m,
         step_size = 4
     else:
         marker_size = 3
-        step_size = 12
+        step_size = 24
 
     # Save and convert array to list to include values at time zero
     # for all the data that is going to be plotted
@@ -717,7 +717,7 @@ def plot_results(m,
     ax1.step(hours_list, cold_tank_list, marker='o', ms=marker_size, lw=1.5, color=c[1], alpha=0.65,
              label='Cold Salt')
     ax1.fill_between(hours_list, cold_tank_list, step="pre", color=c[1], alpha=0.1)
-    ax1.legend(loc="upper center", frameon=False)
+    ax1.legend(loc="upper center", ncol=2, frameon=False)
     ax1.tick_params(axis='y')
     ax1.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax2 = ax1.twinx()
@@ -749,7 +749,7 @@ def plot_results(m,
              label='Discharge')
     ax3.fill_between(hours_list, hxd_duty_list, step="pre", color=c[1], alpha=0.1)
     ax3.tick_params(axis='y', labelcolor=c[3])
-    ax3.legend(loc="upper center", frameon=False)
+    ax3.legend(loc="upper center", ncol=2, frameon=False)
     ax3.tick_params(axis='y')
     ax3.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax4 = ax3.twinx()
@@ -769,6 +769,7 @@ def plot_results(m,
     ax5.spines["top"].set_visible(False)
     ax5.spines["right"].set_visible(False)
     ax5.grid(linestyle=':', which='both', color=c[4], alpha=0.40)
+    ax5.set_ylim((0, 550))
     plt.axhline(pyo.value(pmax), ls=':', lw=1.5, color=c[4])
     ax5.step(hours_list, power_list, marker='o', ms=marker_size, lw=1.5, color=c[3], alpha=0.85,
              label='Net Power')
@@ -777,7 +778,7 @@ def plot_results(m,
              label='Storage Turbine')
     ax5.fill_between(hours_list, discharge_work_list, step="pre", color=c[1], alpha=0.15)
     ax5.tick_params(axis='y', labelcolor=c[1])
-    ax5.legend(loc="upper center", frameon=False)
+    ax5.legend(loc="upper center", ncol=2, frameon=False)
     ax5.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax6 = ax5.twinx()
     ax6.set_ylim((0, 45))
@@ -797,13 +798,14 @@ def plot_results(m,
     ax7.spines["top"].set_visible(False)
     ax7.spines["right"].set_visible(False)
     ax7.grid(linestyle=':', which='both', color='gray', alpha=0.40)
+    ax7.set_ylim((0, 1200))
     ax7.step(hours_list, plant_heat_duty_list, marker='o', ms=marker_size, color=c[3], ls='-', lw=1.5, alpha=0.85,
              label='Plant')
     ax7.fill_between(hours_list, plant_heat_duty_list, step="pre", color=c[3], alpha=0.15)
     if not use_surrogate:
         ax7.step(hours_list, boiler_heat_duty_list, marker='o', ms=marker_size, color='gray', ls='-', lw=1.5, alpha=0.85, label='Boiler')
     ax7.tick_params(axis='y', labelcolor=c[3])
-    ax7.legend(loc="center left", frameon=False)
+    ax7.legend(loc="upper center", ncol=2, frameon=False)
     ax7.tick_params(axis='y')
     ax7.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax8 = ax7.twinx()
@@ -839,6 +841,15 @@ if __name__ == '__main__':
     }
     solver = get_solver('ipopt', optarg)
 
+    hours_per_day = 24
+    ndays = 1
+    nhours = hours_per_day*ndays
+    nweeks = 1
+
+    # Add number of hours per week
+    n_time_points = nweeks*nhours
+    tank_status = "hot_empty"
+
     lx = False
     if lx:
         if use_surrogate:
@@ -846,7 +857,11 @@ if __name__ == '__main__':
         else:
             scaling_obj = 1e-1
     else:
-        scaling_obj = 1e-1
+        if n_time_points < 50:
+            scaling_obj = 1e0
+        else:
+            scaling_obj = 1e-1
+
     print()
     print('scaling_obj:', scaling_obj)
 
@@ -863,15 +878,6 @@ if __name__ == '__main__':
         pmax_storage = design_data_dict["max_discharge_turbine_power"]*pyunits.MW
         pmin = design_data_dict["plant_min_power"]*pyunits.MW
         pmax = design_data_dict["plant_max_power"]*pyunits.MW + pmax_storage
-
-    hours_per_day = 24
-    ndays = 1
-    nhours = hours_per_day*ndays
-    nweeks = 1
-
-    # Add number of hours per week
-    n_time_points = nweeks*nhours
-    tank_status = "hot_empty"
 
     # Create a directory to save the results for each NLP sbproblem
     # and plots
