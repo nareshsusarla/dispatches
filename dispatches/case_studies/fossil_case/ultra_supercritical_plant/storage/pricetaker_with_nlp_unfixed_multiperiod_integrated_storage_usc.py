@@ -913,7 +913,7 @@ def plot_results(m,
     ax1.step(hours_list, cold_tank_list, marker='o', ms=marker_size, lw=1.5, color=c[1], alpha=0.65,
              label='Cold Salt')
     ax1.fill_between(hours_list, cold_tank_list, step="pre", color=c[1], alpha=0.1)
-    ax1.legend(loc="upper center", frameon=False)
+    ax1.legend(loc="upper center", ncol=2, frameon=False)
     ax1.tick_params(axis='y')
     ax1.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax2 = ax1.twinx()
@@ -945,7 +945,7 @@ def plot_results(m,
              label='Discharge')
     ax3.fill_between(hours_list, hxd_duty_list, step="pre", color=c[1], alpha=0.1)
     ax3.tick_params(axis='y', labelcolor=c[3])
-    ax3.legend(loc="upper center", frameon=False)
+    ax3.legend(loc="upper center", ncol=2, frameon=False)
     ax3.tick_params(axis='y')
     ax3.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax4 = ax3.twinx()
@@ -965,6 +965,7 @@ def plot_results(m,
     ax5.spines["top"].set_visible(False)
     ax5.spines["right"].set_visible(False)
     ax5.grid(linestyle=':', which='both', color=c[4], alpha=0.40)
+    ax5.set_ylim((0, 550))
     plt.axhline(pyo.value(pmax), ls=':', lw=1.5, color=c[4])
     ax5.step(hours_list, power_list, marker='o', ms=marker_size, lw=1.5, color=c[3], alpha=0.85,
              label='Net Power')
@@ -973,7 +974,7 @@ def plot_results(m,
              label='Storage Turbine')
     ax5.fill_between(hours_list, discharge_work_list, step="pre", color=c[1], alpha=0.15)
     ax5.tick_params(axis='y', labelcolor=c[1])
-    ax5.legend(loc="upper center", frameon=False)
+    ax5.legend(loc="upper center", ncol=2, frameon=False)
     ax5.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax6 = ax5.twinx()
     ax6.set_ylim((0, 45))
@@ -999,7 +1000,7 @@ def plot_results(m,
     if not use_surrogate:
         ax7.step(hours_list, boiler_heat_duty_list, marker='o', ms=marker_size, color='gray', ls='-', lw=1.5, alpha=0.85, label='Boiler')
     ax7.tick_params(axis='y', labelcolor=c[3])
-    ax7.legend(loc="upper center", frameon=False)
+    ax7.legend(loc="upper center", ncol=2, frameon=False)
     ax7.tick_params(axis='y')
     ax7.set_xticks(np.arange(0, n_time_points + 1, step=step_size))
     ax8 = ax7.twinx()
